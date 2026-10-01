@@ -71,7 +71,7 @@ TOP_DEFAULT = 25
 LIVE_REFRESH_SECONDS = 5  # UI refresh; provider requests remain cached/throttled
 NSE_MCP_BHAV_URL = "https://mcp.nseindia.in/bhavcopy/cm/mcp"
 NSE_MCP_LIVE_URL = "https://mcp.nseindia.in/cmmkt/mcp"
-NSE_MCP_CONCURRENCY = 12
+NSE_MCP_CONCURRENCY = 4
 
 INDEX_SYMBOLS = {
     "NIFTY 50": "^NSEI",
@@ -9363,23 +9363,21 @@ def run_scanner(full_market: bool = False, mode: str = None, sector: str = None)
         status.caption("📡 Connecting to official NSE market-data service…")
         # NSE MCP is designed for programmatic market-data access and avoids
         # the Cloud IP blocks that affect direct NSE/Yahoo scraping.
+        # Do not gate the real call on tool discovery. A transient
+        # list_tools failure used to force the app onto NSE web archives,
+        # which are exactly what Streamlit Cloud can be blocked from.
+        def _mcp_progress(done, total_n, usable_n):
+            progress.progress(min(done / max(total_n, 1), 1.0))
+            status.caption(
+                f"📡 NSE DATA: {done:,}/{total_n:,} histories · {usable_n:,} usable"
+            )
         try:
-            tool_names = nse_mcp_tool_names(NSE_MCP_BHAV_URL)
+            mcp_history = nse_mcp_history_batch(
+                symbols, period="3mo", concurrency=NSE_MCP_CONCURRENCY,
+                progress_callback=_mcp_progress,
+            ) or {}
         except Exception:
-            tool_names = []
-        if "get_stock_history" in tool_names:
-            def _mcp_progress(done, total_n, usable_n):
-                progress.progress(min(done / max(total_n, 1), 1.0))
-                status.caption(
-                    f"📡 NSE DATA: {done:,}/{total_n:,} histories · {usable_n:,} usable"
-                )
-            try:
-                mcp_history = nse_mcp_history_batch(
-                    symbols, period="3mo", concurrency=NSE_MCP_CONCURRENCY,
-                    progress_callback=_mcp_progress,
-                ) or {}
-            except Exception:
-                mcp_history = {}
+            mcp_history = {}
         # Legacy archive fallback only if MCP produced nothing.
         if not mcp_history:
             try:
@@ -10903,7 +10901,29 @@ def best_live_quote(symbol: str) -> dict:
         elif up in ("^BSESN", "SENSEX"):
             nse_q = nse_index_quote("SENSEX") or {}
         elif not raw.startswith("^"):
-            nq = nse_quote_equity(raw) or {}
+            # One cached market-wide NSE MCP snapshot instead of a separate
+            # NSE/Yahoo request for every stock.
+            try:
+                live_df = nse_mcp_live_equities()
+                if live_df is not None and not live_df.empty and "Symbol" in live_df.columns:
+                    hit = live_df[live_df["Symbol"].astype(str).str.upper() == display_symbol(raw).upper()]
+                    if not hit.empty:
+                        rr = hit.iloc[0]
+                        if safe_float(rr.get("Current Price")):
+                            nse_q = {
+                                "price": safe_float(rr.get("Current Price")),
+                                "pct": safe_float(rr.get("Change %")) or 0.0,
+                                "change": safe_float(rr.get("Change")) or 0.0,
+                                "source": "NSE MCP",
+                                "open": safe_float(rr.get("Open")),
+                                "high": safe_float(rr.get("High")),
+                                "low": safe_float(rr.get("Low")),
+                                "volume": safe_float(rr.get("Volume")),
+                            }
+            except Exception:
+                pass
+            if not nse_q:
+                nq = nse_quote_equity(raw) or {}
             ltp = nq.get("ltp")
             if ltp and float(ltp) > 0:
                 prev = nq.get("prev_close") or 0
@@ -10952,86 +10972,66 @@ def best_live_quote(symbol: str) -> dict:
 
 def best_stock_history(symbol, interval="1d", period=None, **kwargs):
     """
-    Dual history: NSE + Yahoo (+ Ticker.history), return longer/cleaner series.
-    Silent on failures.
+    Reliable history provider. For daily/weekly/monthly NSE equities,
+    use the official NSE MCP first. Direct NSE archive scraping is NOT used
+    on the critical path because Streamlit Cloud IPs can be WAF/rate limited.
+    Yahoo remains a fallback.
     """
     interval = str(interval or "1d").lower()
-    nse_df = pd.DataFrame()
-    y_df = pd.DataFrame()
+    sym = clean_symbol(symbol)
 
-    if interval in {"1d", "1wk", "1mo"} and not str(symbol).startswith("^"):
+    # ------------------------------------------------------------
+    # 1) OFFICIAL NSE MCP — primary daily source
+    # ------------------------------------------------------------
+    if interval in {"1d", "1wk", "1mo"} and not sym.startswith("^"):
         try:
-            # 1) NSE bhav-copy panel (Cloud-friendly official archives)
-            nse_df = history_from_bhav(symbol)
-            if nse_df is None or nse_df.empty or len(nse_df) < 60:
-                days = 800
-                if period:
-                    try:
-                        if str(period).endswith("y"):
-                            days = int(float(str(period)[:-1]) * 365)
-                        elif str(period).endswith("mo"):
-                            days = int(float(str(period)[:-2]) * 30)
-                    except Exception:
-                        pass
-                nse_df = nse_equity_history(symbol, days=max(days, 400))
-            if nse_df is None:
-                nse_df = pd.DataFrame()
+            mcp_df = nse_mcp_history(sym, period="3mo")
+            if mcp_df is not None and not mcp_df.empty and len(mcp_df) >= 30:
+                return mcp_df
         except Exception:
-            nse_df = pd.DataFrame()
+            pass
 
+    # ------------------------------------------------------------
+    # 2) Yahoo — controlled fallback
+    # ------------------------------------------------------------
     period_map = {
         "1m": "5d", "5m": "60d", "15m": "60d", "30m": "60d",
-        "1h": "730d", "60m": "730d", "1d": "2y", "1wk": "5y", "1mo": "10y",
+        "1h": "730d", "60m": "730d", "1d": "2y",
+        "1wk": "5y", "1mo": "10y",
     }
     per = period or period_map.get(interval, "2y")
 
     try:
         d = yf.download(
-            clean_symbol(symbol), period=per, interval=interval,
+            sym, period=per, interval=interval,
             progress=False, auto_adjust=True, threads=False,
         )
         d = normalize_columns(d)
         if d is not None and not d.empty and "Close" in d.columns:
             y_df = d.dropna(subset=[c for c in ["Open", "High", "Low", "Close"] if c in d.columns])
+            if not y_df.empty:
+                return y_df
     except Exception:
-        y_df = pd.DataFrame()
+        pass
 
-    if y_df is None or y_df.empty or len(y_df) < 60:
+    # Yahoo chart endpoint fallback
+    if interval == "1d":
         try:
-            h = yf.Ticker(clean_symbol(symbol)).history(period=per if interval == "1d" else "2y", interval=interval, auto_adjust=True)
-            if h is not None and not h.empty:
-                h = normalize_columns(h)
-                if "Close" in h.columns:
-                    y_df = h.dropna(subset=[c for c in ["Open", "High", "Low", "Close"] if c in h.columns])
+            for rng in ("2y", "1y", "6mo", "3mo"):
+                ch = yahoo_chart_history(sym, rng)
+                if ch is not None and not ch.empty and len(ch) >= 30:
+                    return ch
         except Exception:
             pass
 
-    if (y_df is None or y_df.empty or len(y_df) < 60) and interval in {"1d", "1wk", "1mo"}:
-        try:
-            for rng in ("2y", "1y", "6mo", "5y"):
-                ch = yahoo_chart_history(symbol, rng)
-                if ch is not None and not ch.empty and len(ch) >= 60:
-                    y_df = ch
-                    break
-        except Exception:
-            pass
+    # Legacy local/NSE cache is last, not the network path.
+    try:
+        cached = history_from_bhav(sym)
+        if cached is not None and not cached.empty:
+            return cached
+    except Exception:
+        pass
 
-    nse_ok = nse_df is not None and not nse_df.empty and len(nse_df) >= 60
-    y_ok = y_df is not None and not y_df.empty and len(y_df) >= 60
-
-    if nse_ok and y_ok:
-        if interval in {"1d", "1wk", "1mo"}:
-            return nse_df if len(nse_df) >= len(y_df) * 0.65 else y_df
-        return y_df
-    if y_ok:
-        return y_df
-    if nse_ok:
-        return nse_df
-    # accept shorter series if that is all we have (analyse needs 60)
-    if y_df is not None and not y_df.empty and len(y_df) >= 30:
-        return y_df
-    if nse_df is not None and not nse_df.empty and len(nse_df) >= 30:
-        return nse_df
     return pd.DataFrame()
 
 
