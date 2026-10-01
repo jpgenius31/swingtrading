@@ -67,7 +67,7 @@ DEFAULT_HOLD_DAYS = 15
 TOP_DEFAULT = 25
 
 # Default auto-refresh interval (seconds). User can change in sidebar.
-LIVE_REFRESH_SECONDS = 30  # Cloud-friendly: avoid hammering NSE/Yahoo
+LIVE_REFRESH_SECONDS = 5  # UI refresh; provider requests remain cached/throttled
 
 INDEX_SYMBOLS = {
     "NIFTY 50": "^NSEI",
@@ -9292,7 +9292,7 @@ def _symbols_for_scan_mode(mode: str, sector: str = "") -> list:
             if "bank" in sector.lower():
                 out = list(_FALLBACK_BANKNIFTY)
     elif mode in ("master", "full", "full_market", "all"):
-        out = [display_symbol(s) for s in list(NSE_STOCKS[: min(800, MAX_SCAN_STOCKS)]) if s]
+        out = [display_symbol(s) for s in list(NSE_STOCKS[:MAX_SCAN_STOCKS]) if s]
     else:
         out = list(lists.get("nifty50") or _FALLBACK_NIFTY50)
 
@@ -9307,119 +9307,127 @@ def _symbols_for_scan_mode(mode: str, sector: str = "") -> list:
 
 
 def run_scanner(full_market: bool = False, mode: str = None, sector: str = None):
-    """
-    Scan modes (Cloud-friendly):
-      nifty50 | nifty200 | banknifty | sector | master
-    Light modes can be run many times. Master is heavy — use rarely.
+    """Robust market scanner.
+
+    Master/full scans use the NSE daily bhav-copy panel as the primary source,
+    so a Yahoo Finance rate-limit cannot turn the whole scan into zero rows.
+    Yahoo is used only as a controlled fallback for symbols that are missing.
     """
     mode = mode or st.session_state.get("scan_mode") or ("master" if full_market else "nifty50")
     sector = sector if sector is not None else st.session_state.get("scan_sector") or ""
     mode = str(mode).strip().lower()
-    is_light = mode not in ("master", "full", "full_market", "all")
+    is_master = mode in ("master", "full", "full_market", "all")
 
-    # Light scans: do NOT auto-reuse unrelated disk cache (user asked for this universe)
-    # Master: may reuse very fresh disk to cut load
+    # Reuse a recent COMPLETE saved master result, but never replace a scan with
+    # an empty/partial file.
     try:
-        if mode in ("master", "full", "full_market") and RESULT_FILE.exists():
+        if is_master and RESULT_FILE.exists():
             age_h = (time.time() - RESULT_FILE.stat().st_mtime) / 3600.0
-            if age_h <= 1.0:  # only 1h for master reuse
-                df_disk = pd.read_csv(RESULT_FILE)
-                if df_disk is not None and not df_disk.empty and len(df_disk) >= 50:
-                    st.caption(f"Master scan file is fresh ({age_h:.1f}h) — reusing saved results.")
-                    try:
-                        return ensure_result_columns(df_disk)
-                    except Exception:
-                        return df_disk
+            df_disk = pd.read_csv(RESULT_FILE)
+            if age_h <= 1.0 and df_disk is not None and len(df_disk) >= 50:
+                st.info(f"Using saved master scan from {age_h:.1f}h ago. Press scan again after the cache window for a fresh scan.")
+                return ensure_result_columns(df_disk)
     except Exception:
         pass
 
     symbols = _symbols_for_scan_mode(mode, sector)
     if not symbols:
-        symbols = _priority_scan_universe(50)
+        symbols = _priority_scan_universe(100)
+    if not symbols:
+        return pd.DataFrame()
 
+    total = len(symbols)
     st.caption(
-        f"Scan mode: **{mode.upper()}**"
-        + (f" · sector **{sector}**" if mode == "sector" and sector else "")
-        + f" · **{len(symbols)}** stocks"
-        + (" · light (Cloud-safe)" if is_light else " · MASTER (heavy)")
+        f"Scan mode: **{mode.upper()}** · **{total:,}** symbols"
+        + (" · NSE bhav primary + controlled Yahoo fallback" if is_master else " · NSE/Yahoo fallback")
     )
 
-    # Light modes: skip bulk full-market download (huge load) — sequential only
+    progress = st.progress(0)
+    status = st.empty()
+    results = []
+    analysed = set()
+
+    # ------------------------------------------------------------
+    # PRIMARY SOURCE: NSE daily bhav-copy history.
+    # 90 trading sessions is enough for the technical model while keeping
+    # Cloud execution practical. The panel covers thousands of symbols in
+    # one set of archive downloads rather than thousands of Yahoo calls.
+    # ------------------------------------------------------------
+    bhav = {}
+    if is_master:
+        try:
+            status.caption("📥 Downloading NSE official daily bhav history…")
+            bhav = nse_bhav_panel(90) or {}
+        except Exception:
+            bhav = {}
+        status.caption(f"NSE history loaded for {len(bhav):,} symbols. Analysing market…")
+
+    # For light modes, use a single bulk Yahoo request first; if that fails,
+    # the per-symbol history fallback below is deliberately capped.
     all_data = None
-    if not is_light and len(symbols) > 200:
+    if not is_master and len(symbols) > 1:
         try:
             all_data = download_market_data()
         except Exception:
             all_data = None
 
-    results = []
-    analysed = set()
-
-    progress = st.progress(0)
-    status = st.empty()
-    total = len(symbols)
-
-    # PASS 1: bulk frame
-    if all_data is not None and not getattr(all_data, "empty", True):
-        for i, symbol in enumerate(symbols):
-            try:
+    # ------------------------------------------------------------
+    # PASS 1 — analyse primary data
+    # ------------------------------------------------------------
+    for i, symbol in enumerate(symbols):
+        try:
+            df = pd.DataFrame()
+            if is_master and bhav:
+                df = history_from_bhav(symbol, bhav)
+            elif all_data is not None:
                 df = extract_stock_data(all_data, symbol)
-                if df is not None and not df.empty and len(df) >= 40:
-                    result = analyse_stock(symbol, df, fetch_news=False)
-                    if result:
-                        results.append(result)
-                        analysed.add(clean_symbol(symbol))
+
+            # The model needs a meaningful daily history.  Do not call Yahoo
+            # for every symbol here; that was the rate-limit failure mode.
+            if df is not None and not df.empty and len(df) >= 60:
+                result = analyse_stock(symbol, df, fetch_news=False)
+                if result:
+                    results.append(result)
+                    analysed.add(clean_symbol(symbol))
+        except Exception:
+            pass
+
+        if i == total - 1 or i % 25 == 0:
+            progress.progress(min((i + 1) / max(total, 1), 1.0))
+            status.caption(
+                f"🔎 SCANNING: {i + 1:,}/{total:,} ({((i + 1) / max(total, 1))*100:.1f}%) · {len(results):,} usable"
+            )
+
+        # Persist partial results periodically so a Cloud restart does not
+        # destroy a successful part of the scan.
+        if results and (i + 1) % 100 == 0:
+            try:
+                partial = pd.DataFrame(results)
+                partial.drop(columns=["Data", "News"], errors="ignore").to_csv(
+                    APP_DIR / "latest_results_partial.csv", index=False
+                )
             except Exception:
                 pass
-            if i == total - 1 or i % 25 == 0:
-                progress.progress(min((i + 1) / max(total, 1), 1.0))
-                status.caption(
-                    f"⏳ FULL MARKET SCAN: {((i + 1) / max(total, 1)) * 100:.1f}% | "
-                    f"{i + 1:,}/{total:,} | {len(results):,} usable"
-                )
 
-    # PASS 2: sequential fallback (always if few results)
+    # ------------------------------------------------------------
+    # PASS 2 — controlled fallback only for missing symbols.
+    # This is intentionally small: Yahoo must never be allowed to receive
+    # thousands of individual requests after a rate-limit event.
+    # ------------------------------------------------------------
     missing = [s for s in symbols if clean_symbol(s) not in analysed]
-    if len(results) < 40:
-        # Prefer priority liquid names first
-        priority = _priority_scan_universe(200)
-        retry_list = list(dict.fromkeys(priority + missing))[:250]
-    else:
-        retry_list = missing[:120]
+    if missing:
+        fallback_limit = 120 if is_master else min(200, len(missing))
+        retry_list = missing[:fallback_limit]
+        status.caption(f"🔄 Controlled fallback: {len(retry_list):,} missing symbols…")
 
-    if retry_list:
-        status.caption(f"🔄 Loading NSE bhav history + Yahoo/NSE (up to {len(retry_list):,} symbols)…")
-        bhav = {}
-        try:
-            # One bulk archive pull for all light-scan symbols (Cloud-oriented)
-            if len(retry_list) <= 250:
-                status.caption("📥 NSE official bhav-copy archives (free, Cloud-friendly)…")
-                bhav = nse_bhav_panel(150) or {}
-                status.caption(f"Bhav panel: {len(bhav)} symbols with history")
-        except Exception:
-            bhav = {}
         for j, symbol in enumerate(retry_list):
-            if clean_symbol(symbol) in analysed:
-                continue
             try:
-                df = history_from_bhav(symbol, bhav) if bhav else pd.DataFrame()
-                if df is None or getattr(df, "empty", True) or len(df) < 60:
-                    df = stock_history(symbol, interval="1d", period="2y")
-                if df is None or getattr(df, "empty", True) or len(df) < 60:
-                    df = stock_history(symbol, interval="1d", period="5y")
-                if df is None or getattr(df, "empty", True) or len(df) < 60:
-                    try:
-                        t = __import__("yfinance").Ticker(clean_symbol(symbol))
-                        df = t.history(period="2y", auto_adjust=True)
-                        if df is not None and not df.empty:
-                            df = normalize_columns(df)
-                    except Exception:
-                        pass
-                if df is None or getattr(df, "empty", True) or len(df) < 60:
+                df = stock_history(symbol, interval="1d", period="2y")
+                if df is None or df.empty or len(df) < 60:
                     try:
                         df = yahoo_chart_history(symbol, "2y")
                     except Exception:
-                        pass
+                        df = pd.DataFrame()
                 if df is not None and not df.empty and len(df) >= 60:
                     result = analyse_stock(symbol, df, fetch_news=False)
                     if result:
@@ -9427,83 +9435,71 @@ def run_scanner(full_market: bool = False, mode: str = None, sector: str = None)
                         analysed.add(clean_symbol(symbol))
             except Exception:
                 pass
-            if j % 10 == 0 or j == len(retry_list) - 1:
-                progress.progress(min((j + 1) / max(len(retry_list), 1), 1.0))
+
+            if j == len(retry_list) - 1 or j % 10 == 0:
                 status.caption(
-                    f"🔄 FALLBACK: {j + 1:,}/{len(retry_list):,} | {len(results):,} usable analyses"
+                    f"🔄 FALLBACK: {j + 1:,}/{len(retry_list):,} · {len(results):,} usable"
                 )
-            # Soft rate-limit
-            if j > 0 and j % 40 == 0:
-                time.sleep(0.5)
+
+            if j > 0 and j % 20 == 0:
+                time.sleep(1.0)
 
     progress.empty()
     status.empty()
 
-    # EMERGENCY: if still empty, force-analyse core liquid names with every fetch path
     if not results:
-        status = st.empty()
-        status.caption("Emergency core scan (liquid names only)…")
-        core = [
-            "RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY", "SBIN", "ITC",
-            "AXISBANK", "KOTAKBANK", "LT", "BHARTIARTL", "WIPRO", "HCLTECH",
-            "MARUTI", "TATAMOTORS", "SUNPHARMA", "NTPC", "POWERGRID", "ONGC",
-            "TATASTEEL", "BAJFINANCE", "ADANIENT", "COALINDIA", "M&M", "TITAN",
-        ]
-        for j, sym in enumerate(core):
-            try:
-                df = None
-                for per in ("2y", "1y", "6mo", "5y"):
-                    try:
-                        df = best_stock_history(sym, interval="1d", period=per)
-                        if df is not None and not df.empty and len(df) >= 60:
-                            break
-                    except Exception:
-                        df = None
-                if df is None or df.empty or len(df) < 60:
-                    try:
-                        import yfinance as _yf
-                        df = _yf.Ticker(clean_symbol(sym)).history(period="2y", auto_adjust=True)
-                        if df is not None and not df.empty:
-                            df = normalize_columns(df)
-                    except Exception:
-                        df = None
-                if df is not None and not df.empty and len(df) >= 60:
-                    result = analyse_stock(sym, df, fetch_news=False)
-                    if result:
-                        results.append(result)
-            except Exception:
-                pass
-            if j % 5 == 0:
-                status.caption(f"Emergency core: {j+1}/{len(core)} · {len(results)} ok")
-        status.empty()
-
-    if not results:
+        # Never erase a previously successful result just because the current
+        # provider is temporarily unavailable.
+        try:
+            if RESULT_FILE.exists():
+                old = pd.read_csv(RESULT_FILE)
+                if old is not None and not old.empty:
+                    st.warning(
+                        "Fresh data sources returned no usable rows. Showing the last successful scan instead of a blank dashboard."
+                    )
+                    return ensure_result_columns(old)
+        except Exception:
+            pass
         return pd.DataFrame()
 
     output = pd.DataFrame(results)
-
-    # Defensive cleanup so old/malformed values cannot break sorting.
     for col in ["Prediction", "Risk %"]:
         if col not in output.columns:
             output[col] = 0.0
-        output[col] = pd.to_numeric(
-            output[col],
-            errors="coerce"
-        ).fillna(0.0)
+        output[col] = pd.to_numeric(output[col], errors="coerce").fillna(0.0)
 
     output = output.sort_values(
         ["Prediction", "Risk %"],
         ascending=[False, True],
-        kind="stable"
+        kind="stable",
     ).reset_index(drop=True)
+    output["Rank"] = np.arange(1, len(output) + 1)
 
-    output["Rank"] = np.arange(
-        1,
-        len(output) + 1
-    )
+    # Scan coverage fields make partial-source conditions visible.
+    output["Scan Universe"] = total
+    output["Stocks With Usable Analysis"] = len(output)
+    output["Scan Coverage %"] = round(len(output) / max(total, 1) * 100, 1)
+    output["Scan Data Source"] = "NSE bhav + controlled Yahoo fallback" if is_master else "NSE/Yahoo"
+
+    # Save immediately from inside scanner too. The caller will also save
+    # prediction history, but this protects the result if a later UI step fails.
+    try:
+        output.drop(columns=["Data", "News"], errors="ignore").to_csv(RESULT_FILE, index=False)
+        (APP_DIR / "latest_results_meta.json").write_text(
+            json.dumps({
+                "at": datetime.now().isoformat(timespec="seconds"),
+                "universe": total,
+                "usable": len(output),
+                "coverage_pct": round(len(output) / max(total, 1) * 100, 1),
+                "mode": mode,
+                "source": output["Scan Data Source"].iloc[0] if not output.empty else "",
+            }, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
 
     return output
-
 
 
 def run_historical_prediction(symbol, selected_date):
@@ -9931,12 +9927,26 @@ def show_market_index_charts():
     show_spinner=False
 )
 def live_quote(symbol):
-    """Public live quote API — dual NSE+Yahoo, best available. Silent."""
+    """Public live quote API — dual NSE+Yahoo with last-good fallback."""
+    key = clean_symbol(symbol)
     try:
         q = best_live_quote(symbol)
-        return q if q and q.get("price") else None
+        if q and q.get("price"):
+            if "_last_good_quotes" not in st.session_state:
+                st.session_state["_last_good_quotes"] = {}
+            st.session_state["_last_good_quotes"][key] = dict(q)
+            return q
     except Exception:
-        return None
+        pass
+    try:
+        q = st.session_state.get("_last_good_quotes", {}).get(key)
+        if q and q.get("price"):
+            out = dict(q)
+            out["source"] = str(out.get("source", "cached")) + " / last good"
+            return out
+    except Exception:
+        pass
+    return None
 
 
 
@@ -10382,6 +10392,7 @@ def nse_index_constituents_live(index_name: str = "NIFTY 50") -> pd.DataFrame:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=900, show_spinner=False)
 def nse_bhav_panel(max_days: int = 160) -> dict:
     """
     Build OHLC from NSE official daily bhav-copy archives (free).
@@ -20249,10 +20260,10 @@ def _batch_last_prices(symbols: list, max_n: int = 120) -> dict:
                     out[display_symbol(syms[0])] = out[syms[0]]
     except Exception:
         pass
-    # Fill misses with single live_quote
-    for sym in syms:
-        if sym in out:
-            continue
+    # Fill only a very small number of misses from the dual-source quote path.
+    # Never issue one Yahoo request per missing symbol after a batch failure.
+    misses = [sym for sym in syms if sym not in out][:8]
+    for sym in misses:
         try:
             q = live_quote(sym)
             if q and q.get("price"):

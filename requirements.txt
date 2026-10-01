@@ -6,3 +6,4 @@ plotly
 requests
 websocket-client
 pytz
+openpyxl
