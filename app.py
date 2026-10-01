@@ -21,6 +21,7 @@ import math
 import time
 import json
 import threading
+import asyncio
 from pathlib import Path
 from datetime import datetime, timedelta, time as dt_time
 
@@ -68,6 +69,9 @@ TOP_DEFAULT = 25
 
 # Default auto-refresh interval (seconds). User can change in sidebar.
 LIVE_REFRESH_SECONDS = 5  # UI refresh; provider requests remain cached/throttled
+NSE_MCP_BHAV_URL = "https://mcp.nseindia.in/bhavcopy/cm/mcp"
+NSE_MCP_LIVE_URL = "https://mcp.nseindia.in/cmmkt/mcp"
+NSE_MCP_CONCURRENCY = 12
 
 INDEX_SYMBOLS = {
     "NIFTY 50": "^NSEI",
@@ -9354,13 +9358,38 @@ def run_scanner(full_market: bool = False, mode: str = None, sector: str = None)
     # one set of archive downloads rather than thousands of Yahoo calls.
     # ------------------------------------------------------------
     bhav = {}
+    mcp_history = {}
     if is_master:
+        status.caption("📡 Connecting to official NSE market-data service…")
+        # NSE MCP is designed for programmatic market-data access and avoids
+        # the Cloud IP blocks that affect direct NSE/Yahoo scraping.
         try:
-            status.caption("📥 Downloading NSE official daily bhav history…")
-            bhav = nse_bhav_panel(90) or {}
+            tool_names = nse_mcp_tool_names(NSE_MCP_BHAV_URL)
         except Exception:
-            bhav = {}
-        status.caption(f"NSE history loaded for {len(bhav):,} symbols. Analysing market…")
+            tool_names = []
+        if "get_stock_history" in tool_names:
+            def _mcp_progress(done, total_n, usable_n):
+                progress.progress(min(done / max(total_n, 1), 1.0))
+                status.caption(
+                    f"📡 NSE DATA: {done:,}/{total_n:,} histories · {usable_n:,} usable"
+                )
+            try:
+                mcp_history = nse_mcp_history_batch(
+                    symbols, period="3mo", concurrency=NSE_MCP_CONCURRENCY,
+                    progress_callback=_mcp_progress,
+                ) or {}
+            except Exception:
+                mcp_history = {}
+        # Legacy archive fallback only if MCP produced nothing.
+        if not mcp_history:
+            try:
+                status.caption("📥 Falling back to NSE official daily archives…")
+                bhav = nse_bhav_panel(90) or {}
+            except Exception:
+                bhav = {}
+        status.caption(
+            f"NSE data loaded for {max(len(mcp_history), len(bhav)):,} symbols. Analysing market…"
+        )
 
     # For light modes, use a single bulk Yahoo request first; if that fails,
     # the per-symbol history fallback below is deliberately capped.
@@ -9377,7 +9406,9 @@ def run_scanner(full_market: bool = False, mode: str = None, sector: str = None)
     for i, symbol in enumerate(symbols):
         try:
             df = pd.DataFrame()
-            if is_master and bhav:
+            if is_master and mcp_history:
+                df = mcp_history.get(display_symbol(symbol), pd.DataFrame())
+            elif is_master and bhav:
                 df = history_from_bhav(symbol, bhav)
             elif all_data is not None:
                 df = extract_stock_data(all_data, symbol)
@@ -9422,7 +9453,9 @@ def run_scanner(full_market: bool = False, mode: str = None, sector: str = None)
 
         for j, symbol in enumerate(retry_list):
             try:
-                df = stock_history(symbol, interval="1d", period="2y")
+                df = nse_mcp_history(symbol, period="3mo")
+                if df is None or df.empty or len(df) < 60:
+                    df = stock_history(symbol, interval="1d", period="2y")
                 if df is None or df.empty or len(df) < 60:
                     try:
                         df = yahoo_chart_history(symbol, "2y")
@@ -9927,8 +9960,33 @@ def show_market_index_charts():
     show_spinner=False
 )
 def live_quote(symbol):
-    """Public live quote API — dual NSE+Yahoo with last-good fallback."""
+    """Public live quote API — official NSE MCP first, then NSE/Yahoo fallback."""
     key = clean_symbol(symbol)
+    try:
+        live_df = nse_mcp_live_equities()
+        if live_df is not None and not live_df.empty:
+            bare = display_symbol(symbol)
+            hit = live_df[live_df["Symbol"].astype(str).str.upper() == bare.upper()]
+            if not hit.empty:
+                r = hit.iloc[-1]
+                px = safe_float(r.get("Current Price"))
+                if px and px > 0:
+                    q = {
+                        "price": px,
+                        "pct": safe_float(r.get("Change %")) or 0.0,
+                        "change": safe_float(r.get("Change")) or 0.0,
+                        "source": "NSE MCP",
+                        "open": safe_float(r.get("Open")),
+                        "high": safe_float(r.get("High")),
+                        "low": safe_float(r.get("Low")),
+                        "volume": safe_float(r.get("Volume")),
+                    }
+                    if "_last_good_quotes" not in st.session_state:
+                        st.session_state["_last_good_quotes"] = {}
+                    st.session_state["_last_good_quotes"][key] = dict(q)
+                    return q
+    except Exception:
+        pass
     try:
         q = best_live_quote(symbol)
         if q and q.get("price"):
@@ -10391,8 +10449,237 @@ def nse_index_constituents_live(index_name: str = "NIFTY 50") -> pd.DataFrame:
 
 
 
+
+# ============================================================
+# OFFICIAL NSE MCP DATA PROVIDER
+# ============================================================
+
+@st.cache_data(ttl=300, show_spinner=False)
+def nse_mcp_tool_names(server_url: str):
+    """Discover official NSE MCP tools. No API key is required."""
+    async def _run():
+        try:
+            from mcp import ClientSession
+            from mcp.client.streamable_http import streamable_http_client
+            async with streamable_http_client(server_url) as (read, write, _):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    tools = await session.list_tools()
+                    return [t.name for t in tools.tools]
+        except Exception:
+            return []
+    try:
+        return asyncio.run(_run())
+    except Exception:
+        return []
+
+
+def _mcp_json_content(result):
+    """Turn MCP tool result content into Python JSON/list/dict when possible."""
+    try:
+        contents = getattr(result, "content", None) or []
+        pieces = []
+        for item in contents:
+            text = getattr(item, "text", None)
+            if text:
+                pieces.append(text)
+        if pieces:
+            text = "\n".join(pieces).strip()
+            try:
+                return json.loads(text)
+            except Exception:
+                return text
+        # Some MCP clients expose structuredContent / model_dump.
+        structured = getattr(result, "structuredContent", None)
+        if structured is not None:
+            return structured
+    except Exception:
+        pass
+    return None
+
+
+def nse_mcp_call(server_url: str, tool_name: str, arguments: dict = None):
+    """Call one official NSE MCP tool. Silent on provider errors."""
+    arguments = arguments or {}
+
+    async def _run():
+        try:
+            from mcp import ClientSession
+            from mcp.client.streamable_http import streamable_http_client
+            async with streamable_http_client(server_url) as (read, write, _):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    result = await session.call_tool(tool_name, arguments)
+                    return _mcp_json_content(result)
+        except Exception:
+            return None
+
+    try:
+        return asyncio.run(_run())
+    except Exception:
+        return None
+
+
+def _records_to_ohlcv(payload):
+    """Normalize common NSE MCP get_stock_history response shapes."""
+    if payload is None:
+        return pd.DataFrame()
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            return pd.DataFrame()
+
+    rows = None
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict):
+        for key in ("data", "history", "records", "prices", "rows", "result"):
+            val = payload.get(key)
+            if isinstance(val, list):
+                rows = val
+                break
+        if rows is None and isinstance(payload.get("data"), dict):
+            d = payload.get("data")
+            for key in ("data", "history", "records", "prices", "rows"):
+                if isinstance(d.get(key), list):
+                    rows = d.get(key)
+                    break
+    if not rows:
+        return pd.DataFrame()
+
+    out = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        def pick(*names):
+            for n in names:
+                if n in r and r.get(n) not in (None, ""):
+                    return r.get(n)
+            low = {str(k).lower().replace(" ", "_"): v for k, v in r.items()}
+            for n in names:
+                v = low.get(str(n).lower().replace(" ", "_"))
+                if v not in (None, ""):
+                    return v
+            return None
+        dt = pick("date", "Date", "tradeDate", "tradingDate", "CH_TIMESTAMP")
+        c = pick("close", "Close", "lastPrice", "ltp", "CH_CLOSING_PRICE")
+        if dt is None or c is None:
+            continue
+        out.append({
+            "Date": pd.to_datetime(dt, errors="coerce"),
+            "Open": safe_float(pick("open", "Open", "CH_OPENING_PRICE")),
+            "High": safe_float(pick("high", "High", "CH_TRADE_HIGH_PRICE")),
+            "Low": safe_float(pick("low", "Low", "CH_TRADE_LOW_PRICE")),
+            "Close": safe_float(c),
+            "Volume": safe_float(pick("volume", "Volume", "tradedVolume", "CH_TOT_TRADED_QTY")) or 0,
+        })
+    if not out:
+        return pd.DataFrame()
+    df = pd.DataFrame(out).dropna(subset=["Date", "Close"])
+    if df.empty:
+        return df
+    for c in ("Open", "High", "Low"):
+        df[c] = df[c].fillna(df["Close"])
+    return df.set_index("Date").sort_index().drop_duplicates()
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def nse_mcp_history(symbol: str, period: str = "3mo") -> pd.DataFrame:
+    """Official NSE daily history; used before Yahoo/NSE web scraping."""
+    payload = nse_mcp_call(
+        NSE_MCP_BHAV_URL,
+        "get_stock_history",
+        {"symbol": display_symbol(symbol), "period": period},
+    )
+    return _records_to_ohlcv(payload)
+
+
+def nse_mcp_history_batch(symbols, period="3mo", concurrency=None, progress_callback=None):
+    """Fetch NSE daily history concurrently through the official MCP server."""
+    syms = [display_symbol(s) for s in symbols if display_symbol(s)]
+    if not syms:
+        return {}
+    concurrency = int(concurrency or NSE_MCP_CONCURRENCY)
+
+    async def _run_batch():
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamable_http_client
+        sem = asyncio.Semaphore(concurrency)
+        out = {}
+        done = 0
+        async with streamable_http_client(NSE_MCP_BHAV_URL) as (read, write, _):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                async def one(sym):
+                    nonlocal done
+                    async with sem:
+                        try:
+                            result = await session.call_tool(
+                                "get_stock_history",
+                                {"symbol": sym, "period": period},
+                            )
+                            df = _records_to_ohlcv(_mcp_json_content(result))
+                            if not df.empty:
+                                out[sym] = df
+                        except Exception:
+                            pass
+                        done += 1
+                        if progress_callback:
+                            try:
+                                progress_callback(done, len(syms), len(out))
+                            except Exception:
+                                pass
+                await asyncio.gather(*(one(s) for s in syms))
+        return out
+
+    try:
+        return asyncio.run(_run_batch())
+    except Exception:
+        return {}
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def nse_mcp_live_equities():
+    """One official NSE call for the live equity universe."""
+    payload = nse_mcp_call(NSE_MCP_LIVE_URL, "cm_get_equity_stocks", {})
+    if payload is None:
+        return pd.DataFrame()
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            return pd.DataFrame()
+    rows = payload if isinstance(payload, list) else None
+    if rows is None and isinstance(payload, dict):
+        for key in ("data", "stocks", "equities", "results", "rows"):
+            if isinstance(payload.get(key), list):
+                rows = payload[key]
+                break
+    if not rows:
+        return pd.DataFrame()
+    out = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        sym = r.get("symbol") or r.get("stock") or r.get("symbolName")
+        if not sym:
+            continue
+        out.append({
+            "Symbol": display_symbol(sym),
+            "Current Price": safe_float(r.get("lastPrice") or r.get("ltp") or r.get("last")),
+            "Change": safe_float(r.get("change") or r.get("variation")),
+            "Change %": safe_float(r.get("pChange") or r.get("percentChange")),
+            "Open": safe_float(r.get("open")),
+            "High": safe_float(r.get("high") or r.get("dayHigh")),
+            "Low": safe_float(r.get("low") or r.get("dayLow")),
+            "Previous Close": safe_float(r.get("previousClose") or r.get("prevClose")),
+            "Volume": safe_float(r.get("totalTradedVolume") or r.get("volume")),
+        })
+    return pd.DataFrame(out)
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
-@st.cache_data(ttl=900, show_spinner=False)
 def nse_bhav_panel(max_days: int = 160) -> dict:
     """
     Build OHLC from NSE official daily bhav-copy archives (free).

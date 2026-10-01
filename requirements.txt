@@ -7,3 +7,5 @@ requests
 websocket-client
 pytz
 openpyxl
+
+mcp>=1.13
