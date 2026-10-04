@@ -21,7 +21,6 @@ import math
 import time
 import json
 import threading
-import asyncio
 from pathlib import Path
 from datetime import datetime, timedelta, time as dt_time
 
@@ -68,10 +67,7 @@ DEFAULT_HOLD_DAYS = 15
 TOP_DEFAULT = 25
 
 # Default auto-refresh interval (seconds). User can change in sidebar.
-LIVE_REFRESH_SECONDS = 5  # UI refresh; provider requests remain cached/throttled
-NSE_MCP_BHAV_URL = "https://mcp.nseindia.in/bhavcopy/cm/mcp"
-NSE_MCP_LIVE_URL = "https://mcp.nseindia.in/cmmkt/mcp"
-NSE_MCP_CONCURRENCY = 4
+LIVE_REFRESH_SECONDS = 30  # Cloud-friendly: avoid hammering NSE/Yahoo
 
 INDEX_SYMBOLS = {
     "NIFTY 50": "^NSEI",
@@ -5341,6 +5337,360 @@ Return on equity > 15
 
 
 
+
+# ============================================================
+# 9:15–9:30 · 15-MIN OPENING STRATEGY (Options)
+# ============================================================
+
+STRATEGY_915_930_NAME = "9:15–9:30 · 15-min trading strategy"
+
+
+def _ist_now():
+    try:
+        return india_now()
+    except Exception:
+        return datetime.now()
+
+
+def strategy_915_930_rules_markdown() -> str:
+    return f"""
+### {STRATEGY_915_930_NAME}
+
+**Session window (IST only)**  
+| Time | Action |
+|------|--------|
+| **9:15:00** | Market opens — watch first candle form |
+| **9:15:00 – ~9:15:40** | Confirm open → swing high/low → **break of open** |
+| **Entry** | Within **30–40 seconds** after the open-break signal |
+| **9:16 – 9:30** | Hold only if momentum continues |
+| **9:30:00** | **Exit all** — “say good night” to the market |
+
+**Setup logic (first candle / open break)**  
+1. Note **Open** of the session (or first 1-minute open).  
+2. **Bearish signal:** price makes a **high above open**, then **breaks back below open** → expect downward pressure next ~15 minutes → **BUY ATM PE**.  
+3. **Bullish signal:** price makes a **low below open**, then **breaks back above open** → upward pressure → **BUY ATM CE**.  
+4. Prefer **ATM** options only (avoid far OTM lottery tickets).  
+5. Underlyings: **Nifty 50 / Bank Nifty / liquid Nifty-50 stock options** (decent volume & lot size).
+
+**Institutional context (why the first 15 minutes)**  
+- Highest volatility and institutional (FII/DII) flow often cluster at open.  
+- Retail cannot compete on volume — **align with direction after open-break**, do not fight the tape.  
+
+**Risk & psychology (must follow)**  
+- Capital only what you can mentally handle; no over-leverage.  
+- Prefer **consistent small targets** over holding for “home run”.  
+- Hard rules: **stop-loss**, **ATM only**, **exit by 9:30** — no exceptions.  
+- Do not chase OTM; do not skip stop; do not move exit past 9:30 for this strategy.
+
+**Option preference**  
+| Item | Rule |
+|------|------|
+| Strike | **ATM** (nearest to spot) |
+| Side | CE if bullish open-break · PE if bearish open-break |
+| Exit | **Flat by 9:30 IST** |
+| Liquidity | Index options first; else liquid stock options |
+
+**Not advice** — educational encoding of a fixed open-range / open-break playbook.
+"""
+
+
+def detect_915_930_signal(df_1m: pd.DataFrame, spot: float = None) -> dict:
+    """
+    Detect 9:15 open-break style signal from 1-minute (or fine) bars.
+    Returns dict: side CE/PE/NONE, reason, entry_hint, stop_hint, target_hint, window_ok.
+    """
+    out = {
+        "strategy": STRATEGY_915_930_NAME,
+        "side": "NONE",
+        "option": None,
+        "reason": "",
+        "window": "OUTSIDE",
+        "open_px": None,
+        "signal_px": None,
+        "stop_hint": None,
+        "target_hint": None,
+        "exit_by": "09:30 IST",
+        "rules": "ATM only · enter ≤40s after open-break · flat by 9:30",
+    }
+    now = _ist_now()
+    try:
+        t = now.time() if hasattr(now, "time") else datetime.now().time()
+    except Exception:
+        t = datetime.now().time()
+
+    # Window flags
+    from datetime import time as _time
+    open_t = _time(9, 15)
+    hard_exit = _time(9, 30)
+    soft_entry_end = _time(9, 20)  # practical entry window after open candle forms
+
+    if t < open_t:
+        out["window"] = "PRE_OPEN"
+        out["reason"] = "Before 9:15 IST — wait for open; do not enter this strategy yet."
+        return out
+    if t >= hard_exit:
+        out["window"] = "CLOSED"
+        out["reason"] = "Past 9:30 IST — strategy session over. Exit any residual; no new entries."
+        return out
+    out["window"] = "ACTIVE" if t < soft_entry_end else "HOLD_ONLY"
+
+    if df_1m is None or getattr(df_1m, "empty", True) or len(df_1m) < 2:
+        out["reason"] = "Need 1-minute (or fine) bars after open to read first candle / open-break."
+        return out
+
+    d = df_1m.copy()
+    # Filter today's IST session bars if timestamps exist
+    try:
+        idx = pd.to_datetime(d.index)
+        if getattr(idx, "tz", None) is not None:
+            try:
+                idx = idx.tz_convert("Asia/Kolkata")
+            except Exception:
+                idx = idx.tz_localize(None)
+        d = d.copy()
+        d.index = idx
+        today = now.date() if hasattr(now, "date") else datetime.now().date()
+        d = d[d.index.date == today] if len(d) else d
+    except Exception:
+        pass
+
+    if d is None or len(d) < 1:
+        out["reason"] = "No bars for today’s session yet."
+        return out
+
+    o = pd.to_numeric(d["Open"], errors="coerce")
+    h = pd.to_numeric(d["High"], errors="coerce")
+    l = pd.to_numeric(d["Low"], errors="coerce")
+    c = pd.to_numeric(d["Close"], errors="coerce")
+    session_open = float(o.iloc[0])
+    out["open_px"] = session_open
+    hi_so_far = float(h.iloc[: min(5, len(h))].max())
+    lo_so_far = float(l.iloc[: min(5, len(l))].min())
+    last = float(c.iloc[-1])
+    out["signal_px"] = last
+    if spot and spot > 0:
+        last = float(spot)
+
+    # Bearish: traded above open, then broke back below open
+    bearish = hi_so_far > session_open * 1.0001 and last < session_open
+    # Bullish: traded below open, then broke back above open
+    bullish = lo_so_far < session_open * 0.9999 and last > session_open
+
+    atr_proxy = max(hi_so_far - lo_so_far, session_open * 0.001)
+
+    if bearish:
+        out["side"] = "PE"
+        out["option"] = "BUY ATM PE"
+        out["stop_hint"] = round(session_open + 0.35 * atr_proxy, 2)
+        out["target_hint"] = round(session_open - 1.0 * atr_proxy, 2)
+        out["reason"] = (
+            f"Open-break **down**: session open ₹{session_open:,.2f}, early high ₹{hi_so_far:,.2f}, "
+            f"last ₹{last:,.2f} back **below open** → short-term downside bias → **BUY ATM PE**. "
+            f"Enter quickly (≤40s of break); **exit all by 9:30 IST**."
+        )
+    elif bullish:
+        out["side"] = "CE"
+        out["option"] = "BUY ATM CE"
+        out["stop_hint"] = round(session_open - 0.35 * atr_proxy, 2)
+        out["target_hint"] = round(session_open + 1.0 * atr_proxy, 2)
+        out["reason"] = (
+            f"Open-break **up**: session open ₹{session_open:,.2f}, early low ₹{lo_so_far:,.2f}, "
+            f"last ₹{last:,.2f} back **above open** → short-term upside bias → **BUY ATM CE**. "
+            f"Enter quickly; **flat by 9:30 IST**."
+        )
+    else:
+        out["side"] = "NONE"
+        out["option"] = "WAIT"
+        out["reason"] = (
+            f"No clean open-break yet. Open ₹{session_open:,.2f}, range ₹{lo_so_far:,.2f}–₹{hi_so_far:,.2f}, "
+            f"last ₹{last:,.2f}. Wait for break of open after opposite wick (per rules)."
+        )
+
+    if out["window"] == "HOLD_ONLY" and out["side"] in ("CE", "PE"):
+        out["reason"] += " Entry window fading — only manage if already in; no late chase."
+    return out
+
+
+def render_strategy_915_930_panel(underlying_label: str, yf_symbol: str, spot: float):
+    """UI: live chart + signal + optional auto paper buy/sell for 9:15–9:30 strategy."""
+    st.markdown(f"#### ⏱️ {STRATEGY_915_930_NAME}")
+    st.caption("Live chart · open-break · ATM CE/PE · **auto paper** optional · flat by **9:30 IST**")
+
+    with st.expander("Full strategy rules (remember these)", expanded=False):
+        st.markdown(strategy_915_930_rules_markdown())
+
+    # --- Auto trade controls ---
+    a1, a2, a3 = st.columns(3)
+    with a1:
+        auto_on = st.checkbox(
+            "🤖 Auto paper BUY on signal",
+            value=bool(st.session_state.get("auto_915_on", False)),
+            key="auto_915_on",
+            help="When CE/PE signal appears in ACTIVE window, place paper BUY automatically once per side per day.",
+        )
+    with a2:
+        auto_exit = st.checkbox(
+            "🤖 Auto paper EXIT at 9:30",
+            value=bool(st.session_state.get("auto_915_exit", True)),
+            key="auto_915_exit",
+            help="After 9:30 IST, mark strategy paper legs as exit (educational).",
+        )
+    with a3:
+        qty = st.number_input("Paper qty (lots/units)", min_value=1, max_value=50, value=1, key="auto_915_qty")
+
+    df_1m = None
+    used_iv = "—"
+    for iv in ("1m", "2m", "5m", "15m"):
+        try:
+            df_1m = stock_history(yf_symbol, interval=iv)
+            if df_1m is not None and not df_1m.empty and len(df_1m) >= 2:
+                used_iv = iv
+                break
+        except Exception:
+            df_1m = None
+
+    sig = detect_915_930_signal(df_1m, spot=spot)
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Window", sig.get("window", "—"))
+    c2.metric("Signal", sig.get("option") or sig.get("side") or "—")
+    c3.metric("Session open", f"₹{sig['open_px']:,.2f}" if sig.get("open_px") else "—")
+    c4.metric("Exit by", sig.get("exit_by", "09:30 IST"))
+
+    # --- Live chart ---
+    st.markdown(f"**Live chart** ({used_iv}) — open line · range · signal")
+    if df_1m is not None and not df_1m.empty:
+        try:
+            plot_df = df_1m.tail(80).copy()
+            # keep only today if possible
+            try:
+                idx = pd.to_datetime(plot_df.index)
+                now = _ist_now()
+                today = now.date() if hasattr(now, "date") else datetime.now().date()
+                if hasattr(idx, "date"):
+                    mask = [getattr(x, "date", lambda: today)() == today if hasattr(x, "date") else True for x in idx]
+                    if any(mask):
+                        plot_df = plot_df.loc[mask]
+            except Exception:
+                pass
+            if plot_df.empty:
+                plot_df = df_1m.tail(40)
+            fig = go.Figure()
+            fig.add_trace(go.Candlestick(
+                x=list(range(len(plot_df))),
+                open=pd.to_numeric(plot_df["Open"], errors="coerce"),
+                high=pd.to_numeric(plot_df["High"], errors="coerce"),
+                low=pd.to_numeric(plot_df["Low"], errors="coerce"),
+                close=pd.to_numeric(plot_df["Close"], errors="coerce"),
+                name=underlying_label,
+            ))
+            open_px = sig.get("open_px")
+            if open_px:
+                fig.add_hline(
+                    y=float(open_px), line_dash="dash", line_color="#38bdf8",
+                    annotation_text=f"Open {open_px:.1f}", annotation_position="top left",
+                )
+            if sig.get("stop_hint"):
+                fig.add_hline(y=float(sig["stop_hint"]), line_dash="dot", line_color="#ef4444",
+                             annotation_text="SL hint", annotation_position="bottom left")
+            if sig.get("target_hint"):
+                fig.add_hline(y=float(sig["target_hint"]), line_dash="dot", line_color="#22c55e",
+                             annotation_text="TGT hint", annotation_position="top right")
+            # mark last bar
+            fig.add_vline(x=len(plot_df) - 1, line_width=1, line_color="#a78bfa")
+            title_side = sig.get("option") or "WAIT"
+            fig.update_layout(
+                height=340,
+                margin=dict(l=8, r=8, t=36, b=8),
+                xaxis_rangeslider_visible=False,
+                title=dict(text=f"{underlying_label} · {title_side} · {sig.get('window')}", font=dict(size=13)),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(15,23,42,0.92)",
+                font=dict(color="#e2e8f0", size=11),
+                yaxis=dict(gridcolor="#1e293b"),
+                xaxis=dict(gridcolor="#1e293b", showticklabels=False),
+            )
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        except Exception as ce:
+            st.caption(f"Chart: {ce}")
+    else:
+        st.info("No intraday bars yet for chart — data will appear when 1m/5m history loads (market hours best).")
+
+    # --- Signal + manual / auto orders ---
+    if sig.get("side") in ("CE", "PE"):
+        st.success(sig.get("reason", ""))
+        t1, t2 = st.columns(2)
+        t1.write(f"**Underlying stop hint:** ₹{sig.get('stop_hint')}")
+        t2.write(f"**Underlying target hint:** ₹{sig.get('target_hint')}")
+        st.info(
+            f"**Trade plan:** {sig.get('option')} on **{underlying_label}** · "
+            f"ATM only · **mandatory flat 9:30 IST**."
+        )
+        try:
+            if spot and spot > 0:
+                step = 50 if ("NIFTY" in underlying_label.upper() and "BANK" not in underlying_label.upper()) else 100
+                atm = int(round(float(spot) / step) * step)
+                st.caption(f"Suggested ATM strike zone: **{atm}** · side **{sig.get('side')}**")
+        except Exception:
+            atm = None
+
+        m1, m2 = st.columns(2)
+        with m1:
+            if st.button(f"🟢 Manual paper {sig.get('option')}", key=f"p915_{underlying_label}_{sig.get('side')}", use_container_width=True):
+                _place_915_paper(underlying_label, sig, spot, qty, auto=False)
+        with m2:
+            if st.button("🔴 Manual paper EXIT / flat", key=f"x915_{underlying_label}", use_container_width=True):
+                st.session_state[f"_915_flat_{underlying_label}"] = True
+                st.warning("Marked flat for this session — exit CE/PE by 9:30 rule.")
+
+        # Auto-buy once per day per side
+        if auto_on and sig.get("window") in ("ACTIVE", "HOLD_ONLY"):
+            day_key = _ist_now().strftime("%Y-%m-%d")
+            flag = f"_915_auto_{day_key}_{underlying_label}_{sig.get('side')}"
+            if not st.session_state.get(flag):
+                ok = _place_915_paper(underlying_label, sig, spot, qty, auto=True)
+                if ok:
+                    st.session_state[flag] = True
+                    st.success(f"Auto paper **{sig.get('option')}** placed (once today for this side).")
+    else:
+        st.warning(sig.get("reason", "No signal"))
+
+    # Auto exit reminder after 9:30
+    if auto_exit and sig.get("window") == "CLOSED":
+        st.error("**9:30 passed — EXIT all 9:15–9:30 strategy positions now.** Auto-exit flag is ON.")
+        if st.button("Confirm paper flat (9:30 rule)", key=f"flat915_{underlying_label}"):
+            st.session_state[f"_915_flat_{underlying_label}"] = True
+            st.success("Session marked flat.")
+
+    st.caption(sig.get("rules", ""))
+    if st.button("🏦 Open Broker · Angel One", key=f"to_broker_{underlying_label}"):
+        st.session_state.page = "Broker Angel"
+        st.rerun()
+    if st.session_state.get("angel_real_orders") and st.session_state.get("_angel_api"):
+        st.caption("🔴 LIVE broker mode is ON — orders on Broker page can hit your Angel account.")
+    else:
+        st.caption("Safe default: paper only. Connect Angel on **Broker** page to enable live.")
+
+
+def _place_915_paper(underlying_label, sig, spot, qty, auto=False) -> bool:
+    try:
+        tag = "STRAT_915_930_AUTO" if auto else "STRAT_915_930"
+        execute_paper_order(
+            display_symbol(str(underlying_label).replace(" ", "")),
+            "BUY",
+            entry=float(spot or sig.get("signal_px") or 0),
+            target=float(sig.get("target_hint") or 0),
+            stop=float(sig.get("stop_hint") or 0),
+            source=tag,
+            force=True,
+        )
+        return True
+    except Exception as e:
+        st.warning(f"Paper order: {e}")
+        return False
+
+
+
 def show_intraday_fo_desk():
     """
     Intraday + Futures & Options desk:
@@ -5378,6 +5728,13 @@ def show_intraday_fo_desk():
         disp_l = "NIFTY" if und_l.startswith("NIFTY") else "BANKNIFTY"
         spot_l = _spot_price(yf_l) or 0
         st.metric(f"{und_l} live spot", f"₹{spot_l:,.2f}" if spot_l else "—")
+
+        # Featured: 9:15–9:30 15-min strategy
+        try:
+            render_strategy_915_930_panel(und_l, yf_l, float(spot_l or 0))
+            st.divider()
+        except Exception as _915e:
+            st.caption(f"9:15–9:30 panel: {_915e}")
 
         df_l = None
         try:
@@ -5843,6 +6200,12 @@ def show_intraday_fo_desk():
         with st.expander("Read full rules — ORB, VWAP, EMA, CE/PE, Straddle", expanded=True):
             st.markdown(
                 """
+#### 0) **9:15–9:30 · 15-min trading strategy** (priority open play)
+- **9:15** observe first candle / open; enter within **30–40 seconds** of open-break.
+- Open → high → **break below open** → **BUY ATM PE**. Open → low → **break above open** → **BUY ATM CE**.
+- **Exit all by 9:30 IST** (“say good night”). ATM only; liquid index/stock options.
+- See Live tab panel for live signal. Do not hold this setup past 9:30.
+
 #### 1) ORB — Opening Range Breakout
 - Mark high/low of first **15–30 minutes**.
 - **Buy CE / futures long** only on **break above** range high with volume; stop below range low (or mid).
@@ -5975,6 +6338,10 @@ def show_intraday_fo_desk():
             bt_df = None
 
         catalog = [
+            {
+                "name": "9:15–9:30 · 15-min trading strategy",
+                "blurb": "Open-break ATM CE/PE · enter ≤40s · exit 9:30 IST",
+            },
             {
                 "name": "ORB (Opening Range Breakout)",
                 "style": "Intraday",
@@ -9296,7 +9663,7 @@ def _symbols_for_scan_mode(mode: str, sector: str = "") -> list:
             if "bank" in sector.lower():
                 out = list(_FALLBACK_BANKNIFTY)
     elif mode in ("master", "full", "full_market", "all"):
-        out = [display_symbol(s) for s in list(NSE_STOCKS[:MAX_SCAN_STOCKS]) if s]
+        out = [display_symbol(s) for s in list(NSE_STOCKS[: min(800, MAX_SCAN_STOCKS)]) if s]
     else:
         out = list(lists.get("nifty50") or _FALLBACK_NIFTY50)
 
@@ -9311,154 +9678,119 @@ def _symbols_for_scan_mode(mode: str, sector: str = "") -> list:
 
 
 def run_scanner(full_market: bool = False, mode: str = None, sector: str = None):
-    """Robust market scanner.
-
-    Master/full scans use the NSE daily bhav-copy panel as the primary source,
-    so a Yahoo Finance rate-limit cannot turn the whole scan into zero rows.
-    Yahoo is used only as a controlled fallback for symbols that are missing.
+    """
+    Scan modes (Cloud-friendly):
+      nifty50 | nifty200 | banknifty | sector | master
+    Light modes can be run many times. Master is heavy — use rarely.
     """
     mode = mode or st.session_state.get("scan_mode") or ("master" if full_market else "nifty50")
     sector = sector if sector is not None else st.session_state.get("scan_sector") or ""
     mode = str(mode).strip().lower()
-    is_master = mode in ("master", "full", "full_market", "all")
+    is_light = mode not in ("master", "full", "full_market", "all")
 
-    # Reuse a recent COMPLETE saved master result, but never replace a scan with
-    # an empty/partial file.
+    # Light scans: do NOT auto-reuse unrelated disk cache (user asked for this universe)
+    # Master: may reuse very fresh disk to cut load
     try:
-        if is_master and RESULT_FILE.exists():
+        if mode in ("master", "full", "full_market") and RESULT_FILE.exists():
             age_h = (time.time() - RESULT_FILE.stat().st_mtime) / 3600.0
-            df_disk = pd.read_csv(RESULT_FILE)
-            if age_h <= 1.0 and df_disk is not None and len(df_disk) >= 50:
-                st.info(f"Using saved master scan from {age_h:.1f}h ago. Press scan again after the cache window for a fresh scan.")
-                return ensure_result_columns(df_disk)
+            if age_h <= 1.0:  # only 1h for master reuse
+                df_disk = pd.read_csv(RESULT_FILE)
+                if df_disk is not None and not df_disk.empty and len(df_disk) >= 50:
+                    st.caption(f"Master scan file is fresh ({age_h:.1f}h) — reusing saved results.")
+                    try:
+                        return ensure_result_columns(df_disk)
+                    except Exception:
+                        return df_disk
     except Exception:
         pass
 
     symbols = _symbols_for_scan_mode(mode, sector)
     if not symbols:
-        symbols = _priority_scan_universe(100)
-    if not symbols:
-        return pd.DataFrame()
+        symbols = _priority_scan_universe(50)
 
-    total = len(symbols)
     st.caption(
-        f"Scan mode: **{mode.upper()}** · **{total:,}** symbols"
-        + (" · NSE bhav primary + controlled Yahoo fallback" if is_master else " · NSE/Yahoo fallback")
+        f"Scan mode: **{mode.upper()}**"
+        + (f" · sector **{sector}**" if mode == "sector" and sector else "")
+        + f" · **{len(symbols)}** stocks"
+        + (" · light (Cloud-safe)" if is_light else " · MASTER (heavy)")
     )
 
-    progress = st.progress(0)
-    status = st.empty()
-    results = []
-    analysed = set()
-
-    # ------------------------------------------------------------
-    # PRIMARY SOURCE: NSE daily bhav-copy history.
-    # 90 trading sessions is enough for the technical model while keeping
-    # Cloud execution practical. The panel covers thousands of symbols in
-    # one set of archive downloads rather than thousands of Yahoo calls.
-    # ------------------------------------------------------------
-    bhav = {}
-    mcp_history = {}
-    if is_master:
-        status.caption("📡 Connecting to official NSE market-data service…")
-        # NSE MCP is designed for programmatic market-data access and avoids
-        # the Cloud IP blocks that affect direct NSE/Yahoo scraping.
-        # Do not gate the real call on tool discovery. A transient
-        # list_tools failure used to force the app onto NSE web archives,
-        # which are exactly what Streamlit Cloud can be blocked from.
-        def _mcp_progress(done, total_n, usable_n):
-            progress.progress(min(done / max(total_n, 1), 1.0))
-            status.caption(
-                f"📡 NSE DATA: {done:,}/{total_n:,} histories · {usable_n:,} usable"
-            )
-        try:
-            mcp_history = nse_mcp_history_batch(
-                symbols, period="3mo", concurrency=NSE_MCP_CONCURRENCY,
-                progress_callback=_mcp_progress,
-            ) or {}
-        except Exception:
-            mcp_history = {}
-        # Legacy archive fallback only if MCP produced nothing.
-        if not mcp_history:
-            try:
-                status.caption("📥 Falling back to NSE official daily archives…")
-                bhav = nse_bhav_panel(90) or {}
-            except Exception:
-                bhav = {}
-        status.caption(
-            f"NSE data loaded for {max(len(mcp_history), len(bhav)):,} symbols. Analysing market…"
-        )
-
-    # For light modes, use a single bulk Yahoo request first; if that fails,
-    # the per-symbol history fallback below is deliberately capped.
+    # Light modes: skip bulk full-market download (huge load) — sequential only
     all_data = None
-    if not is_master and len(symbols) > 1:
+    if not is_light and len(symbols) > 200:
         try:
             all_data = download_market_data()
         except Exception:
             all_data = None
 
-    # ------------------------------------------------------------
-    # PASS 1 — analyse primary data
-    # ------------------------------------------------------------
-    for i, symbol in enumerate(symbols):
-        try:
-            df = pd.DataFrame()
-            if is_master and mcp_history:
-                df = mcp_history.get(display_symbol(symbol), pd.DataFrame())
-            elif is_master and bhav:
-                df = history_from_bhav(symbol, bhav)
-            elif all_data is not None:
-                df = extract_stock_data(all_data, symbol)
+    results = []
+    analysed = set()
 
-            # The model needs a meaningful daily history.  Do not call Yahoo
-            # for every symbol here; that was the rate-limit failure mode.
-            if df is not None and not df.empty and len(df) >= 60:
-                result = analyse_stock(symbol, df, fetch_news=False)
-                if result:
-                    results.append(result)
-                    analysed.add(clean_symbol(symbol))
-        except Exception:
-            pass
+    progress = st.progress(0)
+    status = st.empty()
+    total = len(symbols)
 
-        if i == total - 1 or i % 25 == 0:
-            progress.progress(min((i + 1) / max(total, 1), 1.0))
-            status.caption(
-                f"🔎 SCANNING: {i + 1:,}/{total:,} ({((i + 1) / max(total, 1))*100:.1f}%) · {len(results):,} usable"
-            )
-
-        # Persist partial results periodically so a Cloud restart does not
-        # destroy a successful part of the scan.
-        if results and (i + 1) % 100 == 0:
+    # PASS 1: bulk frame
+    if all_data is not None and not getattr(all_data, "empty", True):
+        for i, symbol in enumerate(symbols):
             try:
-                partial = pd.DataFrame(results)
-                partial.drop(columns=["Data", "News"], errors="ignore").to_csv(
-                    APP_DIR / "latest_results_partial.csv", index=False
-                )
+                df = extract_stock_data(all_data, symbol)
+                if df is not None and not df.empty and len(df) >= 40:
+                    result = analyse_stock(symbol, df, fetch_news=False)
+                    if result:
+                        results.append(result)
+                        analysed.add(clean_symbol(symbol))
             except Exception:
                 pass
+            if i == total - 1 or i % 25 == 0:
+                progress.progress(min((i + 1) / max(total, 1), 1.0))
+                status.caption(
+                    f"⏳ FULL MARKET SCAN: {((i + 1) / max(total, 1)) * 100:.1f}% | "
+                    f"{i + 1:,}/{total:,} | {len(results):,} usable"
+                )
 
-    # ------------------------------------------------------------
-    # PASS 2 — controlled fallback only for missing symbols.
-    # This is intentionally small: Yahoo must never be allowed to receive
-    # thousands of individual requests after a rate-limit event.
-    # ------------------------------------------------------------
+    # PASS 2: sequential fallback (always if few results)
     missing = [s for s in symbols if clean_symbol(s) not in analysed]
-    if missing:
-        fallback_limit = 120 if is_master else min(200, len(missing))
-        retry_list = missing[:fallback_limit]
-        status.caption(f"🔄 Controlled fallback: {len(retry_list):,} missing symbols…")
+    if len(results) < 40:
+        # Prefer priority liquid names first
+        priority = _priority_scan_universe(200)
+        retry_list = list(dict.fromkeys(priority + missing))[:250]
+    else:
+        retry_list = missing[:120]
 
+    if retry_list:
+        status.caption(f"🔄 Loading NSE bhav history + Yahoo/NSE (up to {len(retry_list):,} symbols)…")
+        bhav = {}
+        try:
+            # One bulk archive pull for all light-scan symbols (Cloud-oriented)
+            if len(retry_list) <= 250:
+                status.caption("📥 NSE official bhav-copy archives (free, Cloud-friendly)…")
+                bhav = nse_bhav_panel(150) or {}
+                status.caption(f"Bhav panel: {len(bhav)} symbols with history")
+        except Exception:
+            bhav = {}
         for j, symbol in enumerate(retry_list):
+            if clean_symbol(symbol) in analysed:
+                continue
             try:
-                df = nse_mcp_history(symbol, period="3mo")
-                if df is None or df.empty or len(df) < 60:
+                df = history_from_bhav(symbol, bhav) if bhav else pd.DataFrame()
+                if df is None or getattr(df, "empty", True) or len(df) < 60:
                     df = stock_history(symbol, interval="1d", period="2y")
-                if df is None or df.empty or len(df) < 60:
+                if df is None or getattr(df, "empty", True) or len(df) < 60:
+                    df = stock_history(symbol, interval="1d", period="5y")
+                if df is None or getattr(df, "empty", True) or len(df) < 60:
+                    try:
+                        t = __import__("yfinance").Ticker(clean_symbol(symbol))
+                        df = t.history(period="2y", auto_adjust=True)
+                        if df is not None and not df.empty:
+                            df = normalize_columns(df)
+                    except Exception:
+                        pass
+                if df is None or getattr(df, "empty", True) or len(df) < 60:
                     try:
                         df = yahoo_chart_history(symbol, "2y")
                     except Exception:
-                        df = pd.DataFrame()
+                        pass
                 if df is not None and not df.empty and len(df) >= 60:
                     result = analyse_stock(symbol, df, fetch_news=False)
                     if result:
@@ -9466,71 +9798,83 @@ def run_scanner(full_market: bool = False, mode: str = None, sector: str = None)
                         analysed.add(clean_symbol(symbol))
             except Exception:
                 pass
-
-            if j == len(retry_list) - 1 or j % 10 == 0:
+            if j % 10 == 0 or j == len(retry_list) - 1:
+                progress.progress(min((j + 1) / max(len(retry_list), 1), 1.0))
                 status.caption(
-                    f"🔄 FALLBACK: {j + 1:,}/{len(retry_list):,} · {len(results):,} usable"
+                    f"🔄 FALLBACK: {j + 1:,}/{len(retry_list):,} | {len(results):,} usable analyses"
                 )
-
-            if j > 0 and j % 20 == 0:
-                time.sleep(1.0)
+            # Soft rate-limit
+            if j > 0 and j % 40 == 0:
+                time.sleep(0.5)
 
     progress.empty()
     status.empty()
 
+    # EMERGENCY: if still empty, force-analyse core liquid names with every fetch path
     if not results:
-        # Never erase a previously successful result just because the current
-        # provider is temporarily unavailable.
-        try:
-            if RESULT_FILE.exists():
-                old = pd.read_csv(RESULT_FILE)
-                if old is not None and not old.empty:
-                    st.warning(
-                        "Fresh data sources returned no usable rows. Showing the last successful scan instead of a blank dashboard."
-                    )
-                    return ensure_result_columns(old)
-        except Exception:
-            pass
+        status = st.empty()
+        status.caption("Emergency core scan (liquid names only)…")
+        core = [
+            "RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY", "SBIN", "ITC",
+            "AXISBANK", "KOTAKBANK", "LT", "BHARTIARTL", "WIPRO", "HCLTECH",
+            "MARUTI", "TATAMOTORS", "SUNPHARMA", "NTPC", "POWERGRID", "ONGC",
+            "TATASTEEL", "BAJFINANCE", "ADANIENT", "COALINDIA", "M&M", "TITAN",
+        ]
+        for j, sym in enumerate(core):
+            try:
+                df = None
+                for per in ("2y", "1y", "6mo", "5y"):
+                    try:
+                        df = best_stock_history(sym, interval="1d", period=per)
+                        if df is not None and not df.empty and len(df) >= 60:
+                            break
+                    except Exception:
+                        df = None
+                if df is None or df.empty or len(df) < 60:
+                    try:
+                        import yfinance as _yf
+                        df = _yf.Ticker(clean_symbol(sym)).history(period="2y", auto_adjust=True)
+                        if df is not None and not df.empty:
+                            df = normalize_columns(df)
+                    except Exception:
+                        df = None
+                if df is not None and not df.empty and len(df) >= 60:
+                    result = analyse_stock(sym, df, fetch_news=False)
+                    if result:
+                        results.append(result)
+            except Exception:
+                pass
+            if j % 5 == 0:
+                status.caption(f"Emergency core: {j+1}/{len(core)} · {len(results)} ok")
+        status.empty()
+
+    if not results:
         return pd.DataFrame()
 
     output = pd.DataFrame(results)
+
+    # Defensive cleanup so old/malformed values cannot break sorting.
     for col in ["Prediction", "Risk %"]:
         if col not in output.columns:
             output[col] = 0.0
-        output[col] = pd.to_numeric(output[col], errors="coerce").fillna(0.0)
+        output[col] = pd.to_numeric(
+            output[col],
+            errors="coerce"
+        ).fillna(0.0)
 
     output = output.sort_values(
         ["Prediction", "Risk %"],
         ascending=[False, True],
-        kind="stable",
+        kind="stable"
     ).reset_index(drop=True)
-    output["Rank"] = np.arange(1, len(output) + 1)
 
-    # Scan coverage fields make partial-source conditions visible.
-    output["Scan Universe"] = total
-    output["Stocks With Usable Analysis"] = len(output)
-    output["Scan Coverage %"] = round(len(output) / max(total, 1) * 100, 1)
-    output["Scan Data Source"] = "NSE bhav + controlled Yahoo fallback" if is_master else "NSE/Yahoo"
-
-    # Save immediately from inside scanner too. The caller will also save
-    # prediction history, but this protects the result if a later UI step fails.
-    try:
-        output.drop(columns=["Data", "News"], errors="ignore").to_csv(RESULT_FILE, index=False)
-        (APP_DIR / "latest_results_meta.json").write_text(
-            json.dumps({
-                "at": datetime.now().isoformat(timespec="seconds"),
-                "universe": total,
-                "usable": len(output),
-                "coverage_pct": round(len(output) / max(total, 1) * 100, 1),
-                "mode": mode,
-                "source": output["Scan Data Source"].iloc[0] if not output.empty else "",
-            }, indent=2),
-            encoding="utf-8",
-        )
-    except Exception:
-        pass
+    output["Rank"] = np.arange(
+        1,
+        len(output) + 1
+    )
 
     return output
+
 
 
 def run_historical_prediction(symbol, selected_date):
@@ -9958,51 +10302,12 @@ def show_market_index_charts():
     show_spinner=False
 )
 def live_quote(symbol):
-    """Public live quote API — official NSE MCP first, then NSE/Yahoo fallback."""
-    key = clean_symbol(symbol)
-    try:
-        live_df = nse_mcp_live_equities()
-        if live_df is not None and not live_df.empty:
-            bare = display_symbol(symbol)
-            hit = live_df[live_df["Symbol"].astype(str).str.upper() == bare.upper()]
-            if not hit.empty:
-                r = hit.iloc[-1]
-                px = safe_float(r.get("Current Price"))
-                if px and px > 0:
-                    q = {
-                        "price": px,
-                        "pct": safe_float(r.get("Change %")) or 0.0,
-                        "change": safe_float(r.get("Change")) or 0.0,
-                        "source": "NSE MCP",
-                        "open": safe_float(r.get("Open")),
-                        "high": safe_float(r.get("High")),
-                        "low": safe_float(r.get("Low")),
-                        "volume": safe_float(r.get("Volume")),
-                    }
-                    if "_last_good_quotes" not in st.session_state:
-                        st.session_state["_last_good_quotes"] = {}
-                    st.session_state["_last_good_quotes"][key] = dict(q)
-                    return q
-    except Exception:
-        pass
+    """Public live quote API — dual NSE+Yahoo, best available. Silent."""
     try:
         q = best_live_quote(symbol)
-        if q and q.get("price"):
-            if "_last_good_quotes" not in st.session_state:
-                st.session_state["_last_good_quotes"] = {}
-            st.session_state["_last_good_quotes"][key] = dict(q)
-            return q
+        return q if q and q.get("price") else None
     except Exception:
-        pass
-    try:
-        q = st.session_state.get("_last_good_quotes", {}).get(key)
-        if q and q.get("price"):
-            out = dict(q)
-            out["source"] = str(out.get("source", "cached")) + " / last good"
-            return out
-    except Exception:
-        pass
-    return None
+        return None
 
 
 
@@ -10447,236 +10752,6 @@ def nse_index_constituents_live(index_name: str = "NIFTY 50") -> pd.DataFrame:
 
 
 
-
-# ============================================================
-# OFFICIAL NSE MCP DATA PROVIDER
-# ============================================================
-
-@st.cache_data(ttl=300, show_spinner=False)
-def nse_mcp_tool_names(server_url: str):
-    """Discover official NSE MCP tools. No API key is required."""
-    async def _run():
-        try:
-            from mcp import ClientSession
-            from mcp.client.streamable_http import streamable_http_client
-            async with streamable_http_client(server_url) as (read, write, _):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    tools = await session.list_tools()
-                    return [t.name for t in tools.tools]
-        except Exception:
-            return []
-    try:
-        return asyncio.run(_run())
-    except Exception:
-        return []
-
-
-def _mcp_json_content(result):
-    """Turn MCP tool result content into Python JSON/list/dict when possible."""
-    try:
-        contents = getattr(result, "content", None) or []
-        pieces = []
-        for item in contents:
-            text = getattr(item, "text", None)
-            if text:
-                pieces.append(text)
-        if pieces:
-            text = "\n".join(pieces).strip()
-            try:
-                return json.loads(text)
-            except Exception:
-                return text
-        # Some MCP clients expose structuredContent / model_dump.
-        structured = getattr(result, "structuredContent", None)
-        if structured is not None:
-            return structured
-    except Exception:
-        pass
-    return None
-
-
-def nse_mcp_call(server_url: str, tool_name: str, arguments: dict = None):
-    """Call one official NSE MCP tool. Silent on provider errors."""
-    arguments = arguments or {}
-
-    async def _run():
-        try:
-            from mcp import ClientSession
-            from mcp.client.streamable_http import streamable_http_client
-            async with streamable_http_client(server_url) as (read, write, _):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    result = await session.call_tool(tool_name, arguments)
-                    return _mcp_json_content(result)
-        except Exception:
-            return None
-
-    try:
-        return asyncio.run(_run())
-    except Exception:
-        return None
-
-
-def _records_to_ohlcv(payload):
-    """Normalize common NSE MCP get_stock_history response shapes."""
-    if payload is None:
-        return pd.DataFrame()
-    if isinstance(payload, str):
-        try:
-            payload = json.loads(payload)
-        except Exception:
-            return pd.DataFrame()
-
-    rows = None
-    if isinstance(payload, list):
-        rows = payload
-    elif isinstance(payload, dict):
-        for key in ("data", "history", "records", "prices", "rows", "result"):
-            val = payload.get(key)
-            if isinstance(val, list):
-                rows = val
-                break
-        if rows is None and isinstance(payload.get("data"), dict):
-            d = payload.get("data")
-            for key in ("data", "history", "records", "prices", "rows"):
-                if isinstance(d.get(key), list):
-                    rows = d.get(key)
-                    break
-    if not rows:
-        return pd.DataFrame()
-
-    out = []
-    for r in rows:
-        if not isinstance(r, dict):
-            continue
-        def pick(*names):
-            for n in names:
-                if n in r and r.get(n) not in (None, ""):
-                    return r.get(n)
-            low = {str(k).lower().replace(" ", "_"): v for k, v in r.items()}
-            for n in names:
-                v = low.get(str(n).lower().replace(" ", "_"))
-                if v not in (None, ""):
-                    return v
-            return None
-        dt = pick("date", "Date", "tradeDate", "tradingDate", "CH_TIMESTAMP")
-        c = pick("close", "Close", "lastPrice", "ltp", "CH_CLOSING_PRICE")
-        if dt is None or c is None:
-            continue
-        out.append({
-            "Date": pd.to_datetime(dt, errors="coerce"),
-            "Open": safe_float(pick("open", "Open", "CH_OPENING_PRICE")),
-            "High": safe_float(pick("high", "High", "CH_TRADE_HIGH_PRICE")),
-            "Low": safe_float(pick("low", "Low", "CH_TRADE_LOW_PRICE")),
-            "Close": safe_float(c),
-            "Volume": safe_float(pick("volume", "Volume", "tradedVolume", "CH_TOT_TRADED_QTY")) or 0,
-        })
-    if not out:
-        return pd.DataFrame()
-    df = pd.DataFrame(out).dropna(subset=["Date", "Close"])
-    if df.empty:
-        return df
-    for c in ("Open", "High", "Low"):
-        df[c] = df[c].fillna(df["Close"])
-    return df.set_index("Date").sort_index().drop_duplicates()
-
-
-@st.cache_data(ttl=1800, show_spinner=False)
-def nse_mcp_history(symbol: str, period: str = "3mo") -> pd.DataFrame:
-    """Official NSE daily history; used before Yahoo/NSE web scraping."""
-    payload = nse_mcp_call(
-        NSE_MCP_BHAV_URL,
-        "get_stock_history",
-        {"symbol": display_symbol(symbol), "period": period},
-    )
-    return _records_to_ohlcv(payload)
-
-
-def nse_mcp_history_batch(symbols, period="3mo", concurrency=None, progress_callback=None):
-    """Fetch NSE daily history concurrently through the official MCP server."""
-    syms = [display_symbol(s) for s in symbols if display_symbol(s)]
-    if not syms:
-        return {}
-    concurrency = int(concurrency or NSE_MCP_CONCURRENCY)
-
-    async def _run_batch():
-        from mcp import ClientSession
-        from mcp.client.streamable_http import streamable_http_client
-        sem = asyncio.Semaphore(concurrency)
-        out = {}
-        done = 0
-        async with streamable_http_client(NSE_MCP_BHAV_URL) as (read, write, _):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                async def one(sym):
-                    nonlocal done
-                    async with sem:
-                        try:
-                            result = await session.call_tool(
-                                "get_stock_history",
-                                {"symbol": sym, "period": period},
-                            )
-                            df = _records_to_ohlcv(_mcp_json_content(result))
-                            if not df.empty:
-                                out[sym] = df
-                        except Exception:
-                            pass
-                        done += 1
-                        if progress_callback:
-                            try:
-                                progress_callback(done, len(syms), len(out))
-                            except Exception:
-                                pass
-                await asyncio.gather(*(one(s) for s in syms))
-        return out
-
-    try:
-        return asyncio.run(_run_batch())
-    except Exception:
-        return {}
-
-
-@st.cache_data(ttl=120, show_spinner=False)
-def nse_mcp_live_equities():
-    """One official NSE call for the live equity universe."""
-    payload = nse_mcp_call(NSE_MCP_LIVE_URL, "cm_get_equity_stocks", {})
-    if payload is None:
-        return pd.DataFrame()
-    if isinstance(payload, str):
-        try:
-            payload = json.loads(payload)
-        except Exception:
-            return pd.DataFrame()
-    rows = payload if isinstance(payload, list) else None
-    if rows is None and isinstance(payload, dict):
-        for key in ("data", "stocks", "equities", "results", "rows"):
-            if isinstance(payload.get(key), list):
-                rows = payload[key]
-                break
-    if not rows:
-        return pd.DataFrame()
-    out = []
-    for r in rows:
-        if not isinstance(r, dict):
-            continue
-        sym = r.get("symbol") or r.get("stock") or r.get("symbolName")
-        if not sym:
-            continue
-        out.append({
-            "Symbol": display_symbol(sym),
-            "Current Price": safe_float(r.get("lastPrice") or r.get("ltp") or r.get("last")),
-            "Change": safe_float(r.get("change") or r.get("variation")),
-            "Change %": safe_float(r.get("pChange") or r.get("percentChange")),
-            "Open": safe_float(r.get("open")),
-            "High": safe_float(r.get("high") or r.get("dayHigh")),
-            "Low": safe_float(r.get("low") or r.get("dayLow")),
-            "Previous Close": safe_float(r.get("previousClose") or r.get("prevClose")),
-            "Volume": safe_float(r.get("totalTradedVolume") or r.get("volume")),
-        })
-    return pd.DataFrame(out)
-
-
 @st.cache_data(ttl=3600, show_spinner=False)
 def nse_bhav_panel(max_days: int = 160) -> dict:
     """
@@ -10901,29 +10976,7 @@ def best_live_quote(symbol: str) -> dict:
         elif up in ("^BSESN", "SENSEX"):
             nse_q = nse_index_quote("SENSEX") or {}
         elif not raw.startswith("^"):
-            # One cached market-wide NSE MCP snapshot instead of a separate
-            # NSE/Yahoo request for every stock.
-            try:
-                live_df = nse_mcp_live_equities()
-                if live_df is not None and not live_df.empty and "Symbol" in live_df.columns:
-                    hit = live_df[live_df["Symbol"].astype(str).str.upper() == display_symbol(raw).upper()]
-                    if not hit.empty:
-                        rr = hit.iloc[0]
-                        if safe_float(rr.get("Current Price")):
-                            nse_q = {
-                                "price": safe_float(rr.get("Current Price")),
-                                "pct": safe_float(rr.get("Change %")) or 0.0,
-                                "change": safe_float(rr.get("Change")) or 0.0,
-                                "source": "NSE MCP",
-                                "open": safe_float(rr.get("Open")),
-                                "high": safe_float(rr.get("High")),
-                                "low": safe_float(rr.get("Low")),
-                                "volume": safe_float(rr.get("Volume")),
-                            }
-            except Exception:
-                pass
-            if not nse_q:
-                nq = nse_quote_equity(raw) or {}
+            nq = nse_quote_equity(raw) or {}
             ltp = nq.get("ltp")
             if ltp and float(ltp) > 0:
                 prev = nq.get("prev_close") or 0
@@ -10972,66 +11025,86 @@ def best_live_quote(symbol: str) -> dict:
 
 def best_stock_history(symbol, interval="1d", period=None, **kwargs):
     """
-    Reliable history provider. For daily/weekly/monthly NSE equities,
-    use the official NSE MCP first. Direct NSE archive scraping is NOT used
-    on the critical path because Streamlit Cloud IPs can be WAF/rate limited.
-    Yahoo remains a fallback.
+    Dual history: NSE + Yahoo (+ Ticker.history), return longer/cleaner series.
+    Silent on failures.
     """
     interval = str(interval or "1d").lower()
-    sym = clean_symbol(symbol)
+    nse_df = pd.DataFrame()
+    y_df = pd.DataFrame()
 
-    # ------------------------------------------------------------
-    # 1) OFFICIAL NSE MCP — primary daily source
-    # ------------------------------------------------------------
-    if interval in {"1d", "1wk", "1mo"} and not sym.startswith("^"):
+    if interval in {"1d", "1wk", "1mo"} and not str(symbol).startswith("^"):
         try:
-            mcp_df = nse_mcp_history(sym, period="3mo")
-            if mcp_df is not None and not mcp_df.empty and len(mcp_df) >= 30:
-                return mcp_df
+            # 1) NSE bhav-copy panel (Cloud-friendly official archives)
+            nse_df = history_from_bhav(symbol)
+            if nse_df is None or nse_df.empty or len(nse_df) < 60:
+                days = 800
+                if period:
+                    try:
+                        if str(period).endswith("y"):
+                            days = int(float(str(period)[:-1]) * 365)
+                        elif str(period).endswith("mo"):
+                            days = int(float(str(period)[:-2]) * 30)
+                    except Exception:
+                        pass
+                nse_df = nse_equity_history(symbol, days=max(days, 400))
+            if nse_df is None:
+                nse_df = pd.DataFrame()
         except Exception:
-            pass
+            nse_df = pd.DataFrame()
 
-    # ------------------------------------------------------------
-    # 2) Yahoo — controlled fallback
-    # ------------------------------------------------------------
     period_map = {
         "1m": "5d", "5m": "60d", "15m": "60d", "30m": "60d",
-        "1h": "730d", "60m": "730d", "1d": "2y",
-        "1wk": "5y", "1mo": "10y",
+        "1h": "730d", "60m": "730d", "1d": "2y", "1wk": "5y", "1mo": "10y",
     }
     per = period or period_map.get(interval, "2y")
 
     try:
         d = yf.download(
-            sym, period=per, interval=interval,
+            clean_symbol(symbol), period=per, interval=interval,
             progress=False, auto_adjust=True, threads=False,
         )
         d = normalize_columns(d)
         if d is not None and not d.empty and "Close" in d.columns:
             y_df = d.dropna(subset=[c for c in ["Open", "High", "Low", "Close"] if c in d.columns])
-            if not y_df.empty:
-                return y_df
     except Exception:
-        pass
+        y_df = pd.DataFrame()
 
-    # Yahoo chart endpoint fallback
-    if interval == "1d":
+    if y_df is None or y_df.empty or len(y_df) < 60:
         try:
-            for rng in ("2y", "1y", "6mo", "3mo"):
-                ch = yahoo_chart_history(sym, rng)
-                if ch is not None and not ch.empty and len(ch) >= 30:
-                    return ch
+            h = yf.Ticker(clean_symbol(symbol)).history(period=per if interval == "1d" else "2y", interval=interval, auto_adjust=True)
+            if h is not None and not h.empty:
+                h = normalize_columns(h)
+                if "Close" in h.columns:
+                    y_df = h.dropna(subset=[c for c in ["Open", "High", "Low", "Close"] if c in h.columns])
         except Exception:
             pass
 
-    # Legacy local/NSE cache is last, not the network path.
-    try:
-        cached = history_from_bhav(sym)
-        if cached is not None and not cached.empty:
-            return cached
-    except Exception:
-        pass
+    if (y_df is None or y_df.empty or len(y_df) < 60) and interval in {"1d", "1wk", "1mo"}:
+        try:
+            for rng in ("2y", "1y", "6mo", "5y"):
+                ch = yahoo_chart_history(symbol, rng)
+                if ch is not None and not ch.empty and len(ch) >= 60:
+                    y_df = ch
+                    break
+        except Exception:
+            pass
 
+    nse_ok = nse_df is not None and not nse_df.empty and len(nse_df) >= 60
+    y_ok = y_df is not None and not y_df.empty and len(y_df) >= 60
+
+    if nse_ok and y_ok:
+        if interval in {"1d", "1wk", "1mo"}:
+            return nse_df if len(nse_df) >= len(y_df) * 0.65 else y_df
+        return y_df
+    if y_ok:
+        return y_df
+    if nse_ok:
+        return nse_df
+    # accept shorter series if that is all we have (analyse needs 60)
+    if y_df is not None and not y_df.empty and len(y_df) >= 30:
+        return y_df
+    if nse_df is not None and not nse_df.empty and len(nse_df) >= 30:
+        return nse_df
     return pd.DataFrame()
 
 
@@ -12621,6 +12694,317 @@ def trade_quality_check(
         f"reward ₹{out['reward_rs']:,.0f} · {shares} shares (1% capital risk)"
     )
     return out
+
+
+
+# ============================================================
+# ANGEL ONE SMARTAPI — real broker connection
+# ============================================================
+# Credentials (prefer Streamlit secrets, else session form):
+#   ANGEL_API_KEY, ANGEL_CLIENT_CODE, ANGEL_PASSWORD, ANGEL_TOTP_SECRET
+# Never commit password/TOTP to GitHub.
+
+ANGEL_SESSION_FILE = APP_DIR / "angel_session_meta.json"
+
+
+def _angel_secrets() -> dict:
+    out = {
+        "api_key": "",
+        "client_code": "",
+        "password": "",
+        "totp_secret": "",
+    }
+    try:
+        sec = st.secrets
+        out["api_key"] = str(sec.get("ANGEL_API_KEY", "") or sec.get("angel_api_key", "") or "")
+        out["client_code"] = str(sec.get("ANGEL_CLIENT_CODE", "") or sec.get("angel_client_code", "") or "")
+        out["password"] = str(sec.get("ANGEL_PASSWORD", "") or sec.get("angel_password", "") or "")
+        out["totp_secret"] = str(sec.get("ANGEL_TOTP_SECRET", "") or sec.get("angel_totp_secret", "") or "")
+    except Exception:
+        pass
+    # session overrides (user typed in UI)
+    for k in list(out.keys()):
+        sk = f"angel_{k}"
+        if st.session_state.get(sk):
+            out[k] = str(st.session_state.get(sk))
+    return out
+
+
+def angel_login(force: bool = False):
+    """
+    Login to Angel One SmartAPI. Returns (smart_connect_obj, auth_dict) or (None, error_str).
+    """
+    if not force and st.session_state.get("_angel_api") is not None:
+        return st.session_state["_angel_api"], st.session_state.get("_angel_auth") or {}
+
+    creds = _angel_secrets()
+    if not creds.get("api_key") or not creds.get("client_code") or not creds.get("password"):
+        return None, "Missing API key / client code / password. Add in Broker page or st.secrets."
+
+    try:
+        from SmartApi import SmartConnect
+    except Exception:
+        try:
+            from smartapi import SmartConnect
+        except Exception:
+            return None, "Install package: pip install smartapi-python pyotp"
+
+    totp_code = ""
+    try:
+        if creds.get("totp_secret"):
+            import pyotp
+            totp_code = pyotp.TOTP(creds["totp_secret"]).now()
+        elif st.session_state.get("angel_totp_manual"):
+            totp_code = str(st.session_state.get("angel_totp_manual")).strip()
+    except Exception as e:
+        return None, f"TOTP error: {e}"
+
+    if not totp_code:
+        return None, "Provide TOTP secret (in secrets) or 6-digit TOTP from Angel app."
+
+    try:
+        obj = SmartConnect(api_key=creds["api_key"])
+        data = obj.generateSession(creds["client_code"], creds["password"], totp_code)
+        if not data or data.get("status") is False:
+            msg = (data or {}).get("message") or (data or {}).get("errorcode") or str(data)
+            return None, f"Login failed: {msg}"
+        st.session_state["_angel_api"] = obj
+        st.session_state["_angel_auth"] = data
+        st.session_state["_angel_jwt"] = (data.get("data") or {}).get("jwtToken")
+        try:
+            ANGEL_SESSION_FILE.write_text(
+                json.dumps({"ok": True, "client": creds["client_code"], "ts": str(india_now())}),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+        return obj, data
+    except Exception as e:
+        return None, f"Angel login exception: {e}"
+
+
+def angel_search_scrip(exchange: str, search: str) -> list:
+    """Search tradable symbols. exchange: NSE|NFO|BSE"""
+    api, err = angel_login()
+    if api is None:
+        return []
+    try:
+        # SmartAPI searchScrip
+        res = api.searchScrip(exchange, search)
+        data = (res or {}).get("data") or res or []
+        if isinstance(data, list):
+            return data
+        return []
+    except Exception:
+        try:
+            res = api.ltpData(exchange, search, "")
+        except Exception:
+            return []
+    return []
+
+
+def angel_place_order(
+    tradingsymbol: str,
+    symboltoken: str,
+    transactiontype: str = "BUY",
+    exchange: str = "NSE",
+    ordertype: str = "MARKET",
+    producttype: str = "INTRADAY",
+    quantity: int = 1,
+    price: float = 0,
+    variety: str = "NORMAL",
+) -> dict:
+    """
+    Place a real order on Angel One.
+    transactiontype: BUY | SELL
+    producttype: INTRADAY | DELIVERY | CARRYFORWARD
+    """
+    api, err = angel_login()
+    if api is None:
+        return {"ok": False, "error": err or "Not logged in"}
+
+    params = {
+        "variety": variety,
+        "tradingsymbol": str(tradingsymbol).upper(),
+        "symboltoken": str(symboltoken),
+        "transactiontype": str(transactiontype).upper(),
+        "exchange": str(exchange).upper(),
+        "ordertype": str(ordertype).upper(),
+        "producttype": str(producttype).upper(),
+        "duration": "DAY",
+        "quantity": str(int(quantity)),
+    }
+    if str(ordertype).upper() == "LIMIT" and price:
+        params["price"] = str(round(float(price), 2))
+    else:
+        params["price"] = "0"
+    params["squareoff"] = "0"
+    params["stoploss"] = "0"
+
+    try:
+        res = api.placeOrder(params)
+        # SmartAPI may return order id string or dict
+        if isinstance(res, dict):
+            ok = res.get("status") is not False and (res.get("data") or res.get("message"))
+            return {"ok": bool(ok), "raw": res, "orderid": res.get("data") or res.get("orderid")}
+        return {"ok": True, "raw": res, "orderid": res}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def show_broker_angel_page():
+    """Connect Angel One + test + optional real order."""
+    st.title("🏦 Broker · Angel One SmartAPI")
+    st.caption(
+        "Real orders require your Angel API key, client code, PIN/password, and TOTP. "
+        "Prefer **Streamlit secrets** (not plain GitHub). Localhost is not needed for SmartAPI login."
+    )
+
+    st.markdown(
+        """
+**Setup (once)**  
+1. Angel One → Apps / API → create app → copy **API Key**  
+2. Enable **TOTP** in Angel app → copy **TOTP secret**  
+3. On Streamlit Cloud: **Settings → Secrets**:
+```toml
+ANGEL_API_KEY = "your_api_key"
+ANGEL_CLIENT_CODE = "your_client_code"
+ANGEL_PASSWORD = "your_pin_or_password"
+ANGEL_TOTP_SECRET = "your_totp_base32_secret"
+```
+4. `requirements.txt` must include: `smartapi-python` and `pyotp`
+        """
+    )
+
+    st.markdown("### Credentials (optional if already in secrets)")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.session_state.angel_api_key = st.text_input("API Key", value=st.session_state.get("angel_api_key", ""), type="password")
+        st.session_state.angel_client_code = st.text_input("Client code", value=st.session_state.get("angel_client_code", ""))
+    with c2:
+        st.session_state.angel_password = st.text_input("Password / PIN", value=st.session_state.get("angel_password", ""), type="password")
+        st.session_state.angel_totp_secret = st.text_input("TOTP secret (base32)", value=st.session_state.get("angel_totp_secret", ""), type="password")
+        st.session_state.angel_totp_manual = st.text_input("Or paste 6-digit TOTP now", value="")
+
+    if st.button("🔌 Connect / Login", type="primary", key="angel_login_btn"):
+        st.session_state.pop("_angel_api", None)
+        api, info = angel_login(force=True)
+        if api is None:
+            st.error(str(info))
+        else:
+            st.success("Logged in to Angel One SmartAPI.")
+            st.json({k: info.get(k) for k in list(info.keys())[:8]} if isinstance(info, dict) else {"info": str(info)})
+
+    if st.session_state.get("_angel_api"):
+        st.success("Session active in memory (this server process).")
+    else:
+        st.warning("Not connected.")
+
+    st.divider()
+    st.markdown("### Real order (careful)")
+    st.session_state.angel_real_orders = st.checkbox(
+        "Enable REAL orders (unchecked = paper only app-wide for broker bridge)",
+        value=bool(st.session_state.get("angel_real_orders", False)),
+        key="angel_real_orders_cb",
+    )
+    st.session_state.angel_real_orders = bool(st.session_state.get("angel_real_orders_cb", False))
+
+    with st.form("angel_order_form"):
+        exchange = st.selectbox("Exchange", ["NSE", "NFO", "BSE"], index=0)
+        tsym = st.text_input("Trading symbol", placeholder="RELIANCE-EQ or NIFTY option symbol")
+        token = st.text_input("Symbol token (from Angel search / contract)", placeholder="e.g. 2885")
+        side = st.selectbox("Side", ["BUY", "SELL"])
+        qty = st.number_input("Quantity", min_value=1, value=1)
+        product = st.selectbox("Product", ["INTRADAY", "DELIVERY", "CARRYFORWARD"])
+        otype = st.selectbox("Order type", ["MARKET", "LIMIT"])
+        price = st.number_input("Limit price (if LIMIT)", min_value=0.0, value=0.0)
+        submitted = st.form_submit_button("Place REAL order")
+        if submitted:
+            if not st.session_state.get("angel_real_orders"):
+                st.error("Enable REAL orders checkbox first.")
+            elif not tsym or not token:
+                st.error("Trading symbol and token required.")
+            else:
+                res = angel_place_order(
+                    tradingsymbol=tsym,
+                    symboltoken=token,
+                    transactiontype=side,
+                    exchange=exchange,
+                    ordertype=otype,
+                    producttype=product,
+                    quantity=int(qty),
+                    price=float(price),
+                )
+                if res.get("ok"):
+                    st.success(f"Order sent. id={res.get('orderid')}")
+                    st.write(res.get("raw"))
+                else:
+                    st.error(res.get("error") or res)
+
+    st.markdown("### Search scrip (token helper)")
+    q = st.text_input("Search", placeholder="RELIANCE")
+    ex = st.selectbox("Search exchange", ["NSE", "NFO", "BSE"], key="angel_search_ex")
+    if st.button("Search") and q:
+        rows = angel_search_scrip(ex, q)
+        if not rows:
+            st.info("No rows (login first, or API returned empty).")
+        else:
+            st.dataframe(pd.DataFrame(rows).head(30), use_container_width=True)
+
+    st.caption(
+        "Options (NFO) need correct option tradingsymbol + token for the expiry/strike. "
+        "Equity is simpler for first live tests."
+    )
+
+
+def place_broker_or_paper(
+    symbol: str,
+    side: str = "BUY",
+    qty: int = 1,
+    entry: float = 0,
+    target: float = 0,
+    stop: float = 0,
+    source: str = "APP",
+    tradingsymbol: str = None,
+    symboltoken: str = None,
+    exchange: str = "NSE",
+    producttype: str = "INTRADAY",
+) -> dict:
+    """
+    If Angel real orders enabled + token provided → live order.
+    Else → paper order (safe default).
+    """
+    if (
+        st.session_state.get("angel_real_orders")
+        and st.session_state.get("_angel_api")
+        and symboltoken
+        and (tradingsymbol or symbol)
+    ):
+        res = angel_place_order(
+            tradingsymbol=tradingsymbol or f"{display_symbol(symbol)}-EQ",
+            symboltoken=str(symboltoken),
+            transactiontype=side,
+            exchange=exchange,
+            ordertype="MARKET",
+            producttype=producttype,
+            quantity=int(qty),
+        )
+        res["mode"] = "LIVE"
+        return res
+    try:
+        r = execute_paper_order(
+            display_symbol(symbol),
+            side,
+            entry=float(entry or 0),
+            target=float(target or 0),
+            stop=float(stop or 0),
+            source=source,
+            force=True,
+        )
+        return {"ok": True, "mode": "PAPER", "raw": r}
+    except Exception as e:
+        return {"ok": False, "mode": "PAPER", "error": str(e)}
+
 
 
 def execute_paper_order(
@@ -20547,10 +20931,10 @@ def _batch_last_prices(symbols: list, max_n: int = 120) -> dict:
                     out[display_symbol(syms[0])] = out[syms[0]]
     except Exception:
         pass
-    # Fill only a very small number of misses from the dual-source quote path.
-    # Never issue one Yahoo request per missing symbol after a batch failure.
-    misses = [sym for sym in syms if sym not in out][:8]
-    for sym in misses:
+    # Fill misses with single live_quote
+    for sym in syms:
+        if sym in out:
+            continue
         try:
             q = live_quote(sym)
             if q and q.get("price"):
@@ -20921,6 +21305,7 @@ PAGE_PARENT = {
     "FII DII": "Dashboard",
     "NSE Tools": "Dashboard",
     "Intraday FO": "Dashboard",
+    "Broker Angel": "Dashboard",
     "Watchlist": "Dashboard",
     "Scanner Query": "Dashboard",
     "Intraday Backtest": "Intraday FO",
@@ -20962,6 +21347,7 @@ PAGE_LABELS = {
     "FII DII": "FII & DII",
     "NSE Tools": "NSE Tools Workspace",
     "Intraday FO": "Intraday & F&O",
+    "Broker Angel": "Broker · Angel One",
     "Watchlist": "Watchlist",
     "Scanner Query": "Scanner Query",
     "Intraday Backtest": "Intraday Backtest",
@@ -21141,6 +21527,7 @@ def render_header_nav():
         "paper": "Paper Trading",
         "history": "History",
         "scanner": "Scanner Query",
+        "broker": "Broker Angel",
         "query": "Scanner Query",
         "watchlist": "Watchlist",
     }
@@ -21218,6 +21605,8 @@ def render_header_nav():
         elif key == "intraday" and cur in ("Intraday FO", "Intraday Backtest"):
             active = True
         elif key == "scanner" and cur == "Scanner Query":
+            active = True
+        elif key == "broker" and cur == "Broker Angel":
             active = True
         cls = "jp-pill jp-pill-on" if active else "jp-pill"
         # Same tab only: target=_self + JS sets parent search (Streamlit iframe-safe)
@@ -21354,6 +21743,7 @@ def render_header_nav():
               {_pill("tools", "Tools")}
               {_pill("intraday", "Intraday / F&amp;O")}
               {_pill("scanner", "Scanner")}
+              {_pill("broker", "Broker")}
               <a class="jp-pill jp-pill-scan" href="?jp_nav=scan" target="_self"
                  onclick="try{{window.parent.location.search='?jp_nav=scan';return false;}}catch(e){{}}">Scan</a>
             </div>
@@ -22229,6 +22619,9 @@ elif st.session_state.page == "NSE Tools":
 
 elif st.session_state.page == "Intraday FO":
     show_intraday_fo_desk()
+
+elif st.session_state.page == "Broker Angel":
+    show_broker_angel_page()
 
 elif st.session_state.page == "Watchlist":
     show_watchlist_page()
