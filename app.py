@@ -6266,6 +6266,12 @@ def show_intraday_fo_desk():
         except Exception:
             df_l = None
 
+        if df_l is not None and not df_l.empty:
+            try:
+                render_price_action_box(df_l, title=f"Price action · {und_l}")
+            except Exception as _pae:
+                st.caption(f"PA: {_pae}")
+
         pats_l = []
         if df_l is not None and not df_l.empty and len(df_l) >= 20:
             try:
@@ -6701,6 +6707,10 @@ def show_intraday_fo_desk():
                 pats = detect_patterns(tail)
                 if pats:
                     st.info("Patterns: " + ", ".join(pats[:6]))
+            except Exception:
+                pass
+            try:
+                render_price_action_box(df_s, title=f"Price action · {display_symbol(sym)}")
             except Exception:
                 pass
         if exp:
@@ -9212,6 +9222,151 @@ def news_score(news):
 # ANALYSIS ENGINE
 # ============================================================
 
+
+# ============================================================
+# PRICE ACTION — structure, levels, bias (stocks + F&O)
+# ============================================================
+
+def compute_price_action(df: pd.DataFrame) -> dict:
+    """Trend structure, S/R, BOS, candle character — for stocks & F&O."""
+    out = {
+        "bias": "NEUTRAL", "structure": "Range / unclear", "trend": "Sideways",
+        "last_close": None, "swing_high": None, "swing_low": None,
+        "resistance": None, "support": None, "range_pct": None,
+        "break_of_structure": None, "candle": None, "volume_note": "",
+        "trade_hint": "", "summary": "",
+    }
+    if df is None or getattr(df, "empty", True) or len(df) < 10:
+        out["summary"] = "Not enough bars for price action."
+        return out
+    d = df.copy()
+    for col in ("Open", "High", "Low", "Close"):
+        if col not in d.columns:
+            out["summary"] = "OHLC missing."
+            return out
+        d[col] = pd.to_numeric(d[col], errors="coerce")
+    d = d.dropna(subset=["Open", "High", "Low", "Close"])
+    if len(d) < 10:
+        out["summary"] = "Not enough clean bars."
+        return out
+    o, h, l, c = d["Open"], d["High"], d["Low"], d["Close"]
+    last = float(c.iloc[-1])
+    out["last_close"] = last
+    win = max(3, min(5, len(d) // 10))
+    roll_high = h.rolling(win, center=True).max()
+    roll_low = l.rolling(win, center=True).min()
+    swing_highs = h[(h == roll_high) & h.notna()].dropna()
+    swing_lows = l[(l == roll_low) & l.notna()].dropna()
+    sh = float(swing_highs.iloc[-1]) if len(swing_highs) else float(h.tail(20).max())
+    sl = float(swing_lows.iloc[-1]) if len(swing_lows) else float(l.tail(20).min())
+    out["swing_high"] = round(sh, 2)
+    out["swing_low"] = round(sl, 2)
+    recent = d.tail(30)
+    res = float(recent["High"].max())
+    sup = float(recent["Low"].min())
+    out["resistance"] = round(res, 2)
+    out["support"] = round(sup, 2)
+    if last > 0:
+        out["range_pct"] = round((res - sup) / last * 100, 2)
+    try:
+        hh = list(swing_highs.tail(3).astype(float).values) if len(swing_highs) >= 2 else [float(h.iloc[-10]), float(h.iloc[-1])]
+        ll = list(swing_lows.tail(3).astype(float).values) if len(swing_lows) >= 2 else [float(l.iloc[-10]), float(l.iloc[-1])]
+        if len(hh) >= 2 and len(ll) >= 2:
+            if hh[-1] > hh[-2] and ll[-1] > ll[-2]:
+                out["structure"] = "Higher High + Higher Low (uptrend structure)"
+                out["trend"] = "Uptrend"
+                out["bias"] = "BULLISH"
+            elif hh[-1] < hh[-2] and ll[-1] < ll[-2]:
+                out["structure"] = "Lower High + Lower Low (downtrend structure)"
+                out["trend"] = "Downtrend"
+                out["bias"] = "BEARISH"
+            else:
+                out["structure"] = "Mixed swings (range / transition)"
+                out["trend"] = "Sideways"
+                out["bias"] = "NEUTRAL"
+    except Exception:
+        pass
+    if last > sh * 1.001:
+        out["break_of_structure"] = f"Close above swing high Rs {sh:.2f} (bullish BOS)"
+    elif last < sl * 0.999:
+        out["break_of_structure"] = f"Close below swing low Rs {sl:.2f} (bearish BOS)"
+    else:
+        out["break_of_structure"] = "Inside recent swing range"
+    lo, lh, ll_, lc = float(o.iloc[-1]), float(h.iloc[-1]), float(l.iloc[-1]), float(c.iloc[-1])
+    body = abs(lc - lo)
+    full = max(lh - ll_, 1e-9)
+    upper = lh - max(lo, lc)
+    lower = min(lo, lc) - ll_
+    if body / full < 0.25 and upper > body and lower > body:
+        out["candle"] = "Doji / indecision"
+    elif lc > lo and lower > body * 1.5:
+        out["candle"] = "Bullish rejection (long lower wick)"
+    elif lc < lo and upper > body * 1.5:
+        out["candle"] = "Bearish rejection (long upper wick)"
+    elif lc > lo and body / full > 0.6:
+        out["candle"] = "Strong bullish body"
+    elif lc < lo and body / full > 0.6:
+        out["candle"] = "Strong bearish body"
+    else:
+        out["candle"] = "Normal candle"
+    if "Volume" in d.columns:
+        v = pd.to_numeric(d["Volume"], errors="coerce")
+        if v.notna().sum() > 5:
+            avg = float(v.tail(20).mean() or 0)
+            last_v = float(v.iloc[-1] or 0)
+            if avg > 0 and last_v > 1.5 * avg:
+                out["volume_note"] = "Volume spike vs 20-bar avg"
+            elif avg > 0 and last_v < 0.6 * avg:
+                out["volume_note"] = "Light volume vs avg"
+            else:
+                out["volume_note"] = "Volume near average"
+    if out["bias"] == "BULLISH":
+        out["trade_hint"] = f"Longs preferred above support Rs {out['support']}; invalid below swing low Rs {out['swing_low']}."
+    elif out["bias"] == "BEARISH":
+        out["trade_hint"] = f"Shorts/PE preferred under resistance Rs {out['resistance']}; invalid above swing high Rs {out['swing_high']}."
+    else:
+        out["trade_hint"] = f"Range: buy near Rs {out['support']}, sell near Rs {out['resistance']}; wait for break for trend."
+    out["summary"] = (
+        f"{out['bias']} | {out['trend']} | {out['structure']}. "
+        f"S Rs {out['support']} | R Rs {out['resistance']}. {out['break_of_structure']}. {out['candle']}."
+    )
+    return out
+
+
+def format_price_action_markdown(pa: dict) -> str:
+    if not pa:
+        return "_No price action_"
+    return (
+        f"**Bias:** {pa.get('bias')} · **Trend:** {pa.get('trend')}  \n"
+        f"**Structure:** {pa.get('structure')}  \n"
+        f"**Support:** Rs {pa.get('support')} · **Resistance:** Rs {pa.get('resistance')}  \n"
+        f"**Swing H/L:** Rs {pa.get('swing_high')} / Rs {pa.get('swing_low')}  \n"
+        f"**BOS:** {pa.get('break_of_structure')}  \n"
+        f"**Candle:** {pa.get('candle')} · **Volume:** {pa.get('volume_note') or '—'}  \n"
+        f"**Hint:** {pa.get('trade_hint')}"
+    )
+
+
+def render_price_action_box(df: pd.DataFrame, title: str = "Price action"):
+    pa = compute_price_action(df)
+    bias = pa.get("bias") or "NEUTRAL"
+    color = {"BULLISH": "#16a34a", "BEARISH": "#dc2626", "NEUTRAL": "#ca8a04"}.get(bias, "#64748b")
+    st.markdown(f"##### {title}")
+    st.markdown(
+        f'<div style="padding:10px 12px;border-radius:10px;border-left:4px solid {color};'
+        f'background:#0f172a;color:#e2e8f0;margin-bottom:8px;">{pa.get("summary","")}</div>',
+        unsafe_allow_html=True,
+    )
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Bias", bias)
+    m2.metric("Support", f"Rs {pa.get('support')}" if pa.get("support") else "—")
+    m3.metric("Resistance", f"Rs {pa.get('resistance')}" if pa.get("resistance") else "—")
+    m4.metric("Range %", f"{pa.get('range_pct')}%" if pa.get("range_pct") is not None else "—")
+    with st.expander("Full price-action detail", expanded=False):
+        st.markdown(format_price_action_markdown(pa))
+    return pa
+
+
 def analyse_stock(
     symbol,
     df,
@@ -9231,6 +9386,11 @@ def analyse_stock(
 
     if df.empty or len(df) < 60:
         return None
+
+    try:
+        _pa = compute_price_action(df)
+    except Exception:
+        _pa = {}
 
     row = df.iloc[-1]
 
@@ -9918,6 +10078,10 @@ def analyse_stock(
             2
         ),
 
+        "Price Action": (_pa or {}).get("summary", ""),
+        "PA Bias": (_pa or {}).get("bias", "NEUTRAL"),
+        "PA Support": (_pa or {}).get("support"),
+        "PA Resistance": (_pa or {}).get("resistance"),
         "Hold Days": hold_days,
 
         "Priority": priority,
