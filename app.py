@@ -3528,26 +3528,54 @@ def fetch_stock_institutional(symbol: str) -> dict:
 # ============================================================
 
 _BANK_CLIENT_KEYWORDS = [
-    "HDFC BANK", "HDFC BANK LTD", "ICICI BANK", "STATE BANK", "SBI ",
-    "AXIS BANK", "KOTAK", "KOTAK MAHINDRA", "YES BANK", "INDUSIND",
-    "BANK OF BARODA", "PUNJAB NATIONAL", "PNB ", "CANARA BANK",
-    "UNION BANK", "IDFC FIRST", "FEDERAL BANK", "RBL BANK",
-    "BANDHAN BANK", "AU SMALL FINANCE", "BANK OF INDIA",
-    "INDIAN BANK", "CENTRAL BANK", "UCO BANK", "BANK OF MAHARASHTRA",
+    "HDFC BANK", "ICICI BANK", "STATE BANK", "SBI ", "AXIS BANK", "KOTAK",
+    "YES BANK", "INDUSIND", "BANK OF BARODA", "PUNJAB NATIONAL", "PNB ",
+    "CANARA BANK", "UNION BANK", "IDFC FIRST", "FEDERAL BANK", "RBL BANK",
+    "BANDHAN BANK", "AU SMALL FINANCE", "BANK OF INDIA", "INDIAN BANK",
+    "CENTRAL BANK", "UCO BANK", "BANK OF MAHARASHTRA", "HSBC", "CITIBANK",
+    "STANDARD CHARTERED", "DEUTSCHE BANK", "JP MORGAN", "GOLDMAN",
+]
+
+_INSTITUTIONAL_KEYWORDS = [
+    "MUTUAL FUND", " MUTUAL ", "ASSET MANAGEMENT", " AMC", "LIFE INSURANCE",
+    "LIC OF INDIA", "LIC ", "INSURANCE", "PROVIDENT", "PENSION", "NPS ",
+    "PORTFOLIO MANAGER", "PMS ", "ALTERNATIVE INVESTMENT", "AIF ",
+    "TRUST", "FOUNDATION", "GRATUITY", "EMPLOYEES",
+]
+
+_FII_KEYWORDS = [
+    "FPI", "FII", "FOREIGN", "GLOBAL FUND", "VANGUARD", "BLACKROCK",
+    "GOVERNMENT OF SINGAPORE", "NORGES", "EUROPEAN", "LUXEMBOURG",
+    "IRELAND", "CAYMAN", "MORGAN STANLEY", "GOLDMAN SACHS",
+    "MERRILL", "UBS ", "CREDIT SUISSE", "NOMURA", "SOCIETE GENERALE",
+    "BNP PARIBAS", "CLSA", "MACQUARIE", "BARCLAYS", "CITIGROUP",
 ]
 
 
-def _client_looks_like_bank(name: str) -> bool:
-    n = str(name or "").upper()
+def _classify_client(name: str) -> str:
+    """Category: BANK | FII | INSTITUTIONAL | INDIVIDUAL"""
+    n = str(name or "").upper().strip()
     if not n:
-        return False
+        return "INDIVIDUAL"
     for k in _BANK_CLIENT_KEYWORDS:
         if k in n:
-            return True
-    # generic patterns
-    if " BANK" in n or n.startswith("BANK "):
-        return True
-    return False
+            return "BANK"
+    if " BANK" in n or n.endswith(" BANK") or n.startswith("BANK "):
+        return "BANK"
+    for k in _FII_KEYWORDS:
+        if k in n:
+            return "FII"
+    for k in _INSTITUTIONAL_KEYWORDS:
+        if k in n:
+            return "INSTITUTIONAL"
+    # MF pattern
+    if "FUND" in n and any(x in n for x in ("MF", "MUTUAL", "SCHEME", "GROWTH", "EQUITY")):
+        return "INSTITUTIONAL"
+    return "INDIVIDUAL"
+
+
+def _client_looks_like_bank(name: str) -> bool:
+    return _classify_client(name) == "BANK"
 
 
 def _normalize_bulk_row(r: dict, deal_type: str = "Bulk") -> dict:
@@ -3589,11 +3617,14 @@ def _normalize_bulk_row(r: dict, deal_type: str = "Bulk") -> dict:
         or r.get("TradDt") or r.get("BD_DT_TM") or ""
     )
     name = r.get("name") or r.get("company") or r.get("securityName") or r.get("isin") or ""
+    client_s = str(client)[:60]
     return {
         "Date": str(dt)[:12],
         "Stock": str(sym).upper().replace(".NS", "").strip(),
         "Company": str(name)[:40],
-        "Bank / Client": str(client)[:60],
+        "Client": client_s,
+        "Bank / Client": client_s,
+        "Category": _classify_client(client_s),
         "Side": side,
         "Qty": qty,
         "Avg Price": price,
@@ -3714,181 +3745,300 @@ def fetch_nse_bulk_block_deals(days_back: int = 10) -> pd.DataFrame:
 
 def show_superstar_bulk_page():
     """
-    Trendlyne-inspired: Superstar / Bulk deals focusing on BANKS
-    buying or selling particular stocks.
-
-    LIVE / independent of market scan — loads NSE bulk-block on page open.
+    Trendlyne-style tabs:
+      Individual investors | Institutional | FIIs
+    + Buy/Sell filter for banks, big investors, FII, DII-linked deals.
+    Live NSE bulk/block — independent of market scan.
     """
     st.markdown(
         """
         <div style="border-radius:14px;padding:16px 18px;margin-bottom:12px;
                     background:linear-gradient(135deg,#0f172a,#1e3a5f);border:1px solid #334155;">
-          <div style="font-size:1.35rem;font-weight:800;color:#f8fafc;">Superstar · Bank bulk buy / sell</div>
+          <div style="font-size:1.35rem;font-weight:800;color:#f8fafc;">Superstar · Investors bulk buy / sell</div>
           <div style="color:#94a3b8;margin-top:6px;line-height:1.45;">
-            <b>Live page</b> — does <b>not</b> need Full Market Scan.
-            Stocks where <b>banks</b> appear in NSE <b>bulk / block deals</b> (buy or sell).
+            <b>Live</b> NSE bulk &amp; block deals · <b>no market scan needed</b> ·
+            Individual · Institutional · FIIs · Banks — linked filters BUY / SELL.
           </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+    st.link_button("Trendlyne Superstar / deals (reference)", "https://trendlyne.com/")
 
-    st.info(
-        "**Independent of scan** — open this page anytime. Data comes from NSE bulk/block "
-        "disclosures (best after market close; live session also tried)."
-    )
-    st.link_button("Open Trendlyne (Superstar / deals)", "https://trendlyne.com/")
-
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        side_f = st.selectbox("Side", ["ALL", "BUY", "SELL"], key="ss_side")
-    with c2:
-        deal_f = st.selectbox("Deal type", ["ALL", "Bulk", "Block"], key="ss_deal")
-    with c3:
-        bank_q = st.text_input("Bank name contains", placeholder="e.g. HDFC, ICICI, SBI", key="ss_bank")
-    with c4:
-        stock_q = st.text_input("Stock contains", placeholder="e.g. RELIANCE", key="ss_stock")
-
-    only_banks = st.checkbox("Only bank-like clients (recommended)", value=True, key="ss_only_banks")
-
-    r1, r2, r3 = st.columns(3)
+    # ----- Live load -----
+    r1, r2, r3 = st.columns([2, 1, 1])
     with r1:
-        auto_live = st.checkbox("Auto-refresh this page", value=True, key="ss_auto_live")
+        st.caption("Data source: NSE bulk + block disclosures (free). Categories from client names.")
     with r2:
-        refresh_sec = st.selectbox("Refresh every (sec)", [60, 120, 300, 600], index=1, key="ss_ref_sec")
-    with r3:
-        if st.button("🔄 Refresh now", type="primary", key="ss_load"):
+        if st.button("🔄 Refresh deals", type="primary", key="ss_load"):
             try:
                 fetch_nse_bulk_block_deals.clear()
             except Exception:
                 pass
-            st.session_state["_ss_force"] = True
             st.rerun()
+    with r3:
+        auto_live = st.checkbox("Auto-refresh", value=False, key="ss_auto_live")
 
-    # Always fetch on page open (no scan required)
-    with st.spinner("Loading live NSE bulk / block deals…"):
+    with st.spinner("Loading NSE bulk / block deals…"):
         try:
-            if st.session_state.pop("_ss_force", None):
-                try:
-                    fetch_nse_bulk_block_deals.clear()
-                except Exception:
-                    pass
-            df = fetch_nse_bulk_block_deals(15)
+            df = fetch_nse_bulk_block_deals(20)
         except Exception as e:
             df = pd.DataFrame()
-            st.caption(f"Fetch note: {e}")
+            st.caption(str(e))
 
-    st.caption(
-        f"Last load: {_ist_now() if '_ist_now' in dir() else datetime.now()} · "
-        f"rows={0 if df is None else len(df)} · scan **not** required"
+    if df is None:
+        df = pd.DataFrame()
+    if not df.empty and "Category" not in df.columns and "Bank / Client" in df.columns:
+        df = df.copy()
+        df["Category"] = df["Bank / Client"].map(_classify_client)
+        if "Client" not in df.columns:
+            df["Client"] = df["Bank / Client"]
+
+    st.caption(f"Loaded **{len(df)}** deal rows · independent of scan")
+
+    # ----- Global filters (linked to all tabs) -----
+    f1, f2, f3, f4 = st.columns(4)
+    with f1:
+        side_f = st.selectbox("Buy / Sell", ["ALL", "BUY", "SELL"], key="ss_side")
+    with f2:
+        deal_f = st.selectbox("Deal type", ["ALL", "Bulk", "Block"], key="ss_deal")
+    with f3:
+        client_q = st.text_input("Client contains", placeholder="HDFC, Vanguard, LIC…", key="ss_client")
+    with f4:
+        stock_q = st.text_input("Stock contains", placeholder="RELIANCE…", key="ss_stock")
+
+    st.markdown(
+        "**Filters:** Buy/Sell · Deal type · Client · Stock — apply to **all tabs**. "
+        "Open **ALL DEALS** to see every stock with **Who BOUGHT** / **Who SOLD**."
     )
 
-    if df is None or df.empty:
-        st.warning(
-            "No bulk/block rows returned right now (NSE session or archives). "
-            "Try again after market close, or check Trendlyne manually for Superstar deals."
-        )
-        st.info(
-            "Bulk deals publish **after market close**. Cloud may also block NSE briefly — retry later."
-        )
-        return
+    def _apply_filters(base: pd.DataFrame, category: str = None) -> pd.DataFrame:
+        if base is None or base.empty:
+            return pd.DataFrame()
+        v = base.copy()
+        if category and "Category" in v.columns:
+            if category == "BANK":
+                v = v[v["Category"] == "BANK"]
+            else:
+                v = v[v["Category"] == category]
+        if side_f != "ALL" and "Side" in v.columns:
+            v = v[v["Side"].astype(str).str.upper() == side_f]
+        if deal_f != "ALL" and "Deal Type" in v.columns:
+            v = v[v["Deal Type"].astype(str) == deal_f]
+        if client_q:
+            col = "Client" if "Client" in v.columns else "Bank / Client"
+            v = v[v[col].astype(str).str.contains(client_q, case=False, na=False)]
+        if stock_q and "Stock" in v.columns:
+            v = v[v["Stock"].astype(str).str.contains(stock_q, case=False, na=False)]
+        return v
 
-    view = df.copy()
-    if only_banks and "Bank / Client" in view.columns:
-        view = view[view["Bank / Client"].astype(str).map(_client_looks_like_bank)]
-    if side_f != "ALL" and "Side" in view.columns:
-        view = view[view["Side"].astype(str).str.upper() == side_f]
-    if deal_f != "ALL" and "Deal Type" in view.columns:
-        view = view[view["Deal Type"].astype(str) == deal_f]
-    if bank_q and "Bank / Client" in view.columns:
-        view = view[view["Bank / Client"].astype(str).str.contains(bank_q, case=False, na=False)]
-    if stock_q and "Stock" in view.columns:
-        view = view[view["Stock"].astype(str).str.contains(stock_q, case=False, na=False)]
-
-    st.success(f"**{len(view)}** deals shown (from {len(df)} raw rows)")
-
-    # Summary: stock → banks buy/sell
-    if not view.empty and "Stock" in view.columns:
-        st.markdown("### Stocks where banks bought / sold")
-        summary_rows = []
+    def _stock_summary(view: pd.DataFrame) -> pd.DataFrame:
+        """One row per stock: who bought, who sold (banks / investors)."""
+        if view is None or view.empty or "Stock" not in view.columns:
+            return pd.DataFrame()
+        rows = []
+        cli_col = "Client" if "Client" in view.columns else "Bank / Client"
         for stock, g in view.groupby("Stock"):
             buys = g[g["Side"].astype(str).str.upper() == "BUY"]
             sells = g[g["Side"].astype(str).str.upper() == "SELL"]
-            buy_banks = ", ".join(sorted(set(buys["Bank / Client"].astype(str).tolist())))[:120]
-            sell_banks = ", ".join(sorted(set(sells["Bank / Client"].astype(str).tolist())))[:120]
-            summary_rows.append({
+            def _names(sub):
+                if sub is None or sub.empty:
+                    return "—"
+                parts = []
+                for _, r in sub.iterrows():
+                    cat = str(r.get("Category") or "")
+                    cli = str(r.get(cli_col) or "")
+                    if not cli or cli == "nan":
+                        continue
+                    tag = f"{cli}" + (f" [{cat}]" if cat else "")
+                    if tag not in parts:
+                        parts.append(tag)
+                return " | ".join(parts[:12]) if parts else "—"
+            rows.append({
                 "Stock": stock,
-                "Bank BUY count": len(buys),
-                "Banks buying": buy_banks or "—",
-                "Bank SELL count": len(sells),
-                "Banks selling": sell_banks or "—",
-                "Total deals": len(g),
+                "Has BUY": "Yes" if len(buys) else "No",
+                "BUY deals": int(len(buys)),
+                "Who BOUGHT (bank / investor)": _names(buys),
+                "Has SELL": "Yes" if len(sells) else "No",
+                "SELL deals": int(len(sells)),
+                "Who SOLD (bank / investor)": _names(sells),
+                "Total deals": int(len(g)),
+                "Value Cr": round(float(pd.to_numeric(g["Value Cr"], errors="coerce").fillna(0).sum()), 2)
+                if "Value Cr" in g.columns else 0,
             })
-        summ = pd.DataFrame(summary_rows).sort_values("Total deals", ascending=False)
-        st.dataframe(summ, use_container_width=True, hide_index=True)
+        out = pd.DataFrame(rows)
+        if out.empty:
+            return out
+        return out.sort_values(["Has BUY", "BUY deals", "Total deals"], ascending=[False, False, False])
 
-        st.markdown("### Deal detail")
-        show_cols = [c for c in [
-            "Date", "Stock", "Company", "Bank / Client", "Side", "Qty", "Avg Price", "Value Cr", "Deal Type"
+    def _render_bucket(title: str, view: pd.DataFrame, empty_msg: str):
+        st.markdown(f"### {title}")
+        if view is None or view.empty:
+            st.info(empty_msg)
+            return
+        st.success(f"**{len(view)}** deal lines · **{view['Stock'].nunique() if 'Stock' in view.columns else 0}** stocks")
+
+        summ = _stock_summary(view)
+        if not summ.empty:
+            st.markdown("#### All stocks — who bought / who sold")
+            st.caption("Each stock lists banks & investors on BUY and on SELL side.")
+            # optional sub-filter on summary
+            only_buy = st.checkbox(
+                "Show only stocks that have at least one BUY",
+                value=False,
+                key=f"only_buy_{title[:12]}",
+            )
+            show_s = summ
+            if only_buy and "Has BUY" in show_s.columns:
+                show_s = show_s[show_s["Has BUY"] == "Yes"]
+            st.dataframe(show_s, use_container_width=True, hide_index=True)
+            csv = show_s.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "Download stock summary CSV",
+                csv,
+                file_name="bulk_stock_buy_sell_summary.csv",
+                mime="text/csv",
+                key=f"dl_sum_{title[:16]}",
+            )
+
+        cols = [c for c in [
+            "Date", "Stock", "Category", "Client", "Side", "Qty", "Avg Price", "Value Cr", "Deal Type"
         ] if c in view.columns]
-        st.dataframe(view[show_cols], use_container_width=True, hide_index=True)
+        st.markdown("#### Every deal line (stock · client · buy/sell)")
+        st.dataframe(view[cols], use_container_width=True, hide_index=True)
+        st.download_button(
+            "Download deal detail CSV",
+            view[cols].to_csv(index=False).encode("utf-8"),
+            file_name="bulk_deal_detail.csv",
+            mime="text/csv",
+            key=f"dl_det_{title[:16]}",
+        )
 
-        pick = st.selectbox("Open stock analysis", sorted(view["Stock"].astype(str).unique().tolist()), key="ss_pick")
-        if st.button("📈 Analyse stock", key="ss_an"):
-            st.session_state.selected_stock = pick
-            st.session_state.page = "Stock Analysis"
-            st.rerun()
-        if st.button("⭐ Add to watchlist", key="ss_wl"):
+    # ----- Tabs like Trendlyne screenshot -----
+    tab_all, tab_ind, tab_inst, tab_fii, tab_bank, tab_flow = st.tabs([
+        "ALL DEALS",
+        "INDIVIDUAL INVESTORS",
+        "INSTITUTIONAL INVESTORS",
+        "FIIs",
+        "BANKS",
+        "FII / DII CASH (market)",
+    ])
+
+    with tab_all:
+        _render_bucket(
+            "All bulk / block (filtered)",
+            _apply_filters(df),
+            "No deals for current filters. Try ALL side or Refresh after market close.",
+        )
+    with tab_ind:
+        _render_bucket(
+            "Individual investors (promoters / others in bulk deals)",
+            _apply_filters(df, "INDIVIDUAL"),
+            "No individual-client bulk/block rows for this filter.",
+        )
+    with tab_inst:
+        _render_bucket(
+            "Institutional (MF, insurance, AMS, trusts…)",
+            _apply_filters(df, "INSTITUTIONAL"),
+            "No institutional bulk/block rows for this filter.",
+        )
+    with tab_fii:
+        _render_bucket(
+            "FIIs / FPIs in bulk & block deals",
+            _apply_filters(df, "FII"),
+            "No FII-tagged client rows. Names are classified from client text; try ALL DEALS.",
+        )
+    with tab_bank:
+        _render_bucket(
+            "Banks buying / selling stocks",
+            _apply_filters(df, "BANK"),
+            "No bank-client deals for this filter.",
+        )
+    with tab_flow:
+        st.markdown("### Market-wide FII / DII cash (not per-stock)")
+        st.caption("Official-style daily FII vs DII net — linked view. Per-stock FII is only via bulk/block client names above.")
+        try:
+            # reuse existing helpers if present
+            hist = None
             try:
-                wl = load_watchlist()
-                if pick not in wl:
-                    wl.append(pick)
-                    save_watchlist(wl)
-                st.success(f"Added {pick}")
-            except Exception as e:
-                st.caption(str(e))
-    else:
-        st.info("No rows after filters. Turn off “Only bank-like clients” or clear filters.")
+                hist = fetch_fii_dii_history() if "fetch_fii_dii_history" in dir() else None
+            except Exception:
+                hist = None
+            if hist is None:
+                try:
+                    hist = fii_dii_history_df() if "fii_dii_history_df" in dir() else None
+                except Exception:
+                    hist = None
+            if hist is not None and not getattr(hist, "empty", True):
+                st.dataframe(hist, use_container_width=True, hide_index=True)
+            else:
+                # inline soft fetch via existing page data paths
+                try:
+                    latest = fetch_fii_dii_latest() if "fetch_fii_dii_latest" in dir() else None
+                    if latest:
+                        st.json(latest)
+                    else:
+                        st.info("Open **FII/DII** page for full cash series, or retry later.")
+                except Exception:
+                    st.info("FII/DII series unavailable here — use header FII/DII page.")
+        except Exception as e:
+            st.caption(str(e))
+        if st.button("Go to full FII/DII page", key="ss_to_fii"):
+            st.session_state.page = "FII DII"
+            st.rerun()
 
-    with st.expander("About this data"):
+    # pick stock
+    if not df.empty and "Stock" in df.columns:
+        st.divider()
+        picks = sorted(df["Stock"].astype(str).unique().tolist())
+        pick = st.selectbox("Analyse a stock from deals", picks, key="ss_pick")
+        b1, b2 = st.columns(2)
+        with b1:
+            if st.button("📈 Stock analysis", key="ss_an"):
+                st.session_state.selected_stock = pick
+                st.session_state.page = "Stock Analysis"
+                st.rerun()
+        with b2:
+            if st.button("⭐ Watchlist", key="ss_wl"):
+                try:
+                    wl = load_watchlist()
+                    if pick not in wl:
+                        wl.append(pick)
+                        save_watchlist(wl)
+                    st.success(f"Added {pick}")
+                except Exception as e:
+                    st.caption(str(e))
+
+    with st.expander("Data accuracy notes"):
         st.markdown(
             """
-- **Bulk deal:** single client trades **> 0.5%** of equity in a day (NSE disclosure).  
-- **Block deal:** large negotiated trade in block window.  
-- **Banks** are detected from client names (HDFC Bank, ICICI, SBI, Axis, Kotak, etc.).  
-- **Does not use market scan** — this page fetches deals on its own.  
-- Trendlyne Superstar portfolios (Jhunjhunwala, Damani…) are shareholding-based;  
-  this page uses free NSE bulk/block where banks appear as clients.
+**What is accurate (exchange source)**  
+- NSE **bulk** and **block** deal files/APIs after disclosure.  
+- Client name, buy/sell, qty, price as published by the exchange.
+
+**How we classify**  
+- **BANK** / **FII** / **INSTITUTIONAL** / **INDIVIDUAL** from **client name** text (same idea as filtering on Trendlyne).  
+- Mis-tags can happen if the client name is abbreviated oddly.
+
+**What is NOT the same as Trendlyne Superstar shareholding**  
+- Quarterly superstar portfolios (Damani, etc.) come from **shareholding filings**, not daily bulk deals.  
+- Market **FII/DII cash** tab is **aggregate** India flows, not one stock.
+
+**Buy/Sell dropdown** applies to **all tabs** together (linked filters).
             """
         )
 
-    # Live auto-refresh (page-local, independent of global scan)
-    if st.session_state.get("ss_auto_live", True):
+    if auto_live:
         try:
-            sec = int(st.session_state.get("ss_ref_sec") or 120)
-            if sec < 60:
-                sec = 60
-            st.caption(f"Auto-refresh in ~{sec}s…")
-            time.sleep(min(sec, 5) if False else 0)  # no hard sleep on load
-            # Streamlit-friendly: meta refresh via fragment if available
-            try:
-                st_autorefresh = getattr(st, "fragment", None)
-            except Exception:
-                st_autorefresh = None
-            # Use experimental_rerun timer pattern
             import streamlit.components.v1 as components
             components.html(
-                f"""
-                <script>
-                setTimeout(function() {{
-                  window.parent.location.reload();
-                }}, {int(sec) * 1000});
-                </script>
-                """,
+                """<script>setTimeout(function(){window.parent.location.reload();},120000);</script>""",
                 height=0,
             )
+            st.caption("Auto-refresh ~2 min")
         except Exception:
             pass
+
 
 
 def show_fii_dii_page():
