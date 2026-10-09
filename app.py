@@ -3521,6 +3521,376 @@ def fetch_stock_institutional(symbol: str) -> dict:
     return out
 
 
+
+# ============================================================
+# SUPERSTAR / BULK DEALS — banks buy & sell in stocks
+# (Trendlyne-style view using free NSE bulk/block deals)
+# ============================================================
+
+_BANK_CLIENT_KEYWORDS = [
+    "HDFC BANK", "HDFC BANK LTD", "ICICI BANK", "STATE BANK", "SBI ",
+    "AXIS BANK", "KOTAK", "KOTAK MAHINDRA", "YES BANK", "INDUSIND",
+    "BANK OF BARODA", "PUNJAB NATIONAL", "PNB ", "CANARA BANK",
+    "UNION BANK", "IDFC FIRST", "FEDERAL BANK", "RBL BANK",
+    "BANDHAN BANK", "AU SMALL FINANCE", "BANK OF INDIA",
+    "INDIAN BANK", "CENTRAL BANK", "UCO BANK", "BANK OF MAHARASHTRA",
+]
+
+
+def _client_looks_like_bank(name: str) -> bool:
+    n = str(name or "").upper()
+    if not n:
+        return False
+    for k in _BANK_CLIENT_KEYWORDS:
+        if k in n:
+            return True
+    # generic patterns
+    if " BANK" in n or n.startswith("BANK "):
+        return True
+    return False
+
+
+def _normalize_bulk_row(r: dict, deal_type: str = "Bulk") -> dict:
+    """Map various NSE bulk/block field names to one schema."""
+    if not isinstance(r, dict):
+        return {}
+    # common keys
+    sym = (
+        r.get("symbol") or r.get("Symbol") or r.get("sec") or r.get("security")
+        or r.get("scripname") or r.get("TckrSymb") or ""
+    )
+    client = (
+        r.get("clientName") or r.get("client_name") or r.get("ClientName")
+        or r.get("caName") or r.get("buySell") and r.get("client")
+        or r.get("CliNm") or r.get("name") or r.get("client") or ""
+    )
+    # buy/sell
+    bs = (
+        r.get("buySell") or r.get("buy_sell") or r.get("BS") or r.get("bs")
+        or r.get("txnType") or r.get("TradeType") or r.get("side") or ""
+    )
+    bs_u = str(bs).upper().strip()
+    if bs_u in ("B", "BUY", "PURCHASE", "1"):
+        side = "BUY"
+    elif bs_u in ("S", "SELL", "SALE", "2"):
+        side = "SELL"
+    else:
+        side = bs_u or "—"
+    qty = safe_float(
+        r.get("qty") or r.get("quantity") or r.get("qtt") or r.get("Qty")
+        or r.get("trdQty") or r.get("quantityTraded") or r.get("TotTrdQty")
+    )
+    price = safe_float(
+        r.get("avgPrice") or r.get("avg_price") or r.get("wap") or r.get("price")
+        or r.get("WghtAvgPric") or r.get("tradePrice") or r.get("AvgPric")
+    )
+    dt = (
+        r.get("date") or r.get("Date") or r.get("dealDate") or r.get("timestamp")
+        or r.get("TradDt") or r.get("BD_DT_TM") or ""
+    )
+    name = r.get("name") or r.get("company") or r.get("securityName") or r.get("isin") or ""
+    return {
+        "Date": str(dt)[:12],
+        "Stock": str(sym).upper().replace(".NS", "").strip(),
+        "Company": str(name)[:40],
+        "Bank / Client": str(client)[:60],
+        "Side": side,
+        "Qty": qty,
+        "Avg Price": price,
+        "Deal Type": deal_type,
+        "Value Cr": round((qty or 0) * (price or 0) / 1e7, 2) if qty and price else None,
+    }
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def fetch_nse_bulk_block_deals(days_back: int = 10) -> pd.DataFrame:
+    """
+    Free NSE bulk + block deals (similar to Trendlyne Bulk/Block view).
+    Tries live API via nse session, then archives-style endpoints.
+    """
+    rows = []
+    # 1) Live snapshot-style endpoints
+    for deal_type, path in (
+        ("Bulk", "/api/snapshot-capital-market-largedeal?deal_type=bulk_deals"),
+        ("Block", "/api/snapshot-capital-market-largedeal?deal_type=block_deals"),
+        ("Bulk", "/api/historical/bulknbca/bulk"),
+        ("Block", "/api/historical/bulknbca/block"),
+    ):
+        try:
+            data = nse_get_json(path, timeout=20)
+            if not data:
+                continue
+            if isinstance(data, dict):
+                lst = data.get("data") or data.get("datalist") or data.get("bulk_deals") or data.get("block_deals") or []
+            elif isinstance(data, list):
+                lst = data
+            else:
+                lst = []
+            for r in lst:
+                nr = _normalize_bulk_row(r if isinstance(r, dict) else {}, deal_type)
+                if nr.get("Stock"):
+                    rows.append(nr)
+        except Exception:
+            continue
+
+    # 2) CSV archives for last few sessions (official free files)
+    try:
+        import requests
+        import io
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        }
+        d = datetime.now().date()
+        got = 0
+        for _ in range(max(5, int(days_back) * 2)):
+            if got >= max(3, int(days_back)):
+                break
+            ddmmyyyy = d.strftime("%d%m%Y")
+            for kind, url_t in (
+                ("Bulk", f"https://archives.nseindia.com/content/equities/bulk.csv"),
+                ("Block", f"https://archives.nseindia.com/content/equities/block.csv"),
+            ):
+                # daily dated files sometimes:
+                for url in (
+                    f"https://archives.nseindia.com/content/equities/bh{ddmmyyyy}.csv",
+                    url_t,
+                ):
+                    try:
+                        r = requests.get(url, headers=headers, timeout=12)
+                        if r.status_code != 200 or len(r.content) < 50:
+                            continue
+                        df = pd.read_csv(io.BytesIO(r.content))
+                        if df is None or df.empty:
+                            continue
+                        # map columns loosely
+                        colmap = {str(c).strip().upper(): c for c in df.columns}
+                        def pick(*names):
+                            for n in names:
+                                if n in colmap:
+                                    return colmap[n]
+                            for k, v in colmap.items():
+                                for n in names:
+                                    if n in k:
+                                        return v
+                            return None
+                        c_sym = pick("SYMBOL", "SCRIP")
+                        c_cli = pick("CLIENT", "NAME", "CLIENT NAME")
+                        c_bs = pick("BUY/SELL", "BUY_SELL", "B/S", "TYPE")
+                        c_qty = pick("QUANTITY", "QTY")
+                        c_px = pick("TRADE PRICE", "PRICE", "WAP", "AVG")
+                        c_dt = pick("DATE", "DEAL DATE")
+                        if not c_sym:
+                            continue
+                        for _, row in df.iterrows():
+                            raw = {
+                                "symbol": row.get(c_sym),
+                                "clientName": row.get(c_cli) if c_cli else "",
+                                "buySell": row.get(c_bs) if c_bs else "",
+                                "qty": row.get(c_qty) if c_qty else None,
+                                "avgPrice": row.get(c_px) if c_px else None,
+                                "date": row.get(c_dt) if c_dt else ddmmyyyy,
+                            }
+                            nr = _normalize_bulk_row(raw, kind)
+                            if nr.get("Stock"):
+                                rows.append(nr)
+                        got += 1
+                        break
+                    except Exception:
+                        continue
+            d = d - timedelta(days=1)
+    except Exception:
+        pass
+
+    if not rows:
+        return pd.DataFrame()
+    out = pd.DataFrame(rows)
+    # dedupe
+    subset = [c for c in ["Date", "Stock", "Bank / Client", "Side", "Qty"] if c in out.columns]
+    if subset:
+        out = out.drop_duplicates(subset=subset, keep="first")
+    return out.reset_index(drop=True)
+
+
+def show_superstar_bulk_page():
+    """
+    Trendlyne-inspired: Superstar / Bulk deals focusing on BANKS
+    buying or selling particular stocks.
+
+    LIVE / independent of market scan — loads NSE bulk-block on page open.
+    """
+    st.markdown(
+        """
+        <div style="border-radius:14px;padding:16px 18px;margin-bottom:12px;
+                    background:linear-gradient(135deg,#0f172a,#1e3a5f);border:1px solid #334155;">
+          <div style="font-size:1.35rem;font-weight:800;color:#f8fafc;">Superstar · Bank bulk buy / sell</div>
+          <div style="color:#94a3b8;margin-top:6px;line-height:1.45;">
+            <b>Live page</b> — does <b>not</b> need Full Market Scan.
+            Stocks where <b>banks</b> appear in NSE <b>bulk / block deals</b> (buy or sell).
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.info(
+        "**Independent of scan** — open this page anytime. Data comes from NSE bulk/block "
+        "disclosures (best after market close; live session also tried)."
+    )
+    st.link_button("Open Trendlyne (Superstar / deals)", "https://trendlyne.com/")
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        side_f = st.selectbox("Side", ["ALL", "BUY", "SELL"], key="ss_side")
+    with c2:
+        deal_f = st.selectbox("Deal type", ["ALL", "Bulk", "Block"], key="ss_deal")
+    with c3:
+        bank_q = st.text_input("Bank name contains", placeholder="e.g. HDFC, ICICI, SBI", key="ss_bank")
+    with c4:
+        stock_q = st.text_input("Stock contains", placeholder="e.g. RELIANCE", key="ss_stock")
+
+    only_banks = st.checkbox("Only bank-like clients (recommended)", value=True, key="ss_only_banks")
+
+    r1, r2, r3 = st.columns(3)
+    with r1:
+        auto_live = st.checkbox("Auto-refresh this page", value=True, key="ss_auto_live")
+    with r2:
+        refresh_sec = st.selectbox("Refresh every (sec)", [60, 120, 300, 600], index=1, key="ss_ref_sec")
+    with r3:
+        if st.button("🔄 Refresh now", type="primary", key="ss_load"):
+            try:
+                fetch_nse_bulk_block_deals.clear()
+            except Exception:
+                pass
+            st.session_state["_ss_force"] = True
+            st.rerun()
+
+    # Always fetch on page open (no scan required)
+    with st.spinner("Loading live NSE bulk / block deals…"):
+        try:
+            if st.session_state.pop("_ss_force", None):
+                try:
+                    fetch_nse_bulk_block_deals.clear()
+                except Exception:
+                    pass
+            df = fetch_nse_bulk_block_deals(15)
+        except Exception as e:
+            df = pd.DataFrame()
+            st.caption(f"Fetch note: {e}")
+
+    st.caption(
+        f"Last load: {_ist_now() if '_ist_now' in dir() else datetime.now()} · "
+        f"rows={0 if df is None else len(df)} · scan **not** required"
+    )
+
+    if df is None or df.empty:
+        st.warning(
+            "No bulk/block rows returned right now (NSE session or archives). "
+            "Try again after market close, or check Trendlyne manually for Superstar deals."
+        )
+        st.info(
+            "Bulk deals publish **after market close**. Cloud may also block NSE briefly — retry later."
+        )
+        return
+
+    view = df.copy()
+    if only_banks and "Bank / Client" in view.columns:
+        view = view[view["Bank / Client"].astype(str).map(_client_looks_like_bank)]
+    if side_f != "ALL" and "Side" in view.columns:
+        view = view[view["Side"].astype(str).str.upper() == side_f]
+    if deal_f != "ALL" and "Deal Type" in view.columns:
+        view = view[view["Deal Type"].astype(str) == deal_f]
+    if bank_q and "Bank / Client" in view.columns:
+        view = view[view["Bank / Client"].astype(str).str.contains(bank_q, case=False, na=False)]
+    if stock_q and "Stock" in view.columns:
+        view = view[view["Stock"].astype(str).str.contains(stock_q, case=False, na=False)]
+
+    st.success(f"**{len(view)}** deals shown (from {len(df)} raw rows)")
+
+    # Summary: stock → banks buy/sell
+    if not view.empty and "Stock" in view.columns:
+        st.markdown("### Stocks where banks bought / sold")
+        summary_rows = []
+        for stock, g in view.groupby("Stock"):
+            buys = g[g["Side"].astype(str).str.upper() == "BUY"]
+            sells = g[g["Side"].astype(str).str.upper() == "SELL"]
+            buy_banks = ", ".join(sorted(set(buys["Bank / Client"].astype(str).tolist())))[:120]
+            sell_banks = ", ".join(sorted(set(sells["Bank / Client"].astype(str).tolist())))[:120]
+            summary_rows.append({
+                "Stock": stock,
+                "Bank BUY count": len(buys),
+                "Banks buying": buy_banks or "—",
+                "Bank SELL count": len(sells),
+                "Banks selling": sell_banks or "—",
+                "Total deals": len(g),
+            })
+        summ = pd.DataFrame(summary_rows).sort_values("Total deals", ascending=False)
+        st.dataframe(summ, use_container_width=True, hide_index=True)
+
+        st.markdown("### Deal detail")
+        show_cols = [c for c in [
+            "Date", "Stock", "Company", "Bank / Client", "Side", "Qty", "Avg Price", "Value Cr", "Deal Type"
+        ] if c in view.columns]
+        st.dataframe(view[show_cols], use_container_width=True, hide_index=True)
+
+        pick = st.selectbox("Open stock analysis", sorted(view["Stock"].astype(str).unique().tolist()), key="ss_pick")
+        if st.button("📈 Analyse stock", key="ss_an"):
+            st.session_state.selected_stock = pick
+            st.session_state.page = "Stock Analysis"
+            st.rerun()
+        if st.button("⭐ Add to watchlist", key="ss_wl"):
+            try:
+                wl = load_watchlist()
+                if pick not in wl:
+                    wl.append(pick)
+                    save_watchlist(wl)
+                st.success(f"Added {pick}")
+            except Exception as e:
+                st.caption(str(e))
+    else:
+        st.info("No rows after filters. Turn off “Only bank-like clients” or clear filters.")
+
+    with st.expander("About this data"):
+        st.markdown(
+            """
+- **Bulk deal:** single client trades **> 0.5%** of equity in a day (NSE disclosure).  
+- **Block deal:** large negotiated trade in block window.  
+- **Banks** are detected from client names (HDFC Bank, ICICI, SBI, Axis, Kotak, etc.).  
+- **Does not use market scan** — this page fetches deals on its own.  
+- Trendlyne Superstar portfolios (Jhunjhunwala, Damani…) are shareholding-based;  
+  this page uses free NSE bulk/block where banks appear as clients.
+            """
+        )
+
+    # Live auto-refresh (page-local, independent of global scan)
+    if st.session_state.get("ss_auto_live", True):
+        try:
+            sec = int(st.session_state.get("ss_ref_sec") or 120)
+            if sec < 60:
+                sec = 60
+            st.caption(f"Auto-refresh in ~{sec}s…")
+            time.sleep(min(sec, 5) if False else 0)  # no hard sleep on load
+            # Streamlit-friendly: meta refresh via fragment if available
+            try:
+                st_autorefresh = getattr(st, "fragment", None)
+            except Exception:
+                st_autorefresh = None
+            # Use experimental_rerun timer pattern
+            import streamlit.components.v1 as components
+            components.html(
+                f"""
+                <script>
+                setTimeout(function() {{
+                  window.parent.location.reload();
+                }}, {int(sec) * 1000});
+                </script>
+                """,
+                height=0,
+            )
+        except Exception:
+            pass
+
+
 def show_fii_dii_page():
     """
     FII / DII Data — Daily Cash Market Activity
@@ -21306,6 +21676,7 @@ PAGE_PARENT = {
     "NSE Tools": "Dashboard",
     "Intraday FO": "Dashboard",
     "Broker Angel": "Dashboard",
+    "Superstar Bulk": "Dashboard",
     "Watchlist": "Dashboard",
     "Scanner Query": "Dashboard",
     "Intraday Backtest": "Intraday FO",
@@ -21348,6 +21719,7 @@ PAGE_LABELS = {
     "NSE Tools": "NSE Tools Workspace",
     "Intraday FO": "Intraday & F&O",
     "Broker Angel": "Broker · Angel One",
+    "Superstar Bulk": "Superstar · Bank bulk deals",
     "Watchlist": "Watchlist",
     "Scanner Query": "Scanner Query",
     "Intraday Backtest": "Intraday Backtest",
@@ -21528,6 +21900,7 @@ def render_header_nav():
         "history": "History",
         "scanner": "Scanner Query",
         "broker": "Broker Angel",
+        "superstar": "Superstar Bulk",
         "query": "Scanner Query",
         "watchlist": "Watchlist",
     }
@@ -21607,6 +21980,8 @@ def render_header_nav():
         elif key == "scanner" and cur == "Scanner Query":
             active = True
         elif key == "broker" and cur == "Broker Angel":
+            active = True
+        elif key == "superstar" and cur == "Superstar Bulk":
             active = True
         cls = "jp-pill jp-pill-on" if active else "jp-pill"
         # Same tab only: target=_self + JS sets parent search (Streamlit iframe-safe)
@@ -21744,6 +22119,7 @@ def render_header_nav():
               {_pill("intraday", "Intraday / F&amp;O")}
               {_pill("scanner", "Scanner")}
               {_pill("broker", "Broker")}
+              {_pill("superstar", "Bank deals")}
               <a class="jp-pill jp-pill-scan" href="?jp_nav=scan" target="_self"
                  onclick="try{{window.parent.location.search='?jp_nav=scan';return false;}}catch(e){{}}">Scan</a>
             </div>
@@ -22622,6 +22998,9 @@ elif st.session_state.page == "Intraday FO":
 
 elif st.session_state.page == "Broker Angel":
     show_broker_angel_page()
+
+elif st.session_state.page == "Superstar Bulk":
+    show_superstar_bulk_page()
 
 elif st.session_state.page == "Watchlist":
     show_watchlist_page()
