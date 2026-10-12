@@ -7914,11 +7914,13 @@ SWING_STRATEGIES = {
 
 def load_my_strategy_params() -> dict:
     default = {
-        "lookback": 90,
-        "min_price_swing_pct": 3.0,
+        "lookback": 130,              # ~6 months trading days on 1D
+        "min_price_swing_pct": 1.0,   # allow mild or deep LL
         "rsi_period": 14,
         "require_confirmation": True,
-        "max_days_after_setup": 3,
+        "max_days_after_setup": 10,   # 2nd low still actionable window
+        "pivot_order": 3,
+        "line_break_tol_pct": 0.35,   # tolerance under trendline
     }
     try:
         if MY_STRATEGY_PARAMS_FILE.exists():
@@ -7937,48 +7939,232 @@ def save_my_strategy_params(p: dict) -> None:
         pass
 
 
-def my_strategy_divergence_ok(df: pd.DataFrame, idx: int, params: dict = None) -> bool:
-    """Simple bullish RSI divergence near the end of the series."""
-    if df is None or len(df) < 30:
-        return False
+def _ensure_rsi_col(d: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+    if d is None or d.empty:
+        return d
+    if "RSI" in d.columns and d["RSI"].notna().sum() > 10:
+        return d
+    c = pd.to_numeric(d["Close"], errors="coerce")
+    delta = c.diff()
+    up = delta.clip(lower=0).rolling(period).mean()
+    down = (-delta.clip(upper=0)).rolling(period).mean()
+    rs = up / down.replace(0, np.nan)
+    d = d.copy()
+    d["RSI"] = 100 - (100 / (1 + rs))
+    return d
+
+
+def _pivot_low_indices(lows: pd.Series, order: int = 3) -> list:
+    """Local swing low indices (strict pivots)."""
+    vals = pd.to_numeric(lows, errors="coerce").values
+    out = []
+    n = len(vals)
+    for i in range(order, n - order):
+        window = vals[i - order : i + order + 1]
+        if np.isnan(vals[i]):
+            continue
+        if vals[i] == np.nanmin(window):
+            # unique-ish min in window
+            out.append(i)
+    return out
+
+
+def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict:
+    """
+    My Strategy (user rules — 1D chart, up to ~6 months):
+
+    1) Price goes downward across two swing lows (lower low).
+    2) RSI goes upward across those same bars (higher low).
+    3) NO fixed RSI min/max zone — RSI can be any level.
+    4) Lines drawn on price lows and on RSI lows must NOT be broken
+       between the two pivots (clean divergence structure).
+    5) The two lows can be close in time OR months apart (within lookback).
+
+    ACTIVE_FRESH = structure valid and 2nd low still within max_days_after_setup.
+    """
+    out = {
+        "ok_for_buy": False,
+        "status": "WAIT",
+        "reason": "No clear bullish RSI divergence",
+        "days_since_setup": None,
+        "swing1": None,
+        "swing2": None,
+        "rsi1": None,
+        "rsi2": None,
+        "bars_between": None,
+    }
+    if df is None or len(df) < 40:
+        out["reason"] = "Not enough bars (need daily history)"
+        return out
+
     params = params or load_my_strategy_params()
-    look = int(params.get("lookback", 90) or 90)
+    look = int(params.get("lookback", 130) or 130)
+    look = max(60, min(look, 200))  # up to ~6–9 months trading days
+    max_days = int(params.get("max_days_after_setup", 10) or 10)
+    min_swing = float(params.get("min_price_swing_pct", 1.0) or 1.0)
+    require_conf = bool(params.get("require_confirmation", True))
+    rsi_period = int(params.get("rsi_period", 14) or 14)
+    order = int(params.get("pivot_order", 3) or 3)
+    tol = float(params.get("line_break_tol_pct", 0.35) or 0.35) / 100.0
+
     d = df.tail(look).copy()
+    if isinstance(d.columns, pd.MultiIndex):
+        d.columns = [c[0] if isinstance(c, tuple) else c for c in d.columns]
     if "Close" not in d.columns:
-        return False
-    if "RSI" not in d.columns:
-        try:
-            # local RSI
-            c = d["Close"].astype(float)
-            delta = c.diff()
-            up = delta.clip(lower=0).rolling(14).mean()
-            down = (-delta.clip(upper=0)).rolling(14).mean()
-            rs = up / down.replace(0, np.nan)
-            d["RSI"] = 100 - (100 / (1 + rs))
-        except Exception:
-            return False
+        out["reason"] = "No Close"
+        return out
+    d = _ensure_rsi_col(d, rsi_period)
+    lows = pd.to_numeric(d["Low"] if "Low" in d.columns else d["Close"], errors="coerce")
+    close = pd.to_numeric(d["Close"], errors="coerce")
+    rsi = pd.to_numeric(d["RSI"], errors="coerce")
+    n = len(d)
+
+    piv = _pivot_low_indices(lows, order=order)
+    if len(piv) < 2:
+        piv = _pivot_low_indices(lows, order=max(2, order - 1))
+    if len(piv) < 2:
+        out["reason"] = "Need at least 2 swing lows on 1D chart"
+        return out
+
+    def _line_unbroken_price(i1, i2, p1, p2) -> bool:
+        """Between pivots, lows should not break below the price line (tolerance)."""
+        if i2 <= i1 + 1:
+            return True
+        for i in range(i1 + 1, i2):
+            t = (i - i1) / max(i2 - i1, 1)
+            line_y = p1 + t * (p2 - p1)
+            v = float(lows.iloc[i])
+            if np.isnan(v):
+                continue
+            if v < line_y * (1.0 - tol):
+                return False
+        return True
+
+    def _line_unbroken_rsi(i1, i2, r1, r2) -> bool:
+        """Between pivots, RSI should not break below the RSI line (tolerance)."""
+        if i2 <= i1 + 1:
+            return True
+        for i in range(i1 + 1, i2):
+            t = (i - i1) / max(i2 - i1, 1)
+            line_y = r1 + t * (r2 - r1)
+            v = float(rsi.iloc[i])
+            if np.isnan(v):
+                continue
+            # RSI absolute tolerance ~ 3 points or tol fraction
+            if v < line_y - max(3.0, abs(line_y) * tol * 10):
+                return False
+        return True
+
+    # Search pairs: prefer latest valid pair (2nd pivot as recent as possible)
+    best = None
+    for b in range(len(piv) - 1, 0, -1):
+        i2 = piv[b]
+        for a in range(b - 1, -1, -1):
+            i1 = piv[a]
+            if i2 - i1 < 5:
+                continue
+            # allow short OR long span (months) inside lookback
+            p1, p2 = float(lows.iloc[i1]), float(lows.iloc[i2])
+            r1, r2 = float(rsi.iloc[i1]), float(rsi.iloc[i2])
+            if any(np.isnan(x) for x in (p1, p2, r1, r2)):
+                continue
+            # Price downward (lower low), RSI upward (higher low) — no RSI zone limits
+            if not (p2 < p1 and r2 > r1):
+                continue
+            depth = (p1 - p2) / max(abs(p1), 1e-9) * 100
+            if depth < max(0.3, min_swing * 0.2):
+                continue
+            if not _line_unbroken_price(i1, i2, p1, p2):
+                continue
+            if not _line_unbroken_rsi(i1, i2, r1, r2):
+                continue
+            days_since = int(n - 1 - i2)
+            cand = {
+                "i1": i1,
+                "i2": i2,
+                "p1": p1,
+                "p2": p2,
+                "r1": r1,
+                "r2": r2,
+                "days_since": days_since,
+                "bars_between": int(i2 - i1),
+                "depth": depth,
+            }
+            # prefer most recent 2nd low, then longer clean structure
+            if best is None or cand["days_since"] < best["days_since"] or (
+                cand["days_since"] == best["days_since"] and cand["bars_between"] > best["bars_between"]
+            ):
+                best = cand
+        if best and best["days_since"] <= max_days:
+            break  # good recent pair found
+
+    if not best:
+        out["reason"] = (
+            "No clean pair: need price lower-low + RSI higher-low with "
+            "unbroken lines on both (1D, up to ~6 months). No RSI min/max filter."
+        )
+        return out
+
+    out["swing1"] = round(best["p1"], 2)
+    out["swing2"] = round(best["p2"], 2)
+    out["rsi1"] = round(best["r1"], 1)
+    out["rsi2"] = round(best["r2"], 1)
+    out["days_since_setup"] = best["days_since"]
+    out["bars_between"] = best["bars_between"]
+
+    last_close = float(close.iloc[-1])
+    last_rsi = float(rsi.iloc[-1]) if pd.notna(rsi.iloc[-1]) else best["r2"]
+
+    # After 2nd low: if RSI collapses hard below 2nd-low RSI, line failed
+    if best["days_since"] >= 1 and last_rsi < best["r2"] - 8:
+        out["status"] = "RSI_FAILED"
+        out["reason"] = (
+            f"RSI line failed after 2nd low ({best['r2']:.1f} → {last_rsi:.1f})."
+        )
+        return out
+
+    if best["days_since"] > max_days:
+        out["status"] = "TOO_LATE"
+        out["reason"] = (
+            f"Valid divergence structure (price ↓ RSI ↑, lines clean, "
+            f"{best['bars_between']} bars between lows) but 2nd low was "
+            f"{best['days_since']} days ago (fresh window={max_days})."
+        )
+        return out
+
+    if require_conf and last_close < best["p2"] * 0.992:
+        out["status"] = "WAIT"
+        out["reason"] = (
+            f"Structure OK — wait hold above 2nd low ₹{best['p2']:.2f} "
+            f"(now ₹{last_close:.2f})."
+        )
+        return out
+
+    out["ok_for_buy"] = True
+    out["status"] = "ACTIVE_FRESH"
+    out["reason"] = (
+        f"ACTIVE_FRESH: price ↓ ₹{best['p1']:.2f}→₹{best['p2']:.2f}, "
+        f"RSI ↑ {best['r1']:.1f}→{best['r2']:.1f}, lines unbroken, "
+        f"{best['bars_between']} bars between lows, "
+        f"2nd low {best['days_since']} day(s) ago."
+    )
+    return out
+
+
+def my_strategy_divergence_ok(df: pd.DataFrame, idx: int = -1, params: dict = None) -> bool:
+    """True only for ACTIVE_FRESH strict divergence (no soft fallback)."""
     try:
-        lows_p = d["Low"].astype(float) if "Low" in d.columns else d["Close"].astype(float)
-        rsi = d["RSI"].astype(float)
-        # last third vs prior third
-        n = len(d)
-        a, b = d.iloc[: n // 2], d.iloc[n // 2 :]
-        if a.empty or b.empty:
-            return False
-        price_ll = float(lows_p.iloc[n // 2 :].min()) < float(lows_p.iloc[: n // 2].min())
-        rsi_hl = float(rsi.iloc[n // 2 :].min()) > float(rsi.iloc[: n // 2].min())
-        last_rsi = float(rsi.iloc[-1])
-        return bool(price_ll and rsi_hl and 35 <= last_rsi <= 65)
+        return bool(detect_my_strategy_divergence(df, params).get("ok_for_buy"))
     except Exception:
         return False
 
 
-def my_strategy_status(df: pd.DataFrame) -> str:
+def my_strategy_status(df: pd.DataFrame):
+    """Dict status for UI + gates. Also accepts legacy str use via str()."""
     try:
-        ok = my_strategy_divergence_ok(df, len(df) - 1, load_my_strategy_params())
-        return "READY" if ok else "WAIT"
+        return detect_my_strategy_divergence(df, load_my_strategy_params())
     except Exception:
-        return "WAIT"
+        return {"ok_for_buy": False, "status": "WAIT", "reason": "error"}
 
 
 def _strategy_levels(price: float, side: str = "BUY"):
@@ -8026,10 +8212,8 @@ def _row_matches_strategy(df: pd.DataFrame, sid: str) -> bool:
             vol_r = float(v.iloc[-1] / max(base, 1))
 
         if sid == "my_strategy":
-            if my_strategy_divergence_ok(d, len(d) - 1):
-                return True
-            # softer alternate: RSI rising while near EMA
-            return price >= ema20 * 0.98 and 40 <= rsi <= 60 and float(rsi_s.iloc[-1]) >= float(rsi_s.iloc[-5])
+            # STRICT only — no soft alternate (was flooding list with banks/TCS etc.)
+            return bool(my_strategy_divergence_ok(d, len(d) - 1))
         if sid == "trend_pullback":
             return price > ema20 and ema20 >= ema50 * 0.995 and 42 <= rsi <= 68
         if sid == "breakout_vol":
@@ -8322,7 +8506,9 @@ def show_strategy_lab(results: pd.DataFrame):
 | Chart feature | Rule stored |
 |---------------|-------------|
 | Price swing lows falling | Required |
-| RSI at **same bars** rising / flat | Required (bullish divergence) |
+| RSI at **same bars** rising (any RSI level) | Required — **no min/max RSI boundary** |
+| Lines on **price lows** + **RSI lows** unbroken | Required between the two swings |
+| Time between lows | Short **or** long (1D lookback up to ~6 months) |
 | Point **D** = second low completion | Entry window starts |
 | 2–3 days after big bounce | **TOO_LATE** — not a buy |
 | RSI breaks rising support line | **RSI_FAILED** — no buy |
@@ -9569,8 +9755,12 @@ def analyse_stock(
     if df.empty or len(df) < 60:
         return None
 
+    _pa = {}
     try:
-        _pa = compute_price_action(df)
+        if "compute_price_action" in globals():
+            _pa = compute_price_action(df) or {}
+        else:
+            _pa = {}
     except Exception:
         _pa = {}
 
@@ -9591,7 +9781,7 @@ def analyse_stock(
     # EMA 20
     # --------------------------------------------------------
 
-    if price > safe_float(row["EMA20"]):
+    if price > safe_float(row["EMA20"] if "EMA20" in getattr(row, "index", []) else 0):
 
         score += 5
 
@@ -9611,7 +9801,7 @@ def analyse_stock(
     # EMA 50
     # --------------------------------------------------------
 
-    if price > safe_float(row["EMA50"]):
+    if price > safe_float(row["EMA50"] if "EMA50" in getattr(row, "index", []) else 0):
 
         score += 6
 
@@ -9631,7 +9821,16 @@ def analyse_stock(
     # EMA 200
     # --------------------------------------------------------
 
-    if price > safe_float(row["EMA200"]):
+    _ema200 = safe_float(row["EMA200"]) if "EMA200" in getattr(row, "index", []) else safe_float(row.get("EMA200") if hasattr(row, "get") else None)
+    try:
+        if "EMA200" not in df.columns:
+            df["EMA200"] = pd.to_numeric(df["Close"], errors="coerce").ewm(span=200, adjust=False).mean()
+            row = df.iloc[-1]
+        _ema200 = safe_float(row.get("EMA200") if hasattr(row, "get") else row["EMA200"] if "EMA200" in row.index else 0)
+    except Exception:
+        _ema200 = 0
+
+    if _ema200 > 0 and price > _ema200:
 
         score += 5
 
@@ -9895,27 +10094,30 @@ def analyse_stock(
     # My Strategy — RSI bullish divergence (user template: RELIANCE / COALINDIA)
     try:
         _ms = my_strategy_status(df)
-        if _ms.get("ok_for_buy") or _ms.get("status") == "ACTIVE_FRESH":
-            boost = safe_float(_learning.get("my_strategy_boost"), 8)
-            mult = safe_float(_learning.get("rsi_bull_div_multiplier"), 1.15)
+        # my_strategy_status may return str ("READY"/"WAIT") or dict
+        if isinstance(_ms, dict):
+            _ms_status = str(_ms.get("status") or "")
+            _ms_ok = bool(_ms.get("ok_for_buy"))
+            _ms_reason = str(_ms.get("reason") or "")
+        else:
+            _ms_status = str(_ms or "")
+            _ms_ok = _ms_status.upper() in ("READY", "ACTIVE_FRESH", "OK")
+            _ms_reason = _ms_status
+        if _ms_ok or _ms_status.upper() in ("READY", "ACTIVE_FRESH"):
+            boost = safe_float((_learning or {}).get("my_strategy_boost"), 8)
+            mult = safe_float((_learning or {}).get("rsi_bull_div_multiplier"), 1.15)
             add = boost * mult / 1.1
             score += add
             if "RSI_BULL_DIV" not in patterns:
                 patterns.append("RSI_BULL_DIV")
             reasons.append(
-                f"My Strategy RSI bullish divergence ACTIVE_FRESH "
-                f"(price LL + RSI HL, same bars) [+{add:.1f} learned weight]. "
-                f"{_ms.get('reason', '')}"
+                f"My Strategy RSI signal {_ms_status} [+{add:.1f}]. {_ms_reason}"
             )
-        elif _ms.get("status") == "TOO_LATE":
-            reasons.append(
-                f"My Strategy divergence TOO_LATE — not a fresh buy: {_ms.get('reason', '')}"
-            )
+        elif _ms_status.upper() == "TOO_LATE":
+            reasons.append(f"My Strategy TOO_LATE: {_ms_reason}")
             score -= 3
-        elif _ms.get("status") == "RSI_FAILED":
-            reasons.append(
-                f"My Strategy RSI line failed — no buy: {_ms.get('reason', '')}"
-            )
+        elif _ms_status.upper() == "RSI_FAILED":
+            reasons.append(f"My Strategy RSI failed: {_ms_reason}")
             score -= 4
     except Exception:
         pass
@@ -16690,11 +16892,16 @@ def show_stock(
         + "..."
     ):
 
-        result = analyse_stock(
-            clean_symbol(symbol),
-            df,
-            fetch_news=True
-        )
+        try:
+            result = analyse_stock(
+                clean_symbol(symbol),
+                df,
+                fetch_news=True
+            )
+        except Exception as _ae:
+            st.error(f"Analysis error: {_ae}")
+            st.caption("Try another stock or Reload scan. If this continues, redeploy latest app.py.")
+            return
 
     if not result:
 
