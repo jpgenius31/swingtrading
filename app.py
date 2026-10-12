@@ -7918,7 +7918,7 @@ def load_my_strategy_params() -> dict:
         "min_price_swing_pct": 1.0,   # allow mild or deep LL
         "rsi_period": 14,
         "require_confirmation": True,
-        "max_days_after_setup": 10,   # 2nd low still actionable window
+        "max_days_after_setup": 2,    # next day or next-to-next only (not 2–3+ days late)
         "pivot_order": 3,
         "line_break_tol_pct": 0.35,   # tolerance under trendline
     }
@@ -8000,7 +8000,8 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
     params = params or load_my_strategy_params()
     look = int(params.get("lookback", 130) or 130)
     look = max(60, min(look, 200))  # up to ~6–9 months trading days
-    max_days = int(params.get("max_days_after_setup", 10) or 10)
+    max_days = int(params.get("max_days_after_setup", 2) or 2)
+    max_days = max(1, min(max_days, 2))  # hard cap: next day or next-to-next only
     min_swing = float(params.get("min_price_swing_pct", 1.0) or 1.0)
     require_conf = bool(params.get("require_confirmation", True))
     rsi_period = int(params.get("rsi_period", 14) or 14)
@@ -8072,7 +8073,12 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
             if not (p2 < p1 and r2 > r1):
                 continue
             depth = (p1 - p2) / max(abs(p1), 1e-9) * 100
-            if depth < max(0.3, min_swing * 0.2):
+            # meaningful structure — filters "out of context" noise (e.g. random wiggles)
+            if depth < max(0.8, min_swing * 0.35):
+                continue
+            if (r2 - r1) < 2.0:  # RSI must clearly rise (any zone, but real HL)
+                continue
+            if (i2 - i1) < 8:  # not two almost-adjacent bars
                 continue
             if not _line_unbroken_price(i1, i2, p1, p2):
                 continue
@@ -8128,7 +8134,7 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
         out["reason"] = (
             f"Valid divergence structure (price ↓ RSI ↑, lines clean, "
             f"{best['bars_between']} bars between lows) but 2nd low was "
-            f"{best['days_since']} days ago (fresh window={max_days})."
+            f"{best['days_since']} days ago — show only next day or max next-to-next (window={max_days})."
         )
         return out
 
@@ -8212,8 +8218,10 @@ def _row_matches_strategy(df: pd.DataFrame, sid: str) -> bool:
             vol_r = float(v.iloc[-1] / max(base, 1))
 
         if sid == "my_strategy":
-            # STRICT only — no soft alternate (was flooding list with banks/TCS etc.)
-            return bool(my_strategy_divergence_ok(d, len(d) - 1))
+            # Show ACTIVE_FRESH and TOO_LATE (late still listed with remark elsewhere)
+            info = detect_my_strategy_divergence(d)
+            stt = str(info.get("status") or "")
+            return stt in ("ACTIVE_FRESH", "TOO_LATE")
         if sid == "trend_pullback":
             return price > ema20 and ema20 >= ema50 * 0.995 and 42 <= rsi <= 68
         if sid == "breakout_vol":
@@ -8301,7 +8309,24 @@ def live_strategy_signals(base: pd.DataFrame, sid: str, max_check: int = 35) -> 
             df = stock_history(clean_symbol(sym), period="6mo")
             if df is None or len(df) < 40:
                 continue
-            if not _row_matches_strategy(df, sid):
+            status = ""
+            remark = ""
+            if sid == "my_strategy":
+                info = detect_my_strategy_divergence(df)
+                status = str(info.get("status") or "WAIT")
+                if status not in ("ACTIVE_FRESH", "TOO_LATE"):
+                    continue  # WAIT / RSI_FAILED / invalid pattern — do not list
+                if status == "ACTIVE_FRESH":
+                    remark = "Fresh — pattern just formed (next / next-to-next day window)"
+                elif status == "TOO_LATE":
+                    days = info.get("days_since_setup")
+                    remark = (
+                        f"LATE — structure may be valid but 2nd low was {days} day(s) ago "
+                        f"(prefer act on day 1–2 only). Not a priority buy."
+                    )
+                else:
+                    remark = str(info.get("reason") or "")
+            elif not _row_matches_strategy(df, sid):
                 continue
             price = float(df["Close"].astype(float).iloc[-1])
             try:
@@ -8311,7 +8336,7 @@ def live_strategy_signals(base: pd.DataFrame, sid: str, max_check: int = 35) -> 
             except Exception:
                 pass
             entry, tgt, sl = _strategy_levels(price, side)
-            rows.append({
+            row = {
                 "Stock": display_symbol(sym),
                 "Strategy": meta.get("name", sid),
                 "Side": side,
@@ -8320,7 +8345,14 @@ def live_strategy_signals(base: pd.DataFrame, sid: str, max_check: int = 35) -> 
                 "Target": tgt,
                 "Stop Loss": sl,
                 "Hold Days": hold,
-            })
+            }
+            if sid == "my_strategy":
+                row["Status"] = status
+                row["Remark"] = remark
+                # Levels only emphasize fresh buys
+                if status == "TOO_LATE":
+                    row["Side"] = "WATCH"
+            rows.append(row)
         except Exception:
             continue
     return pd.DataFrame(rows)
@@ -9144,9 +9176,10 @@ My Strategy is **price vs RSI divergence** — it also applies to **index future
                 st.write(f"**Why:** {meta_s.get('why', '')}")
                 st.write(f"**Hold ~{meta_s.get('hold_days')} days** · Typical win {meta_s.get('typical_win')}")
                 if sid_s == "my_strategy":
-                    st.error(
-                        "STRICT: Building patterns only. "
-                        "Shiva Mills–style (pattern already done + 2–3 days up) = **NOT a buy**."
+                    st.info(
+                        "**My Strategy list:** **ACTIVE_FRESH** = act (day 1–2 after 2nd low). "
+                        "**TOO_LATE** = still shown with remark **LATE** — not a priority buy. "
+                        "Invalid / out-of-context charts are **not** listed."
                     )
             det = (st.session_state.get("strategy_bt_detail") or {}).get(sid_s)
             if det:
