@@ -52,6 +52,7 @@ STRATEGY_ALL_MAP_FILE = APP_DIR / "strategy_all_stocks_map.csv"
 STRATEGY_ALL_SUMMARY_FILE = APP_DIR / "strategy_all_stocks_summary.csv"
 STRATEGY_ALL_META_FILE = APP_DIR / "strategy_all_stocks_meta.json"
 SYNC_VERSION_FILE = APP_DIR / "realtime_sync_version.json"
+TABLE_FORMATS_FILE = APP_DIR / "table_formats.json"
 MY_STRATEGY_PARAMS_FILE = APP_DIR / "my_strategy_params.json"
 NSE_UNIVERSE_CACHE = APP_DIR / "nse_equity_universe.csv"
 WATCHLIST_FILE = APP_DIR / "user_watchlist.json"
@@ -1386,47 +1387,124 @@ def attach_fundamentals_to_df(df: pd.DataFrame, max_n: int = 25) -> pd.DataFrame
 
 
 
+def load_table_formats() -> dict:
+    """Per-table saved layout: columns, height, excluded rows, filters."""
+    try:
+        if TABLE_FORMATS_FILE.exists():
+            return json.loads(TABLE_FORMATS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def save_table_formats(data: dict) -> None:
+    try:
+        TABLE_FORMATS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def get_table_format(table_id: str) -> dict:
+    all_f = load_table_formats()
+    return dict(all_f.get(str(table_id), {}) or {})
+
+
+def set_table_format(table_id: str, fmt: dict) -> None:
+    all_f = load_table_formats()
+    all_f[str(table_id)] = fmt
+    save_table_formats(all_f)
+
+
 def filterable_dataframe(
     df: pd.DataFrame,
     key: str,
     default_cols: list = None,
     height: int = 360,
+    open_analysis_on_select: bool = True,
+    stock_col: str = "Stock",
 ):
-    """Table with search + column filters for BUY/SELL/History visibility."""
+    """
+    Saved table format everywhere:
+    - columns, height, search, column filters
+    - hide/remove rows (saved per table_id)
+    - click row → Stock Analysis (when Stock column present)
+    Format is stored in table_formats.json and reused next time.
+    """
     if df is None or df.empty:
         st.info("No rows to display.")
         return df
-    x = df.copy()
+
+    table_id = str(key)
+    saved = get_table_format(table_id)
+
+    x = df.copy().reset_index(drop=True)
     x.columns = [str(c).strip() for c in x.columns]
+    cols_all = list(x.columns)
+
+    # Apply saved excluded row keys (by Stock or by row fingerprint)
+    excluded = list(saved.get("excluded_rows") or [])
+    if excluded and stock_col in x.columns:
+        x = x[~x[stock_col].astype(str).str.upper().isin([str(e).upper() for e in excluded])].reset_index(drop=True)
+
+    default = default_cols if default_cols else cols_all[: min(12, len(cols_all))]
+    default = [c for c in default if c in cols_all] or cols_all[:12]
+    if saved.get("columns"):
+        default = [c for c in saved["columns"] if c in cols_all] or default
+    height = int(saved.get("height") or height or 360)
+
     st.markdown(
         """
         <div style="background:#0f172a;border:1px solid #334155;border-radius:10px;
                     padding:10px 12px;margin-bottom:8px;color:#94a3b8;font-size:0.9rem;">
-        <b style="color:#e2e8f0;">Search + filters</b> · market cap / revenue in <b>₹ crore</b> when loaded.
+        <b style="color:#e2e8f0;">Saved table format</b> · set columns / height / hide rows →
+        <b>Save format</b> · next visit loads the same layout ·
+        click a row with Stock to open analysis.
         </div>
         """,
         unsafe_allow_html=True,
     )
-    c1, c2 = st.columns([2, 1])
+
+    c1, c2, c3 = st.columns([2, 2, 1])
     with c1:
-        q = st.text_input("Search table", value="", key=f"{key}_q")
+        q = st.text_input(
+            "Search table",
+            value=str(saved.get("search") or ""),
+            key=f"{table_id}_q",
+        )
     with c2:
-        cols_all = list(x.columns)
-        default = default_cols if default_cols else cols_all[: min(12, len(cols_all))]
-        default = [c for c in default if c in cols_all] or cols_all[:12]
-        pick = st.multiselect("Columns", cols_all, default=default, key=f"{key}_cols")
+        pick = st.multiselect(
+            "Columns (saved)",
+            cols_all,
+            default=default,
+            key=f"{table_id}_cols",
+        )
+    with c3:
+        height = st.number_input(
+            "Height px",
+            min_value=200,
+            max_value=900,
+            value=int(height),
+            step=40,
+            key=f"{table_id}_h",
+        )
     if not pick:
         pick = list(x.columns)[:12]
+
+    # Column value filters (object cols)
     filter_cols = [c for c in pick if c in x.columns and x[c].dtype == object][:4]
+    active_filters = dict(saved.get("filters") or {})
     if filter_cols:
         fcols = st.columns(max(len(filter_cols), 1))
         for i, col in enumerate(filter_cols):
             with fcols[i]:
-                vals = sorted([str(v) for v in x[col].dropna().unique().tolist() if str(v).strip()][:40])
+                vals = sorted([str(v) for v in x[col].dropna().unique().tolist() if str(v).strip()][:50])
+                prev = [v for v in (active_filters.get(col) or []) if v in vals]
                 if vals:
-                    sel = st.multiselect(col, vals, default=[], key=f"{key}_f_{col}")
+                    sel = st.multiselect(col, vals, default=prev, key=f"{table_id}_f_{col}")
+                    active_filters[col] = sel
                     if sel:
                         x = x[x[col].astype(str).isin(sel)]
+
     if q and str(q).strip():
         qq = str(q).strip().lower()
         mask = pd.Series([False] * len(x), index=x.index)
@@ -1434,9 +1512,95 @@ def filterable_dataframe(
             if c in x.columns:
                 mask = mask | x[c].astype(str).str.lower().str.contains(qq, na=False)
         x = x[mask]
-    st.caption(f"Showing **{len(x)}** rows")
-    st.dataframe(x[pick], use_container_width=True, hide_index=True, height=height)
+
+    # Hide / restore rows by Stock
+    if stock_col in x.columns:
+        all_stocks = sorted(x[stock_col].astype(str).unique().tolist())
+        hide_sel = st.multiselect(
+            "Hide stocks from this table (saved when you click Save format)",
+            all_stocks,
+            default=[e for e in excluded if e in all_stocks],
+            key=f"{table_id}_hide",
+        )
+        if hide_sel:
+            x = x[~x[stock_col].astype(str).isin(hide_sel)].reset_index(drop=True)
+        excluded = hide_sel
+
+    st.caption(f"Showing **{len(x)}** rows · table id `{table_id}`")
+
+    show = x[pick] if pick else x
+    selected_stock = None
+    try:
+        event = st.dataframe(
+            show,
+            use_container_width=True,
+            hide_index=True,
+            height=int(height),
+            on_select="rerun",
+            selection_mode="single-row",
+            key=f"{table_id}_df",
+        )
+        rows = []
+        try:
+            rows = list(event.selection.rows) if event and getattr(event, "selection", None) else []
+        except Exception:
+            rows = []
+        if rows and stock_col in show.columns:
+            idx = int(rows[0])
+            if 0 <= idx < len(show):
+                selected_stock = str(show.iloc[idx][stock_col])
+    except TypeError:
+        st.dataframe(show, use_container_width=True, hide_index=True, height=int(height))
+
+    b1, b2, b3 = st.columns(3)
+    with b1:
+        if st.button("💾 Save format", key=f"{table_id}_save", type="primary"):
+            set_table_format(
+                table_id,
+                {
+                    "columns": list(pick),
+                    "height": int(height),
+                    "search": str(q or ""),
+                    "filters": active_filters,
+                    "excluded_rows": list(excluded or []),
+                },
+            )
+            st.success("Table format saved — same layout next time.")
+    with b2:
+        if st.button("↺ Reset format", key=f"{table_id}_reset"):
+            all_f = load_table_formats()
+            all_f.pop(table_id, None)
+            save_table_formats(all_f)
+            st.success("Format reset.")
+            st.rerun()
+    with b3:
+        if selected_stock and open_analysis_on_select:
+            if st.button(f"📈 Open {selected_stock}", key=f"{table_id}_open", type="primary"):
+                st.session_state.selected_stock = selected_stock.upper().replace(".NS", "")
+                st.session_state.page = "Stock Analysis"
+                st.rerun()
+        elif open_analysis_on_select and stock_col in show.columns and selected_stock is None:
+            st.caption("Select a row, then Open")
+
+    # Auto-open on row select when Stock present
+    if selected_stock and open_analysis_on_select and st.session_state.get(f"{table_id}_auto_nav", True):
+        # only auto if user explicitly selected (avoid loop): use a flag
+        prev = st.session_state.get(f"{table_id}_last_sel")
+        if prev != selected_stock:
+            st.session_state[f"{table_id}_last_sel"] = selected_stock
+            st.session_state.selected_stock = selected_stock.upper().replace(".NS", "")
+            st.session_state.page = "Stock Analysis"
+            st.rerun()
+
     return x
+
+
+def saved_table(df, key, default_cols=None, height=360, open_analysis_on_select=True, stock_col="Stock"):
+    """Alias — use everywhere for consistent saved tables."""
+    return filterable_dataframe(
+        df, key=key, default_cols=default_cols, height=height,
+        open_analysis_on_select=open_analysis_on_select, stock_col=stock_col,
+    )
 
 
 def render_call_stock_card(row, section_key: str = "card"):
@@ -3871,47 +4035,60 @@ def show_superstar_bulk_page():
             return out
         return out.sort_values(["Has BUY", "BUY deals", "Total deals"], ascending=[False, False, False])
 
+    def _open_stock_analysis(stock: str):
+        """Same analysis page everywhere: chart + trader view (no extra buttons)."""
+        sym = str(stock or "").strip().upper().replace(".NS", "")
+        if not sym:
+            return
+        st.session_state.selected_stock = sym
+        st.session_state.page = "Stock Analysis"
+        st.session_state["_from_bulk_deals"] = True
+        st.rerun()
+
     def _render_bucket(title: str, view: pd.DataFrame, empty_msg: str):
         st.markdown(f"### {title}")
         if view is None or view.empty:
             st.info(empty_msg)
             return
         st.success(f"**{len(view)}** deal lines · **{view['Stock'].nunique() if 'Stock' in view.columns else 0}** stocks")
+        safe = "".join(ch if ch.isalnum() else "_" for ch in title)[:28]
 
         summ = _stock_summary(view)
         if not summ.empty:
             st.markdown("#### All stocks — who bought / who sold")
-            st.caption("Each stock lists banks & investors on BUY and on SELL side.")
-            # optional sub-filter on summary
             only_buy = st.checkbox(
                 "Show only stocks that have at least one BUY",
                 value=False,
-                key=f"only_buy_{title[:12]}",
+                key=f"only_buy_{safe}",
             )
-            show_s = summ
+            show_s = summ.reset_index(drop=True)
             if only_buy and "Has BUY" in show_s.columns:
-                show_s = show_s[show_s["Has BUY"] == "Yes"]
-            st.dataframe(show_s, use_container_width=True, hide_index=True)
-            csv = show_s.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "Download stock summary CSV",
-                csv,
-                file_name="bulk_stock_buy_sell_summary.csv",
-                mime="text/csv",
-                key=f"dl_sum_{title[:16]}",
+                show_s = show_s[show_s["Has BUY"] == "Yes"].reset_index(drop=True)
+            # Saved format + click row → analysis
+            filterable_dataframe(
+                show_s,
+                key=f"bulk_sum_{safe}",
+                default_cols=[c for c in [
+                    "Stock", "Has BUY", "BUY deals", "Who BOUGHT (bank / investor)",
+                    "Has SELL", "SELL deals", "Who SOLD (bank / investor)", "Total deals", "Value Cr",
+                ] if c in show_s.columns],
+                height=380,
+                open_analysis_on_select=True,
+                stock_col="Stock",
             )
 
         cols = [c for c in [
             "Date", "Stock", "Category", "Client", "Side", "Qty", "Avg Price", "Value Cr", "Deal Type"
         ] if c in view.columns]
-        st.markdown("#### Every deal line (stock · client · buy/sell)")
-        st.dataframe(view[cols], use_container_width=True, hide_index=True)
-        st.download_button(
-            "Download deal detail CSV",
-            view[cols].to_csv(index=False).encode("utf-8"),
-            file_name="bulk_deal_detail.csv",
-            mime="text/csv",
-            key=f"dl_det_{title[:16]}",
+        st.markdown("#### Every deal line")
+        detail = view[cols].reset_index(drop=True)
+        filterable_dataframe(
+            detail,
+            key=f"bulk_det_{safe}",
+            default_cols=cols,
+            height=360,
+            open_analysis_on_select=True,
+            stock_col="Stock",
         )
 
     # ----- Tabs like Trendlyne screenshot -----
@@ -3987,27 +4164,32 @@ def show_superstar_bulk_page():
             st.session_state.page = "FII DII"
             st.rerun()
 
-    # pick stock
+    # Quick open (same analysis page — chart + experience trader)
     if not df.empty and "Stock" in df.columns:
         st.divider()
+        st.markdown("##### Open stock analysis")
+        st.caption("Same page as elsewhere: interactive chart, price action, trader feedback.")
         picks = sorted(df["Stock"].astype(str).unique().tolist())
-        pick = st.selectbox("Analyse a stock from deals", picks, key="ss_pick")
-        b1, b2 = st.columns(2)
-        with b1:
-            if st.button("📈 Stock analysis", key="ss_an"):
-                st.session_state.selected_stock = pick
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            pick = st.selectbox("Stock", picks, key="ss_pick")
+        with c2:
+            st.write("")
+            st.write("")
+            if st.button("Open →", key="ss_an", type="primary", use_container_width=True):
+                st.session_state.selected_stock = str(pick).upper()
                 st.session_state.page = "Stock Analysis"
+                st.session_state["_from_bulk_deals"] = True
                 st.rerun()
-        with b2:
-            if st.button("⭐ Watchlist", key="ss_wl"):
-                try:
-                    wl = load_watchlist()
-                    if pick not in wl:
-                        wl.append(pick)
-                        save_watchlist(wl)
-                    st.success(f"Added {pick}")
-                except Exception as e:
-                    st.caption(str(e))
+        if st.button("⭐ Add selected to watchlist", key="ss_wl"):
+            try:
+                wl = load_watchlist()
+                if pick not in wl:
+                    wl.append(pick)
+                    save_watchlist(wl)
+                st.success(f"Added {pick}")
+            except Exception as e:
+                st.caption(str(e))
 
     with st.expander("Data accuracy notes"):
         st.markdown(
@@ -22622,6 +22804,17 @@ def render_sidebar_back():
 
 # Sidebar removed — navigation & scan live in fixed header
 scan = False
+
+# AUTOLOAD_SCAN_FROM_DISK: results from GitHub Action / previous save (no local Python needed)
+try:
+    if st.session_state.get("results") is None or (
+        hasattr(st.session_state.get("results"), "empty") and st.session_state.results.empty
+    ):
+        _n = load_scan_from_disk(force=False)
+        if _n:
+            st.session_state["_autoload_scan_rows"] = _n
+except Exception:
+    pass
 
 # Fixed header (no sidebar)
 try:
