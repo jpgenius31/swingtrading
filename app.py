@@ -89,51 +89,101 @@ st.set_page_config(
 
 
 def apply_ui_theme():
-    """Dark / Light / System theme for the app shell."""
+    """Dark / Light / System — high contrast so fonts stay readable."""
     if "ui_theme" not in st.session_state:
         st.session_state.ui_theme = "Dark"
     theme = str(st.session_state.get("ui_theme") or "Dark")
-    if theme == "System":
-        # Follow prefers-color-scheme via CSS
-        css = """
+
+    common = """
+    <style>
+    .jp-scan-done {
+      padding:12px 14px; border-radius:10px; margin:8px 0 12px 0;
+      font-weight:600; font-size:0.95rem;
+    }
+    /* Keep metric labels readable */
+    [data-testid="stMetricLabel"] { opacity: 0.9 !important; }
+    </style>
+    """
+
+    if theme == "Light":
+        css = common + """
+        <style>
+        .stApp, .stApp > header, [data-testid="stAppViewContainer"] {
+          background-color: #f1f5f9 !important;
+          color: #0f172a !important;
+        }
+        .block-container, .stMarkdown, .stMarkdown p, .stCaption, label, p, span,
+        [data-testid="stWidgetLabel"], [data-testid="stMarkdownContainer"] {
+          color: #0f172a !important;
+        }
+        div[data-testid="stMetricValue"] { color: #0f172a !important; }
+        div[data-testid="stMetricDelta"] { color: #166534 !important; }
+        h1, h2, h3, h4 { color: #0f172a !important; }
+        [data-testid="stExpander"] {
+          background: #ffffff !important;
+          border: 1px solid #cbd5e1 !important;
+          color: #0f172a !important;
+        }
+        .stDataFrame, [data-testid="stDataFrame"] {
+          background: #ffffff !important;
+          color: #0f172a !important;
+        }
+        .stButton > button {
+          color: #0f172a !important;
+          border: 1px solid #94a3b8 !important;
+          background: #ffffff !important;
+        }
+        .jp-scan-done {
+          background:#ecfdf5; border:1px solid #6ee7b7; color:#065f46;
+        }
+        /* Plotly text */
+        .js-plotly-plot .plotly text { fill: #0f172a !important; }
+        </style>
+        """
+    elif theme == "System":
+        css = common + """
         <style>
         @media (prefers-color-scheme: light) {
-          .stApp { background: #f8fafc !important; color: #0f172a !important; }
-          .block-container { color: #0f172a; }
-          [data-testid="stMarkdownContainer"] p, .stMarkdown { color: #0f172a; }
-          div[data-testid="stMetricValue"] { color: #0f172a !important; }
+          .stApp { background:#f1f5f9 !important; color:#0f172a !important; }
+          .block-container, .stMarkdown, p, label, h1, h2, h3 {
+            color:#0f172a !important;
+          }
+          div[data-testid="stMetricValue"] { color:#0f172a !important; }
+          [data-testid="stExpander"] { background:#fff !important; color:#0f172a !important; }
           .jp-scan-done { background:#ecfdf5; border:1px solid #6ee7b7; color:#065f46; }
         }
         @media (prefers-color-scheme: dark) {
-          .stApp { background: #0b1220 !important; color: #e2e8f0 !important; }
+          .stApp { background:#0b1220 !important; color:#e2e8f0 !important; }
+          .block-container, .stMarkdown, p, label, h1, h2, h3 {
+            color:#e2e8f0 !important;
+          }
+          div[data-testid="stMetricValue"] { color:#f8fafc !important; }
           .jp-scan-done { background:#052e16; border:1px solid #16a34a; color:#bbf7d0; }
         }
         </style>
         """
-    elif theme == "Light":
-        css = """
-        <style>
-        .stApp { background: #f8fafc !important; color: #0f172a !important; }
-        .block-container { color: #0f172a; }
-        [data-testid="stHeader"] { background: #ffffff; }
-        div[data-testid="stMetricValue"] { color: #0f172a !important; }
-        .stDataFrame { background: #ffffff; }
-        .jp-scan-done {
-          background:#ecfdf5; border:1px solid #6ee7b7; color:#065f46;
-          padding:12px 14px; border-radius:10px; margin:8px 0 12px 0;
-          font-weight:600;
-        }
-        </style>
-        """
     else:
-        # Dark (default)
-        css = """
+        css = common + """
         <style>
-        .stApp { background: #0b1220 !important; color: #e2e8f0 !important; }
+        .stApp { background:#0b1220 !important; color:#e2e8f0 !important; }
+        .block-container, .stMarkdown, .stMarkdown p, .stCaption, label, p,
+        [data-testid="stWidgetLabel"], [data-testid="stMarkdownContainer"] {
+          color:#e2e8f0 !important;
+        }
+        div[data-testid="stMetricValue"] { color:#f8fafc !important; }
+        h1, h2, h3, h4 { color:#f1f5f9 !important; }
+        [data-testid="stExpander"] {
+          background:#0f172a !important;
+          border:1px solid #334155 !important;
+          color:#e2e8f0 !important;
+        }
+        .stButton > button {
+          color:#e2e8f0 !important;
+          border:1px solid #475569 !important;
+          background:#1e293b !important;
+        }
         .jp-scan-done {
           background:#052e16; border:1px solid #16a34a; color:#bbf7d0;
-          padding:12px 14px; border-radius:10px; margin:8px 0 12px 0;
-          font-weight:600;
         }
         </style>
         """
@@ -1929,8 +1979,14 @@ def render_unique_strategy_stock_cards(df: pd.DataFrame, max_cards: int = 12, ke
             try:
                 raw = stock_history(clean_symbol(stock), interval="1d")
                 if raw is not None and not raw.empty:
+                    try:
+                        plotted = calculate_indicators(raw)
+                    except Exception:
+                        plotted = raw
+                    if plotted is None or getattr(plotted, "empty", True):
+                        plotted = raw
                     fig = build_full_plotly_chart(
-                        calculate_indicators(raw),
+                        plotted,
                         title=f"{name} ({stock})",
                         target=tgt,
                         stop_loss=sl,
@@ -1938,7 +1994,9 @@ def render_unique_strategy_stock_cards(df: pd.DataFrame, max_cards: int = 12, ke
                         show_rsi=True,
                     )
                     if fig is not None:
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                    else:
+                        st.caption("Chart could not be built — try Analyse page.")
             except Exception as e:
                 st.caption(f"Chart: {e}")
 
@@ -2225,6 +2283,90 @@ def stochastic(df, period=14):
     ).mean()
 
     return k, d
+
+
+
+def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Full indicator set used by analysis + charts.
+    Must exist globally — chart expanders call this by name.
+    """
+    if df is None or getattr(df, "empty", True):
+        return pd.DataFrame()
+    d = normalize_columns(df).copy()
+    for col in ("Open", "High", "Low", "Close"):
+        if col not in d.columns:
+            return pd.DataFrame()
+        d[col] = pd.to_numeric(d[col], errors="coerce")
+    if "Volume" not in d.columns:
+        d["Volume"] = 0
+    d["Volume"] = pd.to_numeric(d["Volume"], errors="coerce").fillna(0)
+    d = d.dropna(subset=["Open", "High", "Low", "Close"])
+    if len(d) < 5:
+        return d
+
+    close = d["Close"]
+    d["EMA20"] = ema(close, 20)
+    d["EMA50"] = ema(close, 50)
+    d["EMA200"] = ema(close, 200) if len(d) >= 50 else d["EMA50"]
+    d["RSI"] = rsi(close, 14)
+    try:
+        macd_line, signal_line, hist = macd(close)
+        d["MACD"] = macd_line
+        d["MACDSignal"] = signal_line
+        d["MACDHist"] = hist
+    except Exception:
+        d["MACD"] = 0.0
+        d["MACDSignal"] = 0.0
+        d["MACDHist"] = 0.0
+    try:
+        d["ATR"] = atr(d, 14)
+    except Exception:
+        d["ATR"] = (d["High"] - d["Low"]).rolling(14).mean()
+    try:
+        mid, upper, lower = bollinger(d)
+        d["BBMiddle"] = mid
+        d["BBUpper"] = upper
+        d["BBLower"] = lower
+    except Exception:
+        pass
+    try:
+        # Stochastic
+        low_min = d["Low"].rolling(14).min()
+        high_max = d["High"].rolling(14).max()
+        d["StochK"] = 100 * (close - low_min) / (high_max - low_min).replace(0, np.nan)
+        d["StochD"] = d["StochK"].rolling(3).mean()
+    except Exception:
+        d["StochK"] = 50.0
+        d["StochD"] = 50.0
+    try:
+        # ADX (simplified)
+        up = d["High"].diff()
+        down = -d["Low"].diff()
+        plus_dm = np.where((up > down) & (up > 0), up, 0.0)
+        minus_dm = np.where((down > up) & (down > 0), down, 0.0)
+        tr = pd.concat([
+            d["High"] - d["Low"],
+            (d["High"] - close.shift()).abs(),
+            (d["Low"] - close.shift()).abs(),
+        ], axis=1).max(axis=1)
+        atr14 = tr.rolling(14).mean()
+        plus_di = 100 * pd.Series(plus_dm, index=d.index).rolling(14).mean() / atr14.replace(0, np.nan)
+        minus_di = 100 * pd.Series(minus_dm, index=d.index).rolling(14).mean() / atr14.replace(0, np.nan)
+        dx = (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan) * 100
+        d["ADX"] = dx.rolling(14).mean()
+    except Exception:
+        d["ADX"] = 20.0
+    try:
+        d["VWAP"] = vwap(d)
+    except Exception:
+        d["VWAP"] = close
+    try:
+        vol_ma = d["Volume"].rolling(20).mean().replace(0, np.nan)
+        d["Volume Ratio"] = d["Volume"] / vol_ma
+    except Exception:
+        d["Volume Ratio"] = 1.0
+    return d
 
 
 def bollinger(df, period=20):
@@ -7980,12 +8122,15 @@ SWING_STRATEGIES = {
 def load_my_strategy_params() -> dict:
     default = {
         "lookback": 130,              # ~6 months trading days on 1D
-        "min_price_swing_pct": 1.0,   # allow mild or deep LL
+        "min_price_swing_pct": 2.0,   # meaningful lower-low depth
         "rsi_period": 14,
         "require_confirmation": True,
-        "max_days_after_setup": 2,    # next day or next-to-next only (not 2–3+ days late)
-        "pivot_order": 3,
-        "line_break_tol_pct": 0.35,   # tolerance under trendline
+        "max_days_after_setup": 2,    # next day or next-to-next only
+        "pivot_order": 4,            # stricter swings (less noise)
+        "line_break_tol_pct": 0.25,  # tighter unbroken-line rule
+        "min_rsi_lift": 3.0,         # RSI must rise clearly
+        "min_bars_between": 12,      # not adjacent noise lows
+        "max_rally_after_pct": 4.0,  # if already ran hard, not a fresh call
     }
     try:
         if MY_STRATEGY_PARAMS_FILE.exists():
@@ -8036,16 +8181,13 @@ def _pivot_low_indices(lows: pd.Series, order: int = 3) -> list:
 
 def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict:
     """
-    My Strategy (user rules — 1D chart, up to ~6 months):
+    My Strategy — strict bullish RSI divergence on 1D (up to ~6 months):
 
-    1) Price goes downward across two swing lows (lower low).
-    2) RSI goes upward across those same bars (higher low).
-    3) NO fixed RSI min/max zone — RSI can be any level.
-    4) Lines drawn on price lows and on RSI lows must NOT be broken
-       between the two pivots (clean divergence structure).
-    5) The two lows can be close in time OR months apart (within lookback).
-
-    ACTIVE_FRESH = structure valid and 2nd low still within max_days_after_setup.
+    • Price: lower low between two real swing lows
+    • RSI: higher low on the SAME bars (any RSI level — no zone filter)
+    • Lines on price lows and RSI lows must stay unbroken between pivots
+    • Reject noise / out-of-context wiggles (this is why some stocks were always wrong)
+    • ACTIVE_FRESH only if 2nd low is day 0–2; TOO_LATE still returned for listing with remark
     """
     out = {
         "ok_for_buy": False,
@@ -8058,20 +8200,21 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
         "rsi2": None,
         "bars_between": None,
     }
-    if df is None or len(df) < 40:
+    if df is None or len(df) < 50:
         out["reason"] = "Not enough bars (need daily history)"
         return out
 
     params = params or load_my_strategy_params()
-    look = int(params.get("lookback", 130) or 130)
-    look = max(60, min(look, 200))  # up to ~6–9 months trading days
-    max_days = int(params.get("max_days_after_setup", 2) or 2)
-    max_days = max(1, min(max_days, 2))  # hard cap: next day or next-to-next only
-    min_swing = float(params.get("min_price_swing_pct", 1.0) or 1.0)
+    look = max(80, min(int(params.get("lookback", 130) or 130), 200))
+    max_days = max(1, min(int(params.get("max_days_after_setup", 2) or 2), 2))
+    min_swing = float(params.get("min_price_swing_pct", 2.0) or 2.0)
     require_conf = bool(params.get("require_confirmation", True))
     rsi_period = int(params.get("rsi_period", 14) or 14)
-    order = int(params.get("pivot_order", 3) or 3)
-    tol = float(params.get("line_break_tol_pct", 0.35) or 0.35) / 100.0
+    order = max(3, int(params.get("pivot_order", 4) or 4))
+    tol = float(params.get("line_break_tol_pct", 0.25) or 0.25) / 100.0
+    min_rsi_lift = float(params.get("min_rsi_lift", 3.0) or 3.0)
+    min_bars = int(params.get("min_bars_between", 12) or 12)
+    max_rally = float(params.get("max_rally_after_pct", 4.0) or 4.0)
 
     d = df.tail(look).copy()
     if isinstance(d.columns, pd.MultiIndex):
@@ -8082,20 +8225,22 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
     d = _ensure_rsi_col(d, rsi_period)
     lows = pd.to_numeric(d["Low"] if "Low" in d.columns else d["Close"], errors="coerce")
     close = pd.to_numeric(d["Close"], errors="coerce")
+    high = pd.to_numeric(d["High"] if "High" in d.columns else d["Close"], errors="coerce")
     rsi = pd.to_numeric(d["RSI"], errors="coerce")
     n = len(d)
 
+    # Strict pivots only — do NOT fall back to order=2 (that caused false calls)
     piv = _pivot_low_indices(lows, order=order)
     if len(piv) < 2:
-        piv = _pivot_low_indices(lows, order=max(2, order - 1))
+        piv = _pivot_low_indices(lows, order=max(3, order - 1))
     if len(piv) < 2:
-        out["reason"] = "Need at least 2 swing lows on 1D chart"
+        out["reason"] = "Need 2 clear swing lows (strict pivots)"
         return out
 
     def _line_unbroken_price(i1, i2, p1, p2) -> bool:
-        """Between pivots, lows should not break below the price line (tolerance)."""
         if i2 <= i1 + 1:
             return True
+        breaks = 0
         for i in range(i1 + 1, i2):
             t = (i - i1) / max(i2 - i1, 1)
             line_y = p1 + t * (p2 - p1)
@@ -8103,78 +8248,86 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
             if np.isnan(v):
                 continue
             if v < line_y * (1.0 - tol):
-                return False
+                breaks += 1
+                if breaks >= 2:  # allow one wick noise, not a broken structure
+                    return False
         return True
 
     def _line_unbroken_rsi(i1, i2, r1, r2) -> bool:
-        """Between pivots, RSI should not break below the RSI line (tolerance)."""
         if i2 <= i1 + 1:
             return True
+        breaks = 0
         for i in range(i1 + 1, i2):
             t = (i - i1) / max(i2 - i1, 1)
             line_y = r1 + t * (r2 - r1)
             v = float(rsi.iloc[i])
             if np.isnan(v):
                 continue
-            # RSI absolute tolerance ~ 3 points or tol fraction
-            if v < line_y - max(3.0, abs(line_y) * tol * 10):
-                return False
+            if v < line_y - max(2.5, abs(line_y) * 0.04):
+                breaks += 1
+                if breaks >= 2:
+                    return False
         return True
 
-    # Search pairs: prefer latest valid pair (2nd pivot as recent as possible)
-    best = None
+    def _is_real_swing(i: int) -> bool:
+        """Pivot should be a local extreme vs nearby bars (not a flat noise low)."""
+        if i < order or i >= n - 1:
+            return False
+        v = float(lows.iloc[i])
+        left = lows.iloc[max(0, i - order) : i]
+        right = lows.iloc[i + 1 : min(n, i + order + 1)]
+        if left.empty or right.empty:
+            return False
+        return v <= float(left.min()) * 1.002 and v <= float(right.min()) * 1.002
+
+    candidates = []
     for b in range(len(piv) - 1, 0, -1):
         i2 = piv[b]
+        if not _is_real_swing(i2):
+            continue
         for a in range(b - 1, -1, -1):
             i1 = piv[a]
-            if i2 - i1 < 5:
+            if not _is_real_swing(i1):
                 continue
-            # allow short OR long span (months) inside lookback
+            if i2 - i1 < min_bars:
+                continue
             p1, p2 = float(lows.iloc[i1]), float(lows.iloc[i2])
             r1, r2 = float(rsi.iloc[i1]), float(rsi.iloc[i2])
             if any(np.isnan(x) for x in (p1, p2, r1, r2)):
                 continue
-            # Price downward (lower low), RSI upward (higher low) — no RSI zone limits
+            # Price down, RSI up — core rule
             if not (p2 < p1 and r2 > r1):
                 continue
             depth = (p1 - p2) / max(abs(p1), 1e-9) * 100
-            # meaningful structure — filters "out of context" noise (e.g. random wiggles)
-            if depth < max(0.8, min_swing * 0.35):
+            if depth < min_swing:
                 continue
-            if (r2 - r1) < 2.0:  # RSI must clearly rise (any zone, but real HL)
-                continue
-            if (i2 - i1) < 8:  # not two almost-adjacent bars
+            if (r2 - r1) < min_rsi_lift:
                 continue
             if not _line_unbroken_price(i1, i2, p1, p2):
                 continue
             if not _line_unbroken_rsi(i1, i2, r1, r2):
                 continue
+            # 2nd low should be near the lowest low of a local window (context)
+            win = lows.iloc[max(0, i2 - 8) : min(n, i2 + 3)]
+            if float(win.min()) < p2 * 0.992:
+                continue  # a clearly lower low nearby → this pivot is not the structure low
             days_since = int(n - 1 - i2)
-            cand = {
-                "i1": i1,
-                "i2": i2,
-                "p1": p1,
-                "p2": p2,
-                "r1": r1,
-                "r2": r2,
-                "days_since": days_since,
-                "bars_between": int(i2 - i1),
-                "depth": depth,
-            }
-            # prefer most recent 2nd low, then longer clean structure
-            if best is None or cand["days_since"] < best["days_since"] or (
-                cand["days_since"] == best["days_since"] and cand["bars_between"] > best["bars_between"]
-            ):
-                best = cand
-        if best and best["days_since"] <= max_days:
-            break  # good recent pair found
+            candidates.append({
+                "i1": i1, "i2": i2, "p1": p1, "p2": p2, "r1": r1, "r2": r2,
+                "days_since": days_since, "bars_between": int(i2 - i1), "depth": depth,
+                "rsi_lift": r2 - r1,
+            })
 
-    if not best:
+    if not candidates:
         out["reason"] = (
-            "No clean pair: need price lower-low + RSI higher-low with "
-            "unbroken lines on both (1D, up to ~6 months). No RSI min/max filter."
+            "No clean My Strategy pattern: need strict swing lows, price ↓ + RSI ↑, "
+            "unbroken lines, meaningful depth — noise/out-of-context charts rejected."
         )
         return out
+
+    # Prefer: most recent 2nd low, then larger RSI lift + depth
+    candidates.sort(key=lambda c: (c["days_since"], -c["rsi_lift"], -c["depth"]))
+    best = candidates[0]
 
     out["swing1"] = round(best["p1"], 2)
     out["swing2"] = round(best["p2"], 2)
@@ -8185,39 +8338,49 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
 
     last_close = float(close.iloc[-1])
     last_rsi = float(rsi.iloc[-1]) if pd.notna(rsi.iloc[-1]) else best["r2"]
+    # Rally after 2nd low already large → pattern context used up (wrong as "fresh buy")
+    rally_pct = (last_close - best["p2"]) / max(best["p2"], 1e-9) * 100
 
-    # After 2nd low: if RSI collapses hard below 2nd-low RSI, line failed
     if best["days_since"] >= 1 and last_rsi < best["r2"] - 8:
         out["status"] = "RSI_FAILED"
-        out["reason"] = (
-            f"RSI line failed after 2nd low ({best['r2']:.1f} → {last_rsi:.1f})."
-        )
+        out["reason"] = f"RSI failed after 2nd low ({best['r2']:.1f} → {last_rsi:.1f})."
         return out
 
     if best["days_since"] > max_days:
         out["status"] = "TOO_LATE"
         out["reason"] = (
-            f"Valid divergence structure (price ↓ RSI ↑, lines clean, "
-            f"{best['bars_between']} bars between lows) but 2nd low was "
-            f"{best['days_since']} days ago — show only next day or max next-to-next (window={max_days})."
+            f"LATE: valid-looking structure but 2nd low was {best['days_since']} day(s) ago "
+            f"(act only on day 1–2). Price LL ₹{best['p1']:.2f}→₹{best['p2']:.2f}, "
+            f"RSI HL {best['r1']:.1f}→{best['r2']:.1f}."
         )
         return out
 
-    if require_conf and last_close < best["p2"] * 0.992:
-        out["status"] = "WAIT"
+    if rally_pct > max_rally and best["days_since"] >= 1:
+        out["status"] = "TOO_LATE"
         out["reason"] = (
-            f"Structure OK — wait hold above 2nd low ₹{best['p2']:.2f} "
-            f"(now ₹{last_close:.2f})."
+            f"LATE / extended: already +{rally_pct:.1f}% off 2nd low — not a clean fresh entry."
         )
         return out
+
+    if require_conf:
+        if last_close < best["p2"] * 0.995:
+            out["status"] = "WAIT"
+            out["reason"] = (
+                f"WAIT confirmation: close ₹{last_close:.2f} still under 2nd low ₹{best['p2']:.2f}."
+            )
+            return out
+        # Prefer a hold: close not making a new aggressive low
+        if len(close) >= 2 and last_close < float(close.iloc[-2]) * 0.97:
+            out["status"] = "WAIT"
+            out["reason"] = "WAIT: still selling hard after 2nd low — no confirmation yet."
+            return out
 
     out["ok_for_buy"] = True
     out["status"] = "ACTIVE_FRESH"
     out["reason"] = (
-        f"ACTIVE_FRESH: price ↓ ₹{best['p1']:.2f}→₹{best['p2']:.2f}, "
-        f"RSI ↑ {best['r1']:.1f}→{best['r2']:.1f}, lines unbroken, "
-        f"{best['bars_between']} bars between lows, "
-        f"2nd low {best['days_since']} day(s) ago."
+        f"ACTIVE_FRESH: price ↓ ₹{best['p1']:.2f}→₹{best['p2']:.2f} (−{best['depth']:.1f}%), "
+        f"RSI ↑ {best['r1']:.1f}→{best['r2']:.1f} (+{best['rsi_lift']:.1f}), "
+        f"lines clean, {best['bars_between']} bars apart, 2nd low {best['days_since']}d ago."
     )
     return out
 
