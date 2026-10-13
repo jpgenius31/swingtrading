@@ -89,105 +89,78 @@ st.set_page_config(
 
 
 def apply_ui_theme():
-    """Dark / Light / System — high contrast so fonts stay readable."""
+    """Dark / Light / System — inject CSS without showing raw code on page."""
     if "ui_theme" not in st.session_state:
         st.session_state.ui_theme = "Dark"
     theme = str(st.session_state.get("ui_theme") or "Dark")
 
-    common = """
-    <style>
-    .jp-scan-done {
-      padding:12px 14px; border-radius:10px; margin:8px 0 12px 0;
-      font-weight:600; font-size:0.95rem;
-    }
-    /* Keep metric labels readable */
-    [data-testid="stMetricLabel"] { opacity: 0.9 !important; }
-    </style>
-    """
-
     if theme == "Light":
-        css = common + """
-        <style>
-        .stApp, .stApp > header, [data-testid="stAppViewContainer"] {
-          background-color: #f1f5f9 !important;
-          color: #0f172a !important;
-        }
-        .block-container, .stMarkdown, .stMarkdown p, .stCaption, label, p, span,
-        [data-testid="stWidgetLabel"], [data-testid="stMarkdownContainer"] {
-          color: #0f172a !important;
-        }
-        div[data-testid="stMetricValue"] { color: #0f172a !important; }
-        div[data-testid="stMetricDelta"] { color: #166534 !important; }
-        h1, h2, h3, h4 { color: #0f172a !important; }
-        [data-testid="stExpander"] {
-          background: #ffffff !important;
-          border: 1px solid #cbd5e1 !important;
-          color: #0f172a !important;
-        }
-        .stDataFrame, [data-testid="stDataFrame"] {
-          background: #ffffff !important;
-          color: #0f172a !important;
-        }
-        .stButton > button {
-          color: #0f172a !important;
-          border: 1px solid #94a3b8 !important;
-          background: #ffffff !important;
-        }
-        .jp-scan-done {
-          background:#ecfdf5; border:1px solid #6ee7b7; color:#065f46;
-        }
-        /* Plotly text */
-        .js-plotly-plot .plotly text { fill: #0f172a !important; }
-        </style>
-        """
+        body = """
+.stApp, .stApp > header, [data-testid="stAppViewContainer"] {
+  background-color: #f1f5f9 !important; color: #0f172a !important;
+}
+.block-container, .stMarkdown, .stMarkdown p, .stCaption, label,
+[data-testid="stWidgetLabel"], [data-testid="stMarkdownContainer"] p {
+  color: #0f172a !important;
+}
+div[data-testid="stMetricValue"] { color: #0f172a !important; }
+h1, h2, h3, h4 { color: #0f172a !important; }
+[data-testid="stExpander"] {
+  background: #ffffff !important; border: 1px solid #cbd5e1 !important; color: #0f172a !important;
+}
+.stButton > button {
+  color: #0f172a !important; border: 1px solid #94a3b8 !important; background: #ffffff !important;
+}
+.jp-scan-done {
+  background:#ecfdf5; border:1px solid #6ee7b7; color:#065f46;
+  padding:12px 14px; border-radius:10px; margin:8px 0 12px 0; font-weight:600;
+}
+"""
     elif theme == "System":
-        css = common + """
-        <style>
-        @media (prefers-color-scheme: light) {
-          .stApp { background:#f1f5f9 !important; color:#0f172a !important; }
-          .block-container, .stMarkdown, p, label, h1, h2, h3 {
-            color:#0f172a !important;
-          }
-          div[data-testid="stMetricValue"] { color:#0f172a !important; }
-          [data-testid="stExpander"] { background:#fff !important; color:#0f172a !important; }
-          .jp-scan-done { background:#ecfdf5; border:1px solid #6ee7b7; color:#065f46; }
-        }
-        @media (prefers-color-scheme: dark) {
-          .stApp { background:#0b1220 !important; color:#e2e8f0 !important; }
-          .block-container, .stMarkdown, p, label, h1, h2, h3 {
-            color:#e2e8f0 !important;
-          }
-          div[data-testid="stMetricValue"] { color:#f8fafc !important; }
-          .jp-scan-done { background:#052e16; border:1px solid #16a34a; color:#bbf7d0; }
-        }
-        </style>
-        """
+        body = """
+@media (prefers-color-scheme: light) {
+  .stApp { background:#f1f5f9 !important; color:#0f172a !important; }
+  .block-container, .stMarkdown, p, label, h1, h2, h3 { color:#0f172a !important; }
+  div[data-testid="stMetricValue"] { color:#0f172a !important; }
+  .jp-scan-done { background:#ecfdf5; border:1px solid #6ee7b7; color:#065f46;
+    padding:12px 14px; border-radius:10px; margin:8px 0; font-weight:600; }
+}
+@media (prefers-color-scheme: dark) {
+  .stApp { background:#0b1220 !important; color:#e2e8f0 !important; }
+  .block-container, .stMarkdown, p, label, h1, h2, h3 { color:#e2e8f0 !important; }
+  div[data-testid="stMetricValue"] { color:#f8fafc !important; }
+  .jp-scan-done { background:#052e16; border:1px solid #16a34a; color:#bbf7d0;
+    padding:12px 14px; border-radius:10px; margin:8px 0; font-weight:600; }
+}
+"""
     else:
-        css = common + """
-        <style>
-        .stApp { background:#0b1220 !important; color:#e2e8f0 !important; }
-        .block-container, .stMarkdown, .stMarkdown p, .stCaption, label, p,
-        [data-testid="stWidgetLabel"], [data-testid="stMarkdownContainer"] {
-          color:#e2e8f0 !important;
-        }
-        div[data-testid="stMetricValue"] { color:#f8fafc !important; }
-        h1, h2, h3, h4 { color:#f1f5f9 !important; }
-        [data-testid="stExpander"] {
-          background:#0f172a !important;
-          border:1px solid #334155 !important;
-          color:#e2e8f0 !important;
-        }
-        .stButton > button {
-          color:#e2e8f0 !important;
-          border:1px solid #475569 !important;
-          background:#1e293b !important;
-        }
-        .jp-scan-done {
-          background:#052e16; border:1px solid #16a34a; color:#bbf7d0;
-        }
-        </style>
-        """
-    st.markdown(css, unsafe_allow_html=True)
+        body = """
+.stApp { background:#0b1220 !important; color:#e2e8f0 !important; }
+.block-container, .stMarkdown, .stMarkdown p, .stCaption, label,
+[data-testid="stWidgetLabel"], [data-testid="stMarkdownContainer"] p {
+  color:#e2e8f0 !important;
+}
+div[data-testid="stMetricValue"] { color:#f8fafc !important; }
+h1, h2, h3, h4 { color:#f1f5f9 !important; }
+[data-testid="stExpander"] {
+  background:#0f172a !important; border:1px solid #334155 !important; color:#e2e8f0 !important;
+}
+.stButton > button {
+  color:#e2e8f0 !important; border:1px solid #475569 !important; background:#1e293b !important;
+}
+.jp-scan-done {
+  background:#052e16; border:1px solid #16a34a; color:#bbf7d0;
+  padding:12px 14px; border-radius:10px; margin:8px 0 12px 0; font-weight:600;
+}
+"""
+
+    # IMPORTANT: no leading spaces before <style> or Markdown shows CSS as a code block
+    html = "<style>\n" + body.strip() + "\n</style>"
+    try:
+        # Streamlit ≥1.33
+        st.html(html)
+    except Exception:
+        st.markdown(html, unsafe_allow_html=True)
 
 
 def render_scan_done_banner():
