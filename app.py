@@ -88,6 +88,71 @@ st.set_page_config(
 )
 
 
+def apply_ui_theme():
+    """Dark / Light / System theme for the app shell."""
+    if "ui_theme" not in st.session_state:
+        st.session_state.ui_theme = "Dark"
+    theme = str(st.session_state.get("ui_theme") or "Dark")
+    if theme == "System":
+        # Follow prefers-color-scheme via CSS
+        css = """
+        <style>
+        @media (prefers-color-scheme: light) {
+          .stApp { background: #f8fafc !important; color: #0f172a !important; }
+          .block-container { color: #0f172a; }
+          [data-testid="stMarkdownContainer"] p, .stMarkdown { color: #0f172a; }
+          div[data-testid="stMetricValue"] { color: #0f172a !important; }
+          .jp-scan-done { background:#ecfdf5; border:1px solid #6ee7b7; color:#065f46; }
+        }
+        @media (prefers-color-scheme: dark) {
+          .stApp { background: #0b1220 !important; color: #e2e8f0 !important; }
+          .jp-scan-done { background:#052e16; border:1px solid #16a34a; color:#bbf7d0; }
+        }
+        </style>
+        """
+    elif theme == "Light":
+        css = """
+        <style>
+        .stApp { background: #f8fafc !important; color: #0f172a !important; }
+        .block-container { color: #0f172a; }
+        [data-testid="stHeader"] { background: #ffffff; }
+        div[data-testid="stMetricValue"] { color: #0f172a !important; }
+        .stDataFrame { background: #ffffff; }
+        .jp-scan-done {
+          background:#ecfdf5; border:1px solid #6ee7b7; color:#065f46;
+          padding:12px 14px; border-radius:10px; margin:8px 0 12px 0;
+          font-weight:600;
+        }
+        </style>
+        """
+    else:
+        # Dark (default)
+        css = """
+        <style>
+        .stApp { background: #0b1220 !important; color: #e2e8f0 !important; }
+        .jp-scan-done {
+          background:#052e16; border:1px solid #16a34a; color:#bbf7d0;
+          padding:12px 14px; border-radius:10px; margin:8px 0 12px 0;
+          font-weight:600;
+        }
+        </style>
+        """
+    st.markdown(css, unsafe_allow_html=True)
+
+
+def render_scan_done_banner():
+    """Show after Reload / Scan completes (survives one rerun)."""
+    msg = st.session_state.pop("_scan_done_msg", None)
+    if not msg:
+        return
+    st.markdown(
+        f'<div class="jp-scan-done">✅ SCAN DONE — {msg}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+
+
 # ============================================================
 # CSS — desktop + strong mobile visibility
 # ============================================================
@@ -17843,6 +17908,16 @@ def is_strong_trend_row(row) -> bool:
     )
 
 
+def _series_num(df: pd.DataFrame, col: str, default=0.0) -> pd.Series:
+    """Safe numeric column — never call fillna on a scalar (fixes Precision note error)."""
+    if df is None or df.empty:
+        return pd.Series(dtype=float)
+    if col in df.columns:
+        s = pd.to_numeric(df[col], errors="coerce")
+        return s.fillna(default)
+    return pd.Series([default] * len(df), index=df.index, dtype=float)
+
+
 def pick_precision_buys(buys: pd.DataFrame, n: int = 2) -> pd.DataFrame:
     """
     Only a few strong-trend BUYs — quality over quantity for higher target hit rate.
@@ -17851,14 +17926,11 @@ def pick_precision_buys(buys: pd.DataFrame, n: int = 2) -> pd.DataFrame:
         return pd.DataFrame()
 
     x = buys.copy()
-    x["Prediction"] = pd.to_numeric(x.get("Prediction"), errors="coerce").fillna(0)
-    x["Risk %"] = pd.to_numeric(x.get("Risk %"), errors="coerce").fillna(99)
-    x["ADX"] = pd.to_numeric(x.get("ADX"), errors="coerce").fillna(0)
-    x["RSI"] = pd.to_numeric(x.get("RSI"), errors="coerce").fillna(50)
-    if "Volume Ratio" in x.columns:
-        x["Volume Ratio"] = pd.to_numeric(x["Volume Ratio"], errors="coerce").fillna(1.0)
-    else:
-        x["Volume Ratio"] = 1.0
+    x["Prediction"] = _series_num(x, "Prediction", 0)
+    x["Risk %"] = _series_num(x, "Risk %", 99)
+    x["ADX"] = _series_num(x, "ADX", 0)
+    x["RSI"] = _series_num(x, "RSI", 50)
+    x["Volume Ratio"] = _series_num(x, "Volume Ratio", 1.0)
 
     # Quality gates — prefer strong trend, but allow a small shortlist
     x = x[
@@ -17872,15 +17944,15 @@ def pick_precision_buys(buys: pd.DataFrame, n: int = 2) -> pd.DataFrame:
     if x.empty:
         # Fallback: best available by prediction (still limited n later)
         x = buys.copy()
-        x["Prediction"] = pd.to_numeric(x.get("Prediction"), errors="coerce").fillna(0)
-        x["Risk %"] = pd.to_numeric(x.get("Risk %"), errors="coerce").fillna(99)
-        x["ADX"] = pd.to_numeric(x.get("ADX"), errors="coerce").fillna(0)
+        x["Prediction"] = _series_num(x, "Prediction", 0)
+        x["Risk %"] = _series_num(x, "Risk %", 99)
+        x["ADX"] = _series_num(x, "ADX", 0)
         x = x[x["Prediction"] >= 65].copy()
 
     if x.empty:
         # Last resort: top by prediction so screen is never blank for days
         x = buys.copy()
-        x["Prediction"] = pd.to_numeric(x.get("Prediction"), errors="coerce").fillna(0)
+        x["Prediction"] = _series_num(x, "Prediction", 0)
         x = x.sort_values("Prediction", ascending=False).head(max(n * 5, 10))
 
     if x.empty:
@@ -17889,7 +17961,7 @@ def pick_precision_buys(buys: pd.DataFrame, n: int = 2) -> pd.DataFrame:
     try:
         x["Precision Score"] = x.apply(lambda r: precision_buy_score(r), axis=1)
     except Exception:
-        x["Precision Score"] = pd.to_numeric(x.get("Prediction"), errors="coerce").fillna(0)
+        x["Precision Score"] = _series_num(x, "Prediction", 0)
     x = x.sort_values("Precision Score", ascending=False)
 
     # Prefer stocks that historically hit targets (from learning / history)
@@ -22343,13 +22415,49 @@ def load_scan_from_disk(force: bool = False) -> int:
     Load latest_results.csv into session.
     force=True → always replace session with disk (use after phone scan on PC).
     Returns number of rows loaded, or 0.
+    Tries alternate files if main CSV missing (history / portfolio style).
     """
-    if not RESULT_FILE.exists():
+    candidates = [RESULT_FILE]
+    try:
+        candidates.append(APP_DIR / "latest_results.csv")
+        candidates.append(Path("latest_results.csv"))
+    except Exception:
+        pass
+
+    saved = None
+    used = None
+    for fp in candidates:
+        try:
+            if fp is None or not Path(fp).exists():
+                continue
+            tmp = pd.read_csv(fp)
+            if tmp is not None and not tmp.empty:
+                saved = tmp
+                used = Path(fp)
+                break
+        except Exception:
+            continue
+
+    # Fallback: rebuild a thin scan table from recommendation_history (still useful)
+    if saved is None or saved.empty:
+        try:
+            if HISTORY_FILE.exists():
+                hist = pd.read_csv(HISTORY_FILE)
+                if hist is not None and not hist.empty and "Stock" in hist.columns:
+                    # latest row per stock
+                    h = hist.copy()
+                    if "Prediction Date" in h.columns:
+                        h["_d"] = pd.to_datetime(h["Prediction Date"], errors="coerce")
+                        h = h.sort_values("_d")
+                    h = h.drop_duplicates(subset=["Stock"], keep="last")
+                    saved = ensure_result_columns(h)
+                    used = HISTORY_FILE
+        except Exception:
+            pass
+
+    if saved is None or saved.empty:
         return 0
     try:
-        saved = pd.read_csv(RESULT_FILE)
-        if saved is None or saved.empty:
-            return 0
         saved = ensure_result_columns(saved)
         n_disk = len(saved)
         n_mem = 0
@@ -22361,17 +22469,128 @@ def load_scan_from_disk(force: bool = False) -> int:
         if force or n_mem == 0 or n_disk > n_mem:
             st.session_state.results = saved
             st.session_state["_scan_loaded_from_disk"] = True
+            st.session_state["_scan_source_file"] = str(used) if used else str(RESULT_FILE)
             try:
                 if SCAN_META_FILE.exists():
                     st.session_state["_scan_meta"] = json.loads(
                         SCAN_META_FILE.read_text(encoding="utf-8")
                     )
+                else:
+                    st.session_state["_scan_meta"] = {
+                        "rows": n_disk,
+                        "source": str(used) if used else "latest_results.csv",
+                    }
             except Exception:
                 st.session_state["_scan_meta"] = {"rows": n_disk}
             return n_disk
     except Exception:
         return 0
     return n_mem
+
+
+
+def ensure_scan_on_reload() -> int:
+    """
+    Reload scan fix:
+    1) Load latest_results.csv / history if present
+    2) If still empty → run a light Nifty 50 scan and save CSV
+    Returns number of rows available in session.
+    """
+    n = 0
+    try:
+        n = int(load_scan_from_disk(force=True) or 0)
+    except Exception:
+        n = 0
+    if n > 0:
+        return n
+
+    # Light scan so Reload is never a dead button when network works
+    try:
+        st.session_state["scan_mode"] = "nifty50"
+        df = None
+        try:
+            df = run_scanner(full_market=False, mode="nifty50")
+        except TypeError:
+            try:
+                df = run_scanner(False)
+            except Exception:
+                df = None
+        except Exception:
+            df = None
+
+        if df is not None and not getattr(df, "empty", True):
+            try:
+                df = ensure_result_columns(df)
+            except Exception:
+                pass
+            st.session_state.results = df
+            try:
+                save_scan_to_disk(df)
+            except Exception:
+                try:
+                    out = df.drop(columns=["Data", "News"], errors="ignore")
+                    out.to_csv(RESULT_FILE, index=False)
+                except Exception:
+                    pass
+            st.session_state["_scan_loaded_from_disk"] = True
+            st.session_state["_scan_source_file"] = "nifty50_live_reload"
+            return int(len(df))
+    except Exception:
+        pass
+
+    # Last resort: build minimal rows from a fixed liquid list + live quotes
+    try:
+        syms = list(_FALLBACK_NIFTY50)[:30] if "_FALLBACK_NIFTY50" in dir() else [
+            "RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY", "ITC", "SBIN",
+            "BHARTIARTL", "LT", "AXISBANK", "KOTAKBANK", "BAJFINANCE", "ASIANPAINT",
+            "HCLTECH", "MARUTI", "SUNPHARMA", "TITAN", "NTPC", "TATAMOTORS", "WIPRO",
+        ]
+        rows = []
+        for s in syms:
+            try:
+                px = None
+                try:
+                    q = live_quote(clean_symbol(s))
+                    if isinstance(q, dict):
+                        px = safe_float(q.get("price"))
+                    else:
+                        px = safe_float(q)
+                except Exception:
+                    px = None
+                if not px or px <= 0:
+                    dfh = stock_history(clean_symbol(s), period="3mo")
+                    if dfh is not None and not dfh.empty and "Close" in dfh.columns:
+                        px = safe_float(dfh["Close"].iloc[-1])
+                if not px or px <= 0:
+                    continue
+                rows.append({
+                    "Stock": s,
+                    "Symbol": clean_symbol(s),
+                    "Price": round(px, 2),
+                    "Call": "WATCH",
+                    "Prediction": 50,
+                    "Target": round(px * 1.05, 2),
+                    "Stop Loss": round(px * 0.97, 2),
+                    "Risk %": 3.0,
+                    "Risk Level": "MEDIUM",
+                    "Hold Days": 15,
+                    "Reason": "Reload fallback — light list (run full/GitHub scan for full analysis)",
+                    "Scan Source": "reload_fallback",
+                })
+            except Exception:
+                continue
+        if rows:
+            df = ensure_result_columns(pd.DataFrame(rows))
+            st.session_state.results = df
+            try:
+                df.drop(columns=["Data", "News"], errors="ignore").to_csv(RESULT_FILE, index=False)
+            except Exception:
+                pass
+            st.session_state["_scan_source_file"] = "reload_fallback"
+            return len(df)
+    except Exception:
+        pass
+    return 0
 
 
 # Always try to pick up a newer/shared scan from disk at session start
@@ -22612,6 +22831,14 @@ def render_header_nav():
     - Live market chip + notifications in the header strip
     - Clear single-row formatting
     """
+    try:
+        apply_ui_theme()
+    except Exception:
+        pass
+    try:
+        render_scan_done_banner()
+    except Exception:
+        pass
     do_scan = False
     cur = st.session_state.get("page", "Dashboard")
 
@@ -22941,13 +23168,42 @@ def render_header_nav():
                 value=bool(st.session_state.get("live_sync", False)),
                 key="hdr_live_sync",
             )
+            # Theme switcher
+            st.caption("**Theme**")
+            _th = st.radio(
+                "Theme",
+                ["Dark", "Light", "System"],
+                index=["Dark", "Light", "System"].index(
+                    st.session_state.get("ui_theme", "Dark")
+                    if st.session_state.get("ui_theme") in ("Dark", "Light", "System")
+                    else "Dark"
+                ),
+                horizontal=True,
+                key="hdr_theme_radio",
+                label_visibility="collapsed",
+            )
+            if _th != st.session_state.get("ui_theme"):
+                st.session_state.ui_theme = _th
+                st.rerun()
+
             if st.button("📥 Reload scan", use_container_width=True, key="hdr_reload"):
-                n_load = load_scan_from_disk(force=True)
+                with st.spinner("Reloading scan (file → or light Nifty50)…"):
+                    n_load = ensure_scan_on_reload()
                 if n_load > 0:
-                    st.success(f"Loaded {n_load} stocks")
+                    src = st.session_state.get("_scan_source_file", "latest_results.csv")
+                    st.session_state["_scan_done_msg"] = (
+                        f"Reload complete · **{n_load}** stocks loaded · "
+                        f"source `{Path(str(src)).name}` · you can use Dashboard / Strategy now."
+                    )
+                    st.balloons()
                     st.rerun()
                 else:
-                    st.error("No shared scan on server")
+                    st.error(
+                        "Reload failed: no CSV and light scan returned 0 rows "
+                        "(data source blocked). Try GitHub Action **Market Scan**, "
+                        "or Dashboard **Scan → Nifty 50**."
+                    )
+                    st.caption(f"CSV path: `{RESULT_FILE}` · exists={RESULT_FILE.exists()}")
             if st.button("🔄 Refresh now", use_container_width=True, key="hdr_manual_ref"):
                 try:
                     live_quote.clear()
@@ -23139,6 +23395,10 @@ if scan:
         }
         if n_saved:
             st.caption(f"Shared scan saved on server: **{n_saved}** stocks → use **Reload shared scan** on other device.")
+        st.session_state["_scan_done_msg"] = (
+            f"Scan completed · **{len(results)}** stocks saved · "
+            f"{india_now().strftime('%Y-%m-%d %H:%M IST')} · open Dashboard / Strategy."
+        )
 
         save_recommendations(results)
         evaluate_history()
@@ -23226,7 +23486,7 @@ if st.session_state.page == "Dashboard":
         if _buys.empty:
             _buys = results[
                 (results["Call"].astype(str).str.upper() == "WATCH")
-                & (pd.to_numeric(results.get("Prediction"), errors="coerce").fillna(0) >= 65)
+                & (_series_num(results, "Prediction", 0) >= 65)
             ]
             if not _buys.empty:
                 st.info(
@@ -23240,9 +23500,19 @@ if st.session_state.page == "Dashboard":
                 _picks = _buys.head(2)
             if _picks is not None and not _picks.empty:
                 st.subheader("🎯 Today’s Precision BUY Picks (1–2 stocks)")
-                st.caption(
-                    "Shortlist — high prediction, controlled risk. Run a fresh FULL MARKET SCAN if list looks stale."
-                )
+                _meta = st.session_state.get("_scan_meta") or {}
+                _src = st.session_state.get("_scan_source_file", "")
+                _when = _meta.get("saved_at_ist") or _meta.get("saved_at") or ""
+                if _when:
+                    st.caption(
+                        f"From last loaded scan · **{_when}** · source `{Path(str(_src)).name if _src else 'session'}`. "
+                        "Click **Reload scan** for a new file / light Nifty50 update."
+                    )
+                else:
+                    st.caption(
+                        "Shortlist from **current session scan data**. "
+                        "If names look like yesterday’s, press **Reload scan** or run **Scan (Nifty50)**."
+                    )
                 cols = st.columns(len(_picks))
                 for i, (_, prow) in enumerate(_picks.iterrows()):
                     with cols[i]:
