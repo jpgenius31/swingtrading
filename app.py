@@ -11600,10 +11600,27 @@ def show_market_index_charts():
     show_spinner=False
 )
 def live_quote(symbol):
-    """Public live quote API — dual NSE+Yahoo, best available. Silent."""
+    """Public live quote API — dual NSE+Yahoo, best available. Always normalized keys."""
     try:
-        q = best_live_quote(symbol)
-        return q if q and q.get("price") else None
+        q = best_live_quote(symbol) or {}
+        px = safe_float(q.get("price"))
+        if not px or px <= 0:
+            return None
+        pct = safe_float(q.get("pct"), 0)
+        chg = safe_float(q.get("change"), 0)
+        if not chg and pct:
+            chg = px * pct / 100.0
+        label = str(q.get("label") or q.get("source") or "LTP")
+        if label.upper() in ("NSE", "YAHOO", "YFINANCE"):
+            label = f"LTP ({label})"
+        return {
+            "price": px,
+            "pct": pct,
+            "change": chg,
+            "label": label,
+            "updated": str(q.get("updated") or india_now().strftime("%H:%M IST")),
+            "source": q.get("source") or "",
+        }
     except Exception:
         return None
 
@@ -17146,25 +17163,16 @@ def show_stock(
     # --------------------------------------------------------
 
     current_live = None
-    if quote:
-        current_live = safe_float(quote["price"])
+    if isinstance(quote, dict) and safe_float(quote.get("price")) > 0:
+        current_live = safe_float(quote.get("price"))
         a, b, c = st.columns(3)
-
         a.metric(
-            quote["label"],
-            f"₹{quote['price']:,.2f}",
-            f"{quote['pct']:+.2f}%"
+            str(quote.get("label") or "LTP"),
+            f"₹{current_live:,.2f}",
+            f"{safe_float(quote.get('pct')):+.2f}%",
         )
-
-        b.metric(
-            "Change",
-            f"₹{quote['change']:+,.2f}"
-        )
-
-        c.metric(
-            "Updated",
-            quote["updated"]
-        )
+        b.metric("Change", f"₹{safe_float(quote.get('change')):+,.2f}")
+        c.metric("Updated", str(quote.get("updated") or "—"))
     else:
         current_live = safe_float(result.get("Price"))
 
@@ -19370,7 +19378,7 @@ def show_index_page(index_key="NIFTY"):
     quote = live_quote(yf_symbol)
     if quote:
         a, b, c, d = st.columns(4)
-        a.metric(quote["label"], f"{quote['price']:,.2f}", f"{quote['pct']:+.2f}%")
+        a.metric(str((quote or {}).get("label") or "LTP"), f"{safe_float((quote or {}).get('price')):,.2f}", f"{safe_float((quote or {}).get('pct')):+.2f}%")
         b.metric("Change", f"{quote['change']:+,.2f}")
         c.metric("Updated", quote["updated"])
         d.metric("Status", market_status_text().replace("NSE MARKET ", ""))
@@ -19638,17 +19646,18 @@ def save_special_calls(rows_list):
 
 def import_strategy_files_to_history() -> int:
     """
-    Pull strategy_live_signals.csv / session into recommendation_history as STRATEGY.
-    Fixes '40 stocks shown green but Past Predictions empty'.
+    Pull strategy live signals + ALL strategy map into recommendation_history as STRATEGY.
+    Reads disk files (Cloud-safe) and session tables.
     """
     n = 0
     frames = []
-    try:
-        if STRATEGY_LIVE_FILE.exists():
-            frames.append(pd.read_csv(STRATEGY_LIVE_FILE))
-    except Exception:
-        pass
-    for key in ("live_strat_df", "stocks_under_all_df", "stocks_under_df", "sure_df"):
+    for fp in (STRATEGY_LIVE_FILE, STRATEGY_ALL_MAP_FILE):
+        try:
+            if fp.exists():
+                frames.append(pd.read_csv(fp))
+        except Exception:
+            pass
+    for key in ("live_strat_df", "stocks_under_all_df", "stocks_under_df", "sure_df", "strategy_live_df"):
         try:
             df = st.session_state.get(key)
             if isinstance(df, pd.DataFrame) and not df.empty:
@@ -20067,9 +20076,16 @@ def show_history():
                 st.rerun()
             else:
                 st.warning(
-                    "Nothing new to import. Open Strategy Lab → Generate live signals "
-                    "(or Sure Call → Generate) first, then click Import again."
+                    "No **new** STRATEGY rows — usually already imported today. "
+                    "In Past Predictions set filter **Call Source = STRATEGY** to see them. "
+                    "History counts above already include STRATEGY."
                 )
+                try:
+                    nmap = len(pd.read_csv(STRATEGY_ALL_MAP_FILE)) if STRATEGY_ALL_MAP_FILE.exists() else 0
+                    nlive = len(pd.read_csv(STRATEGY_LIVE_FILE)) if STRATEGY_LIVE_FILE.exists() else 0
+                    st.caption(f"Strategy files on disk: map **{nmap}** · live **{nlive}** (Import reads these).")
+                except Exception:
+                    pass
 
     if not st.session_state.get("_auto_learned_hist"):
         try:
