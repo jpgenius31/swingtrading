@@ -1614,9 +1614,16 @@ def filterable_dataframe(
             x = x[~x[stock_col].astype(str).isin(hide_sel)].reset_index(drop=True)
         excluded = hide_sel
 
-    st.caption(f"Showing **{len(x)}** rows · table id `{table_id}`")
+    # Put Stock first so it is easy to click/select
+    if stock_col in pick:
+        pick = [stock_col] + [c for c in pick if c != stock_col]
+    show = (x[pick] if pick else x).reset_index(drop=True)
 
-    show = x[pick] if pick else x
+    st.caption(
+        f"Showing **{len(show)}** rows · **click the row checkbox** next to a stock "
+        f"(e.g. JUBLPHARMA) → opens **Detailed Analysis** with chart."
+    )
+
     selected_stock = None
     try:
         event = st.dataframe(
@@ -1636,13 +1643,23 @@ def filterable_dataframe(
         if rows and stock_col in show.columns:
             idx = int(rows[0])
             if 0 <= idx < len(show):
-                selected_stock = str(show.iloc[idx][stock_col])
+                selected_stock = str(show.iloc[idx][stock_col]).strip()
     except TypeError:
         st.dataframe(show, use_container_width=True, hide_index=True, height=int(height))
+        st.caption("This Streamlit version needs an upgrade for click-to-open; use search + Save format only.")
 
-    b1, b2, b3 = st.columns(3)
+    # Immediate navigate — no separate Open dropdown / button under the table
+    if selected_stock and open_analysis_on_select and stock_col in show.columns:
+        prev = st.session_state.get(f"{table_id}_last_sel")
+        if prev != selected_stock:
+            st.session_state[f"{table_id}_last_sel"] = selected_stock
+            st.session_state.selected_stock = selected_stock.upper().replace(".NS", "")
+            st.session_state.page = "Stock Analysis"
+            st.rerun()
+
+    b1, b2 = st.columns(2)
     with b1:
-        if st.button("💾 Save format", key=f"{table_id}_save", type="primary"):
+        if st.button("💾 Save format", key=f"{table_id}_save"):
             set_table_format(
                 table_id,
                 {
@@ -1653,31 +1670,13 @@ def filterable_dataframe(
                     "excluded_rows": list(excluded or []),
                 },
             )
-            st.success("Table format saved — same layout next time.")
+            st.success("Table format saved.")
     with b2:
         if st.button("↺ Reset format", key=f"{table_id}_reset"):
             all_f = load_table_formats()
             all_f.pop(table_id, None)
             save_table_formats(all_f)
-            st.success("Format reset.")
-            st.rerun()
-    with b3:
-        if selected_stock and open_analysis_on_select:
-            if st.button(f"📈 Open {selected_stock}", key=f"{table_id}_open", type="primary"):
-                st.session_state.selected_stock = selected_stock.upper().replace(".NS", "")
-                st.session_state.page = "Stock Analysis"
-                st.rerun()
-        elif open_analysis_on_select and stock_col in show.columns and selected_stock is None:
-            st.caption("Select a row, then Open")
-
-    # Auto-open on row select when Stock present
-    if selected_stock and open_analysis_on_select and st.session_state.get(f"{table_id}_auto_nav", True):
-        # only auto if user explicitly selected (avoid loop): use a flag
-        prev = st.session_state.get(f"{table_id}_last_sel")
-        if prev != selected_stock:
-            st.session_state[f"{table_id}_last_sel"] = selected_stock
-            st.session_state.selected_stock = selected_stock.upper().replace(".NS", "")
-            st.session_state.page = "Stock Analysis"
+            st.session_state.pop(f"{table_id}_last_sel", None)
             st.rerun()
 
     return x
@@ -4346,32 +4345,7 @@ def show_superstar_bulk_page():
             st.session_state.page = "FII DII"
             st.rerun()
 
-    # Quick open (same analysis page — chart + experience trader)
-    if not df.empty and "Stock" in df.columns:
-        st.divider()
-        st.markdown("##### Open stock analysis")
-        st.caption("Same page as elsewhere: interactive chart, price action, trader feedback.")
-        picks = sorted(df["Stock"].astype(str).unique().tolist())
-        c1, c2 = st.columns([3, 1])
-        with c1:
-            pick = st.selectbox("Stock", picks, key="ss_pick")
-        with c2:
-            st.write("")
-            st.write("")
-            if st.button("Open →", key="ss_an", type="primary", use_container_width=True):
-                st.session_state.selected_stock = str(pick).upper()
-                st.session_state.page = "Stock Analysis"
-                st.session_state["_from_bulk_deals"] = True
-                st.rerun()
-        if st.button("⭐ Add selected to watchlist", key="ss_wl"):
-            try:
-                wl = load_watchlist()
-                if pick not in wl:
-                    wl.append(pick)
-                    save_watchlist(wl)
-                st.success(f"Added {pick}")
-            except Exception as e:
-                st.caption(str(e))
+    # Stock open: click row checkbox in the table above (no separate Open menu).
 
     with st.expander("Data accuracy notes"):
         st.markdown(
@@ -23942,21 +23916,7 @@ results["Sector"]
         except TypeError:
             st.dataframe(show_tbl, use_container_width=True, hide_index=True)
 
-        # Quick open (if row-select not supported)
-        st.subheader("📈 Open Detailed Stock Analysis")
-        st.caption("Or pick a stock below (same analysis page as row click).")
-        _stocks = show_tbl["Stock"].astype(str).tolist() if "Stock" in show_tbl.columns else []
-        if _stocks:
-            c1, c2 = st.columns([3, 1])
-            with c1:
-                pick = st.selectbox("Stock", _stocks[:100], key="dash_open_stock_sel")
-            with c2:
-                st.write("")
-                st.write("")
-                if st.button("Open analysis →", type="primary", key="dash_open_stock_btn"):
-                    st.session_state.selected_stock = str(pick).upper().replace(".NS", "")
-                    st.session_state.page = "Stock Analysis"
-                    st.rerun()
+
 
         # ----------------------------------------------------
         # Quick SELL CALL
