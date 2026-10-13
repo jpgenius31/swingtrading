@@ -1503,6 +1503,102 @@ def set_table_format(table_id: str, fmt: dict) -> None:
     save_table_formats(all_f)
 
 
+
+def handle_go_stock_query():
+    """URL ?go_stock=SYMBOL → open Stock Analysis immediately."""
+    try:
+        qp = st.query_params
+        raw = qp.get("go_stock") or qp.get("analyze") or qp.get("stock")
+        if isinstance(raw, (list, tuple)):
+            raw = raw[0] if raw else None
+        if not raw:
+            return
+        stock = str(raw).strip().upper().replace(".NS", "").split("&")[0].split("#")[0]
+        if not stock or stock in ("NONE", "NULL"):
+            return
+        st.session_state.selected_stock = stock
+        st.session_state.page = "Stock Analysis"
+        for k in ("go_stock", "analyze", "stock"):
+            try:
+                if k in st.query_params:
+                    del st.query_params[k]
+            except Exception:
+                pass
+        st.rerun()
+    except Exception:
+        pass
+
+
+
+def render_clickable_stock_table(df: pd.DataFrame, stock_col: str = "Stock", height: int = 380):
+    """
+    Always HTML table — stock **name** is a blue link.
+    Click name → ?go_stock=SYMBOL → Detailed Analysis.
+    No checkboxes. No separate Open button.
+    """
+    if df is None or df.empty:
+        st.info("No rows to display.")
+        return
+    x = df.copy().reset_index(drop=True)
+    cols = [str(c) for c in x.columns]
+    if stock_col not in cols:
+        st.dataframe(x, use_container_width=True, hide_index=True, height=height)
+        return
+
+    cols = [stock_col] + [c for c in cols if c != stock_col]
+    x = x[cols].head(300)
+
+    th = (
+        "text-align:left;padding:8px 10px;border-bottom:1px solid #475569;"
+        "color:#cbd5e1;font-size:0.78rem;font-weight:600;background:#0f172a;"
+        "position:sticky;top:0;z-index:1;"
+    )
+    td = "padding:8px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;font-size:0.88rem;"
+    parts = ["<tr>" + "".join(f"<th style='{th}'>{c}</th>" for c in cols) + "</tr>"]
+    for _, row in x.iterrows():
+        cells = []
+        for c in cols:
+            val = row[c]
+            if c == stock_col:
+                s = str(val or "").strip().upper().replace(".NS", "")
+                cells.append(
+                    f"<td style='{td}'>"
+                    f"<a href='?go_stock={s}' target='_self' "
+                    f"style='color:#38bdf8;font-weight:800;text-decoration:underline;"
+                    f"cursor:pointer;font-size:0.95rem;'>{s}</a></td>"
+                )
+            else:
+                if val is None or (isinstance(val, float) and pd.isna(val)):
+                    t = ""
+                else:
+                    t = str(val).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                cells.append(f"<td style='{td}'>{t}</td>")
+        parts.append("<tr>" + "".join(cells) + "</tr>")
+
+    st.markdown(
+        f"<p style='color:#94a3b8;font-size:0.9rem;margin:0 0 8px 0;'>"
+        f"Click the <b style='color:#38bdf8'>blue stock name</b> "
+        f"(e.g. <b style='color:#38bdf8'>DEEPA</b>) → Detailed Analysis opens."
+        f"</p>"
+        f"<div style='overflow:auto;max-height:{int(height)}px;border:1px solid #334155;"
+        f"border-radius:10px;background:#0b1220;'>"
+        f"<table style='width:100%;border-collapse:collapse;'>"
+        + "".join(parts)
+        + "</table></div>",
+        unsafe_allow_html=True,
+    )
+
+
+
+def show_stock_dataframe(df: pd.DataFrame, height: int = 360, stock_col: str = "Stock"):
+    """Use this instead of st.dataframe whenever a Stock column exists."""
+    if df is not None and not getattr(df, "empty", True) and stock_col in getattr(df, "columns", []):
+        render_clickable_stock_table(df, stock_col=stock_col, height=height)
+    else:
+        st.dataframe(df, use_container_width=True, hide_index=True, height=height)
+
+
+
 def filterable_dataframe(
     df: pd.DataFrame,
     key: str,
@@ -1614,48 +1710,16 @@ def filterable_dataframe(
             x = x[~x[stock_col].astype(str).isin(hide_sel)].reset_index(drop=True)
         excluded = hide_sel
 
-    # Put Stock first so it is easy to click/select
+    # Put Stock first; click the **name** (blue link) → analysis
     if stock_col in pick:
         pick = [stock_col] + [c for c in pick if c != stock_col]
     show = (x[pick] if pick else x).reset_index(drop=True)
 
-    st.caption(
-        f"Showing **{len(show)}** rows · **click the row checkbox** next to a stock "
-        f"(e.g. JUBLPHARMA) → opens **Detailed Analysis** with chart."
-    )
-
-    selected_stock = None
-    try:
-        event = st.dataframe(
-            show,
-            use_container_width=True,
-            hide_index=True,
-            height=int(height),
-            on_select="rerun",
-            selection_mode="single-row",
-            key=f"{table_id}_df",
-        )
-        rows = []
-        try:
-            rows = list(event.selection.rows) if event and getattr(event, "selection", None) else []
-        except Exception:
-            rows = []
-        if rows and stock_col in show.columns:
-            idx = int(rows[0])
-            if 0 <= idx < len(show):
-                selected_stock = str(show.iloc[idx][stock_col]).strip()
-    except TypeError:
+    st.caption(f"Showing **{len(show)}** rows · table id `{table_id}`")
+    if open_analysis_on_select and stock_col in show.columns:
+        render_clickable_stock_table(show, stock_col=stock_col, height=int(height))
+    else:
         st.dataframe(show, use_container_width=True, hide_index=True, height=int(height))
-        st.caption("This Streamlit version needs an upgrade for click-to-open; use search + Save format only.")
-
-    # Immediate navigate — no separate Open dropdown / button under the table
-    if selected_stock and open_analysis_on_select and stock_col in show.columns:
-        prev = st.session_state.get(f"{table_id}_last_sel")
-        if prev != selected_stock:
-            st.session_state[f"{table_id}_last_sel"] = selected_stock
-            st.session_state.selected_stock = selected_stock.upper().replace(".NS", "")
-            st.session_state.page = "Stock Analysis"
-            st.rerun()
 
     b1, b2 = st.columns(2)
     with b1:
@@ -7501,7 +7565,7 @@ def show_tool_iv():
     view = df[cols].copy()
     if "impliedVolatility" in view.columns:
         view["IV %"] = (pd.to_numeric(view["impliedVolatility"], errors="coerce") * 100).round(2)
-    st.dataframe(view, use_container_width=True, hide_index=True)
+    show_stock_dataframe(view, height=360)
     try:
         if "impliedVolatility" in df.columns and "strike" in df.columns:
             fig = go.Figure()
@@ -9164,7 +9228,7 @@ My Strategy is **price vs RSI divergence** — it also applies to **index future
             st.subheader("📋 Unique stocks (all strategies listed once)")
             render_unique_strategy_stock_cards(live_df, max_cards=12, key_prefix="live_usc")
             with st.expander("Raw signal table (optional)", expanded=False):
-                st.dataframe(live_df, use_container_width=True, hide_index=True)
+                show_stock_dataframe(live_df, height=360)
         else:
             st.caption("No live hits yet — normal when filters are strict.")
 
@@ -9325,7 +9389,7 @@ My Strategy is **price vs RSI divergence** — it also applies to **index future
                 st.subheader("📋 Unique stocks — all strategies on one card")
                 render_unique_strategy_stock_cards(view, max_cards=15, key_prefix="all_usc")
                 with st.expander("Raw multi-row table + CSV", expanded=False):
-                    st.dataframe(view, use_container_width=True, hide_index=True)
+                    show_stock_dataframe(view, height=360)
                     try:
                         st.download_button(
                             "⬇️ Download CSV",
@@ -9387,7 +9451,7 @@ My Strategy is **price vs RSI divergence** — it also applies to **index future
                 st.success(f"**{len(sdf)}** hits under **{SWING_STRATEGIES[sid_s]['name']}** → unique cards")
                 render_unique_strategy_stock_cards(sdf, max_cards=12, key_prefix="one_usc")
                 with st.expander("Raw table", expanded=False):
-                    st.dataframe(sdf, use_container_width=True, hide_index=True)
+                    show_stock_dataframe(sdf, height=360)
             else:
                 st.caption("Click the button after a market scan for more names.")
 
@@ -14941,7 +15005,7 @@ def show_paper_trading():
     m4.metric("Avg return %", f"{avg_r:+.2f}%" if avg_r == avg_r and avg_r is not None else "—")
     m5.metric("Total PnL ₹", f"{total_pnl:,.0f}")
 
-    st.dataframe(paper, use_container_width=True, hide_index=True)
+    show_stock_dataframe(paper, height=360)
     st.caption(f"Saved to `{PAPER_FILE}` — use this list to backtest dummy trades vs real price history.")
 
 
@@ -22720,6 +22784,11 @@ try:
     load_scan_from_disk(force=False)
 except Exception:
     pass
+
+try:
+    handle_go_stock_query()
+except Exception:
+    pass
 try:
     load_strategy_snapshot(force=False)
 except Exception:
@@ -23891,29 +23960,13 @@ results["Sector"]
             if c in filtered.columns
         ]
 
-        st.caption("**Click a row** in the table to open detailed analysis (chart + indicators).")
         show_tbl = filtered[available_columns].reset_index(drop=True)
-        try:
-            event = st.dataframe(
-                show_tbl,
-                use_container_width=True,
-                hide_index=True,
-                on_select="rerun",
-                selection_mode="single-row",
-                key="dash_results_table_select",
-            )
-            rows = []
-            try:
-                rows = list(event.selection.rows) if event and getattr(event, "selection", None) else []
-            except Exception:
-                rows = []
-            if rows:
-                idx = int(rows[0])
-                if 0 <= idx < len(show_tbl) and "Stock" in show_tbl.columns:
-                    st.session_state.selected_stock = str(show_tbl.iloc[idx]["Stock"]).upper().replace(".NS", "")
-                    st.session_state.page = "Stock Analysis"
-                    st.rerun()
-        except TypeError:
+        if "Stock" in show_tbl.columns:
+            # Stock name first
+            cols_o = ["Stock"] + [c for c in show_tbl.columns if c != "Stock"]
+            show_tbl = show_tbl[cols_o]
+            render_clickable_stock_table(show_tbl, stock_col="Stock", height=420)
+        else:
             st.dataframe(show_tbl, use_container_width=True, hide_index=True)
 
 
