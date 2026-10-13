@@ -2336,8 +2336,10 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
         d["VWAP"] = close
     try:
         vol_ma = d["Volume"].rolling(20).mean().replace(0, np.nan)
+        d["VolumeAvg20"] = vol_ma
         d["Volume Ratio"] = d["Volume"] / vol_ma
     except Exception:
+        d["VolumeAvg20"] = d["Volume"]
         d["Volume Ratio"] = 1.0
     return d
 
@@ -10260,24 +10262,18 @@ def analyse_stock(
     # VOLUME
     # --------------------------------------------------------
 
-    volume = safe_float(
-        row["Volume"]
-    )
+    volume = safe_float(row["Volume"] if "Volume" in getattr(row, "index", []) else 0)
 
-    average_volume = safe_float(
-        row["VolumeAvg20"]
-    )
-
-    if average_volume > 0:
-
-        volume_ratio = (
-            volume /
-            average_volume
-        )
-
-    else:
-
-        volume_ratio = 1
+    # Prefer precomputed ratio; else VolumeAvg20; else 1.0 (never KeyError)
+    volume_ratio = safe_float(row["Volume Ratio"] if "Volume Ratio" in getattr(row, "index", []) else 0)
+    if volume_ratio <= 0:
+        average_volume = 0.0
+        if "VolumeAvg20" in getattr(row, "index", []):
+            average_volume = safe_float(row["VolumeAvg20"])
+        if average_volume > 0 and volume > 0:
+            volume_ratio = volume / average_volume
+        else:
+            volume_ratio = 1.0
 
     if volume_ratio >= 1.5:
 
@@ -23905,56 +23901,46 @@ results["Sector"]
             if c in filtered.columns
         ]
 
-        st.dataframe(
-            filtered[
-                available_columns
-            ],
-            use_container_width=True,
-            hide_index=True
-        )
+        st.caption("**Click a row** in the table to open detailed analysis (chart + indicators).")
+        show_tbl = filtered[available_columns].reset_index(drop=True)
+        try:
+            event = st.dataframe(
+                show_tbl,
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="dash_results_table_select",
+            )
+            rows = []
+            try:
+                rows = list(event.selection.rows) if event and getattr(event, "selection", None) else []
+            except Exception:
+                rows = []
+            if rows:
+                idx = int(rows[0])
+                if 0 <= idx < len(show_tbl) and "Stock" in show_tbl.columns:
+                    st.session_state.selected_stock = str(show_tbl.iloc[idx]["Stock"]).upper().replace(".NS", "")
+                    st.session_state.page = "Stock Analysis"
+                    st.rerun()
+        except TypeError:
+            st.dataframe(show_tbl, use_container_width=True, hide_index=True)
 
-        # ----------------------------------------------------
-        # Individual stock buttons
-        # ----------------------------------------------------
-
-        st.subheader(
-            "📈 Open Detailed Stock Analysis"
-        )
-
-        # Show buttons for selected filtered results.
-        # This allows a separate analysis page.
-
-        for _, row in filtered.head(
-            100
-        ).iterrows():
-
-            stock = row[
-                "Stock"
-            ]
-
-            call = row[
-                "Call"
-            ]
-
-            prediction = row[
-                "Prediction"
-            ]
-
-            if st.button(
-                f"📈 {stock} | {call} | Prediction {prediction}%",
-                key="dashboard_"
-                + str(stock)
-            ):
-
-                st.session_state.selected_stock = (
-                    stock
-                )
-
-                st.session_state.page = (
-                    "Stock Analysis"
-                )
-
-                st.rerun()
+        # Quick open (if row-select not supported)
+        st.subheader("📈 Open Detailed Stock Analysis")
+        st.caption("Or pick a stock below (same analysis page as row click).")
+        _stocks = show_tbl["Stock"].astype(str).tolist() if "Stock" in show_tbl.columns else []
+        if _stocks:
+            c1, c2 = st.columns([3, 1])
+            with c1:
+                pick = st.selectbox("Stock", _stocks[:100], key="dash_open_stock_sel")
+            with c2:
+                st.write("")
+                st.write("")
+                if st.button("Open analysis →", type="primary", key="dash_open_stock_btn"):
+                    st.session_state.selected_stock = str(pick).upper().replace(".NS", "")
+                    st.session_state.page = "Stock Analysis"
+                    st.rerun()
 
         # ----------------------------------------------------
         # Quick SELL CALL
