@@ -462,6 +462,27 @@ def safe_int(value, default=0):
             return 0
 
 
+# Column headers / UI words that must never be treated as stock symbols
+_INVALID_STOCK_TOKENS = {
+    "PRIORITY", "RANK", "STOCK", "SECTOR", "PRICE", "CALL", "PREDICTION",
+    "TARGET", "STOP", "LOSS", "HOLD", "DAYS", "RISK", "LEVEL", "RSI", "ADX",
+    "CURRENT", "BUY", "SELL", "WATCH", "NONE", "NULL", "NAN", "HIGH", "MEDIUM",
+    "LOW", "VERY", "RESULT", "ENTRY", "SIDE", "QTY", "CLIENT", "CATEGORY",
+    "DATE", "VALUE", "DEAL", "TYPE", "HAS", "WHO", "TOTAL", "OPEN", "CLOSE",
+}
+
+def is_valid_stock_symbol(symbol) -> bool:
+    s = str(symbol or "").upper().strip().replace(".NS", "")
+    if not s or len(s) < 1 or len(s) > 20:
+        return False
+    if s in _INVALID_STOCK_TOKENS:
+        return False
+    if s.replace("&", "").replace("-", "").isalnum() is False:
+        return False
+    # pure numbers ok (e.g. 360ONE-like) — allow alnum
+    return True
+
+
 def clean_symbol(symbol):
     symbol = str(symbol).upper().strip()
 
@@ -12407,9 +12428,9 @@ def best_stock_history(symbol, interval="1d", period=None, **kwargs):
 
     period_map = {
         "1m": "5d", "5m": "60d", "15m": "60d", "30m": "60d",
-        "1h": "730d", "60m": "730d", "1d": "2y", "1wk": "5y", "1mo": "10y",
+        "1h": "730d", "60m": "730d", "1d": "5y", "1wk": "5y", "1mo": "10y",
     }
-    per = period or period_map.get(interval, "2y")
+    per = period or period_map.get(interval, "5y")
 
     try:
         d = yf.download(
@@ -12434,7 +12455,7 @@ def best_stock_history(symbol, interval="1d", period=None, **kwargs):
 
     if (y_df is None or y_df.empty or len(y_df) < 60) and interval in {"1d", "1wk", "1mo"}:
         try:
-            for rng in ("2y", "1y", "6mo", "5y"):
+            for rng in ("5y", "2y", "1y", "6mo", "3mo", "1mo"):
                 ch = yahoo_chart_history(symbol, rng)
                 if ch is not None and not ch.empty and len(ch) >= 60:
                     y_df = ch
@@ -12453,11 +12474,10 @@ def best_stock_history(symbol, interval="1d", period=None, **kwargs):
         return y_df
     if nse_ok:
         return nse_df
-    # accept shorter series if that is all we have (analyse needs 60)
-    if y_df is not None and not y_df.empty and len(y_df) >= 30:
-        return y_df
-    if nse_df is not None and not nse_df.empty and len(nse_df) >= 30:
-        return nse_df
+    # accept short series (IPO / new listings) — UI will show coverage note
+    for cand in (y_df, nse_df):
+        if cand is not None and not cand.empty and len(cand) >= 5:
+            return cand
     return pd.DataFrame()
 
 
@@ -12465,7 +12485,7 @@ def best_stock_history(symbol, interval="1d", period=None, **kwargs):
 def _stock_history_cached(symbol, interval="1d", period=None):
     try:
         df = best_stock_history(symbol, interval=interval, period=period)
-        if df is None or getattr(df, "empty", True) or len(df) < 30:
+        if df is None or getattr(df, "empty", True) or len(df) < 5:
             return None  # do not cache empties as success
         return df
     except Exception:
@@ -17143,20 +17163,30 @@ def show_stock(
 
         st.rerun()
 
-    # --------------------------------------------------------
-    # Historical data
-    # --------------------------------------------------------
-
-    df = stock_history(
-        symbol
-    )
-
-    if df.empty:
-
+    if not is_valid_stock_symbol(symbol):
         st.error(
-            "Historical data could not be loaded for this stock."
+            f"**`{symbol}`** is not a valid NSE stock symbol "
+            "(looks like a table column / filter word). "
+            "Go back and **click the blue stock name** (e.g. RELIANCE, DEEPA)."
         )
+        return
 
+    # --------------------------------------------------------
+    # Historical data (target up to ~5 years)
+    # --------------------------------------------------------
+
+    with st.spinner(f"Loading up to 5 years history for {symbol}…"):
+        df = stock_history(symbol, interval="1d", period="5y")
+        if df is None or getattr(df, "empty", True):
+            df = stock_history(symbol, interval="1d", period="2y")
+        if df is None or getattr(df, "empty", True):
+            df = stock_history(symbol, interval="1d", period="6mo")
+
+    if df is None or getattr(df, "empty", True):
+        st.error(
+            f"Historical data could not be loaded for **{symbol}**. "
+            "Try again later or check the symbol."
+        )
         return
 
     # --------------------------------------------------------
