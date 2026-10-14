@@ -4915,26 +4915,48 @@ def show_ai_command_dashboard():
         unsafe_allow_html=True,
     )
 
+    # AUTO learn — no button required (throttle ~10 min so page stays fast)
+    import time as _time
+    _now = _time.time()
+    _last = float(st.session_state.get("_ai_auto_learn_ts") or 0)
+    _auto_out = None
+    if (_now - _last) >= 600 or not st.session_state.get("_ai_auto_learn_done"):
+        try:
+            _auto_out = run_self_learning_engine(min_closed=2)
+            st.session_state["_ai_auto_learn_ts"] = _now
+            st.session_state["_ai_auto_learn_done"] = True
+        except Exception as _le:
+            st.session_state["_ai_auto_learn_ts"] = _now
+            st.caption(f"Auto-learn skipped: {_le}")
+
     c_run, c_info = st.columns([1, 3])
     with c_run:
-        if st.button("🧠 Run self-learning now", type="primary", use_container_width=True, key="ai_learn_run"):
+        if st.button("🧠 Force re-learn", use_container_width=True, key="ai_learn_run"):
             with st.spinner("Learning from closed predictions…"):
                 out = run_self_learning_engine(min_closed=2)
+            st.session_state["_ai_auto_learn_ts"] = _time.time()
             if out.get("ok"):
                 st.success(
                     f"Learned from **{out['closed']}** closed · "
                     f"Targets **{out['target_hits']}** · Stops **{out['stop_hits']}**"
                 )
             else:
-                st.warning("Need more closed trades (target/stop) in Past Predictions to learn.")
+                st.info("Need closed target/stop rows in Past Predictions for deeper learning.")
             st.rerun()
     with c_info:
         learning = load_learning()
         hs = learning.get("history_stats") or {}
-        st.caption(
-            f"Last learning: **{learning.get('updated_at') or '—'}** · "
-            f"Closed **{hs.get('closed', '—')}** · Win rate **{hs.get('win_rate', '—')}%**"
-        )
+        if _auto_out and _auto_out.get("ok"):
+            st.caption(
+                f"✅ **Auto-learned** · Closed **{_auto_out.get('closed')}** · "
+                f"Targets **{_auto_out.get('target_hits')}** · Stops **{_auto_out.get('stop_hits')}** · "
+                f"{learning.get('updated_at') or ''}"
+            )
+        else:
+            st.caption(
+                f"Auto-learn active (every ~10 min) · Last: **{learning.get('updated_at') or '—'}** · "
+                f"Closed **{hs.get('closed', '—')}** · Win rate **{hs.get('win_rate', '—')}%**"
+            )
 
     # KPI row
     try:
@@ -4988,12 +5010,33 @@ def show_ai_command_dashboard():
     strategies = ["ALL"]
     stocks = ["ALL"]
     if hist is not None and not hist.empty:
-        if "Call Source" in hist.columns:
-            sources += sorted(hist["Call Source"].astype(str).str.upper().unique().tolist())
-        if "Strategy" in hist.columns:
-            strategies += sorted([s for s in hist["Strategy"].astype(str).unique().tolist() if str(s).strip()])
-        if "Stock" in hist.columns:
-            stocks += sorted(hist["Stock"].astype(str).str.upper().unique().tolist())[:400]
+        try:
+            if "Call Source" in hist.columns:
+                sources += sorted({
+                    str(s).upper().strip()
+                    for s in hist["Call Source"].fillna("").astype(str).tolist()
+                    if str(s).strip() and str(s).lower() != "nan"
+                })
+        except Exception:
+            pass
+        try:
+            if "Strategy" in hist.columns:
+                strategies += sorted({
+                    str(s).strip()
+                    for s in hist["Strategy"].fillna("").astype(str).tolist()
+                    if str(s).strip() and str(s).lower() not in ("nan", "none", "")
+                })
+        except Exception:
+            pass
+        try:
+            if "Stock" in hist.columns:
+                stocks += sorted({
+                    str(s).upper().replace(".NS", "").strip()
+                    for s in hist["Stock"].fillna("").astype(str).tolist()
+                    if str(s).strip() and str(s).lower() != "nan"
+                })[:400]
+        except Exception:
+            pass
     with f1:
         view_mode = st.selectbox(
             "View",
@@ -25359,6 +25402,15 @@ try:
         scan_and_notify_outcomes()
         flush_notifications()
         st.session_state["_last_notif_ts"] = _now_ts
+except Exception:
+    pass
+
+# Global auto self-learning (background, every 15 min) — no user click
+try:
+    _al = float(st.session_state.get("_global_ai_learn_ts") or 0)
+    if (_now_ts - _al) >= 900:
+        run_self_learning_engine(min_closed=2)
+        st.session_state["_global_ai_learn_ts"] = _now_ts
 except Exception:
     pass
 
