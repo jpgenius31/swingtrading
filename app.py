@@ -24376,9 +24376,13 @@ if _live_sync and ((_now_ts - _last_ts) >= 20):
     except Exception:
         pass
 
+# Notifications: only check every 60s so tab switches stay fast
 try:
-    scan_and_notify_outcomes()
-    flush_notifications()
+    _nlast = float(st.session_state.get("_last_notif_ts") or 0)
+    if (_now_ts - _nlast) >= 60:
+        scan_and_notify_outcomes()
+        flush_notifications()
+        st.session_state["_last_notif_ts"] = _now_ts
 except Exception:
     pass
 
