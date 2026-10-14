@@ -8217,11 +8217,10 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
     """
     My Strategy — strict bullish RSI divergence on 1D (up to ~6 months):
 
-    • Price: lower low between two real swing lows
-    • RSI: higher low on the SAME bars (any RSI level — no zone filter)
-    • Lines on price lows and RSI lows must stay unbroken between pivots
-    • Reject noise / out-of-context wiggles (this is why some stocks were always wrong)
-    • ACTIVE_FRESH only if 2nd low is day 0–2; TOO_LATE still returned for listing with remark
+    • Price falls (lower low) and RSI rises (higher low) on the same bars
+    • On the 2nd low day, price is lower than the previous day (pattern can set)
+    • Price line and RSI line: NO candle / RSI bar may break the line in between
+    • ACTIVE_FRESH only if 2nd low is day 0–2; TOO_LATE listed with LATE remark
     """
     out = {
         "ok_for_buy": False,
@@ -8272,35 +8271,39 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
         return out
 
     def _line_unbroken_price(i1, i2, p1, p2) -> bool:
+        """No candle low may break below the price swing-low line (user rule)."""
         if i2 <= i1 + 1:
             return True
-        breaks = 0
         for i in range(i1 + 1, i2):
             t = (i - i1) / max(i2 - i1, 1)
             line_y = p1 + t * (p2 - p1)
             v = float(lows.iloc[i])
             if np.isnan(v):
                 continue
-            if v < line_y * (1.0 - tol):
-                breaks += 1
-                if breaks >= 2:  # allow one wick noise, not a broken structure
+            # any break of the line by a candle low = invalid
+            if v < line_y * (1.0 - max(tol, 0.0005)):
+                return False
+            # also reject closes clearly under the line (body break)
+            try:
+                c = float(close.iloc[i])
+                if not np.isnan(c) and c < line_y * (1.0 - max(tol * 2, 0.001)):
                     return False
+            except Exception:
+                pass
         return True
 
     def _line_unbroken_rsi(i1, i2, r1, r2) -> bool:
+        """No RSI bar may break below the RSI higher-low line (user rule)."""
         if i2 <= i1 + 1:
             return True
-        breaks = 0
         for i in range(i1 + 1, i2):
             t = (i - i1) / max(i2 - i1, 1)
             line_y = r1 + t * (r2 - r1)
             v = float(rsi.iloc[i])
             if np.isnan(v):
                 continue
-            if v < line_y - max(2.5, abs(line_y) * 0.04):
-                breaks += 1
-                if breaks >= 2:
-                    return False
+            if v < line_y - max(1.0, abs(line_y) * 0.02):
+                return False
         return True
 
     def _is_real_swing(i: int) -> bool:
@@ -8332,6 +8335,16 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
             # Price down, RSI up — core rule
             if not (p2 < p1 and r2 > r1):
                 continue
+            # Pattern frame: on 2nd low day, price must be lower than previous day
+            if i2 >= 1:
+                prev_close = float(close.iloc[i2 - 1])
+                day_close = float(close.iloc[i2])
+                prev_low = float(lows.iloc[i2 - 1])
+                if np.isnan(prev_close) or np.isnan(day_close):
+                    continue
+                # must fall vs previous day (close lower OR low lower than prior low)
+                if not (day_close < prev_close or p2 < prev_low):
+                    continue
             depth = (p1 - p2) / max(abs(p1), 1e-9) * 100
             if depth < min_swing:
                 continue
@@ -22216,7 +22229,7 @@ defaults = {
     "selected_sector":
         "",
 
-    "auto_refresh":
+    "auto_refresh":  # set False below for fast tab switching
         True,  # live prices auto-update on a timer
     "live_prices_on":
         False,  # refresh LTP on every page cycle (throttled)
@@ -23381,7 +23394,7 @@ def render_header_nav():
             st.caption("**Sync / reload**")
             st.session_state.auto_refresh = st.checkbox(
                 "Auto refresh page",
-                value=bool(st.session_state.get("auto_refresh", True)),
+                value=bool(st.session_state.get("auto_refresh", False)),
                 key="hdr_auto_ref",
             )
             st.session_state.live_sync = st.checkbox(
@@ -24300,75 +24313,66 @@ elif st.session_state.page == "Stock Analysis":
 # Essential for Intraday / F&O + swing books — auto LTP everywhere trading matters
 # ============================================================
 
-_LIVE_PRICE_PAGES = {
-    "Dashboard", "Intraday FO", "Swing Hub",
+# FAST NAV: hubs/menus never wait on live price network calls
+_FAST_NAV_PAGES = {
+    "Dashboard", "Swing Hub", "Tools Hub", "NSE Tools", "Broker Angel",
+    "Intraday FO",  # hub entry only — prices only if live_prices_on
+}
+_PRICE_BOOK_PAGES = {
     "BUY Calls", "SELL Calls", "Sure Calls", "Strategy Lab",
     "History", "Paper Trading", "Trade Tracker", "Portfolio",
     "Find Stock", "Stock Analysis", "Nifty Analysis", "BankNifty Analysis",
-    "Chart Pattern Scanner", "NSE Tools", "Holding Advisor",
+    "Chart Pattern Scanner", "Holding Advisor", "Intraday FO",
 }
 _cur_page = st.session_state.get("page", "Dashboard")
-_on_live_page = _cur_page in _LIVE_PRICE_PAGES
+_on_price_page = _cur_page in _PRICE_BOOK_PAGES
 
-_lp_on = st.session_state.get("live_prices_on", True)
-_auto = st.session_state.get("auto_refresh", True)
-_live_sync = st.session_state.get("live_sync", False)
+_lp_on = bool(st.session_state.get("live_prices_on", False))
+_auto = bool(st.session_state.get("auto_refresh", False))
+_live_sync = bool(st.session_state.get("live_sync", False))
 _secs = int(st.session_state.get("refresh_seconds", LIVE_REFRESH_SECONDS) or 60)
-if _secs < 30:
+if _secs < 30 and _cur_page != "Intraday FO":
     _secs = 30
-# Intraday / F&O: force minimum practical refresh (1 second — 0.1s not feasible)
 try:
-    if _cur_page == "Intraday FO":
-        _secs = min(max(1, _secs), 2) if nse_market_open_now() else min(max(1, _secs), 5)
+    if _cur_page == "Intraday FO" and _lp_on:
+        _secs = min(max(2, _secs), 5)
         st.session_state.refresh_seconds = _secs
 except Exception:
-    if _cur_page == "Intraday FO":
-        _secs = 1
+    pass
 if _live_sync:
-    _secs = min(int(st.session_state.get("live_sync_secs", 5) or 5), _secs)
+    _secs = min(int(st.session_state.get("live_sync_secs", 15) or 15), max(_secs, 15))
 
 _now_ts = time.time()
 _last_ts = float(st.session_state.get("_last_price_refresh_ts") or 0)
-# Allow 1s throttle on intraday; other pages keep a slightly softer floor
-if _cur_page == "Intraday FO":
-    _throttle = max(1, min(_secs, 2))
-else:
-    _throttle = max(2, min(_secs, 12))
+# Navigation must stay instant — only refresh prices when user enabled Live prices
+_throttle = max(15, min(_secs, 60)) if _cur_page != "Intraday FO" else max(3, min(_secs, 8))
 
-if _on_live_page and _lp_on and ((_now_ts - _last_ts) >= _throttle):
+# Skip ALL network price work on pure menu clicks unless live prices explicitly ON
+if _on_price_page and _lp_on and ((_now_ts - _last_ts) >= _throttle):
     try:
         if _cur_page == "History":
-            refresh_history_current_prices(max_stocks=120)
+            refresh_history_current_prices(max_stocks=40)
             st.session_state["_last_price_refresh"] = india_now().strftime("%H:%M:%S IST")
         else:
-            # All books: scan results, strategy, paper, history open rows
-            try:
-                live_df = st.session_state.get("live_strat_df")
-                if live_df is None or (isinstance(live_df, pd.DataFrame) and live_df.empty):
-                    if STRATEGY_LIVE_FILE.exists():
-                        live_df = pd.read_csv(STRATEGY_LIVE_FILE)
-                if live_df is not None and not live_df.empty:
-                    st.session_state["_tmp_live_df"] = live_df
-            except Exception:
-                pass
-            refresh_live_prices_all_books(max_per_book=100)
-            # Keep index quotes fresh on dashboard / F&O
+            # Light: few symbols only so tab switch stays fast
+            refresh_live_prices_all_books(max_per_book=20)
             try:
                 if st.session_state.get("results") is not None and not st.session_state.results.empty:
                     st.session_state.results = update_results_with_live_prices(
-                        st.session_state.results, max_stocks=80
+                        st.session_state.results, max_stocks=25
                     )
             except Exception:
                 pass
+            st.session_state["_last_price_refresh"] = india_now().strftime("%H:%M:%S IST")
         st.session_state["_last_price_refresh_ts"] = _now_ts
     except Exception:
         pass
 
-if _live_sync and ((_now_ts - _last_ts) >= 3):
+if _live_sync and ((_now_ts - _last_ts) >= 20):
     try:
-        apply_realtime_sync(force=False, refresh_prices=_on_live_page and _lp_on)
-        if _on_live_page:
-            st.session_state["_last_price_refresh_ts"] = _now_ts
+        # Sync files only — no price storm on every click
+        apply_realtime_sync(force=False, refresh_prices=False)
+        st.session_state["_last_price_refresh_ts"] = _now_ts
     except Exception:
         pass
 
@@ -24379,20 +24383,21 @@ except Exception:
     pass
 
 _lp = st.session_state.get("_last_price_refresh", "")
-if _on_live_page and _lp_on and _lp:
+if _on_price_page and _lp_on and _lp:
     st.caption(
-    f"💹 Live prices · last **{_lp}** · every **{_secs}s**"
-    + (" · **Intraday fast feed**" if _cur_page == "Intraday FO" else "")
-)
+        f"💹 Live prices · last **{_lp}** · every **{_secs}s**"
+        + (" · **Intraday**" if _cur_page == "Intraday FO" else "")
+    )
 
-# Auto page reload so LTP keeps moving (Intraday needs this)
-if (_on_live_page and (_lp_on or _auto)) or _live_sync:
+# Auto full-page reload ONLY when user enables Live prices or Auto refresh
+# (default OFF so Swing / Tools tabs open instantly after scan)
+if _on_price_page and (_lp_on or _auto) and not st.session_state.get("_skip_auto_reload"):
     st.markdown(
         f"""
         <script>
         setTimeout(function() {{
             window.parent.location.reload();
-        }}, {_secs * 1000});
+        }}, {max(int(_secs), 15) * 1000});
         </script>
         """,
         unsafe_allow_html=True,
