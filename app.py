@@ -6638,6 +6638,270 @@ def _place_915_paper(underlying_label, sig, spot, qty, auto=False) -> bool:
 
 
 
+
+def fo_liquid_stock_universe() -> list:
+    """Stock options only: Nifty 50 + Bank Nifty constituents + Nifty 200."""
+    lists = {}
+    try:
+        lists = load_index_constituents() or {}
+    except Exception:
+        lists = {}
+    out = []
+    out.extend(list(lists.get("nifty50") or _FALLBACK_NIFTY50))
+    try:
+        out.extend(list(lists.get("banknifty") or _FALLBACK_BANKNIFTY))
+    except Exception:
+        pass
+    out.extend(list(lists.get("nifty200") or []))
+    if not out:
+        out = list(_FALLBACK_NIFTY50)
+    clean, seen = [], set()
+    for s in out:
+        u = str(s).upper().replace(".NS", "").strip()
+        if not u or u in seen:
+            continue
+        try:
+            ok = is_valid_stock_symbol(u)
+        except Exception:
+            ok = True
+        if ok:
+            seen.add(u)
+            clean.append(u)
+    return clean
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def fetch_nse_top_losers(limit: int = 20) -> pd.DataFrame:
+    """
+    Top losers from NSE live analysis (loosers). Fallback: Yahoo/scan day % change.
+    Returns columns: Stock, LTP, Change %, Volume (best effort).
+    """
+    rows = []
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json,text/plain,*/*",
+        "Referer": "https://www.nseindia.com/",
+    }
+    urls = [
+        "https://www.nseindia.com/api/live-analysis-variations?index=loosers",
+        "https://www.nseindia.com/api/live-analysis-variations?index=losers",
+    ]
+    try:
+        import requests
+        sess = requests.Session()
+        sess.headers.update(headers)
+        try:
+            sess.get("https://www.nseindia.com", timeout=6)
+        except Exception:
+            pass
+        for url in urls:
+            try:
+                r = sess.get(url, timeout=8)
+                if r.status_code != 200:
+                    continue
+                data = r.json()
+                # NSE shapes vary: data['data'] or list
+                items = data.get("data") if isinstance(data, dict) else data
+                if isinstance(items, dict):
+                    for k in ("NIFTY", "FOSec", "allSec", "data"):
+                        if k in items and isinstance(items[k], list):
+                            items = items[k]
+                            break
+                if not isinstance(items, list):
+                    continue
+                for it in items:
+                    if not isinstance(it, dict):
+                        continue
+                    sym = (
+                        it.get("symbol")
+                        or it.get("symbolName")
+                        or it.get("meta", {}).get("symbol")
+                        if isinstance(it.get("meta"), dict)
+                        else None
+                    )
+                    if not sym:
+                        continue
+                    chg = (
+                        it.get("pChange")
+                        or it.get("perChange")
+                        or it.get("percentChange")
+                        or it.get("netPrice")
+                    )
+                    ltp = it.get("lastPrice") or it.get("ltp") or it.get("last")
+                    vol = it.get("totalTradedVolume") or it.get("volume") or it.get("qty")
+                    rows.append({
+                        "Stock": str(sym).upper().strip(),
+                        "LTP": safe_float(ltp),
+                        "Change %": safe_float(chg),
+                        "Volume": safe_float(vol),
+                    })
+                if rows:
+                    break
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    if not rows:
+        # Fallback: from scan results sorted by worst day move if available
+        try:
+            res = st.session_state.get("results")
+            if res is not None and not getattr(res, "empty", True):
+                x = res.copy()
+                col = "Change %" if "Change %" in x.columns else None
+                if col is None and "pct" in x.columns:
+                    col = "pct"
+                stock_col = "Stock" if "Stock" in x.columns else "Symbol"
+                if col and stock_col in x.columns:
+                    x[col] = pd.to_numeric(x[col], errors="coerce")
+                    x = x.nsmallest(limit, col)
+                    for _, r in x.iterrows():
+                        rows.append({
+                            "Stock": str(r[stock_col]).upper().replace(".NS", ""),
+                            "LTP": safe_float(r.get("Price") or r.get("Current Price")),
+                            "Change %": safe_float(r.get(col)),
+                            "Volume": safe_float(r.get("Volume")),
+                        })
+        except Exception:
+            pass
+
+    if not rows:
+        # Static educational sample from liquid names (offline)
+        for s in ["ADANIENT", "TATASTEEL", "HINDALCO", "SBIN", "AXISBANK", "PNB",
+                  "FEDERALBNK", "BANKBARODA", "VEDL", "COALINDIA"][:limit]:
+            rows.append({"Stock": s, "LTP": 0.0, "Change %": 0.0, "Volume": 0})
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    df["Stock"] = df["Stock"].astype(str).str.upper().str.replace(".NS", "", regex=False)
+    df = df.drop_duplicates(subset=["Stock"]).head(int(limit))
+    return df
+
+
+def recommend_stock_option_trades(max_names: int = 12) -> pd.DataFrame:
+    """
+    CE/PE ideas only on Nifty50 / BankNifty / Nifty200 names.
+    Includes 9:15 strategy on NSE top losers (same open-break rules).
+    """
+    universe = set(fo_liquid_stock_universe())
+    recs = []
+    now = india_now()
+    tmin = now.hour * 60 + now.minute
+    in_915 = 9 * 60 + 15 <= tmin <= 9 * 60 + 35
+
+    # --- A) 9:15 strategy on top losers (intersect liquid universe) ---
+    try:
+        losers = fetch_nse_top_losers(20)
+        for _, lr in losers.iterrows():
+            sym = str(lr.get("Stock") or "").upper()
+            if sym not in universe:
+                continue
+            spot = safe_float(lr.get("LTP")) or _spot_price(sym) or 0
+            if spot <= 0:
+                continue
+            # ATM strike approximation (₹5 / ₹10 steps by price)
+            step = 5 if spot < 500 else (10 if spot < 2000 else 20)
+            atm = int(round(spot / step) * step)
+            pe_prem = max(2.0, round(spot * 0.012, 1))
+            ce_prem = max(2.0, round(spot * 0.010, 1))
+            # Rule: losers often open weak → PE bias on open-break down; CE only if open reclaim
+            if in_915:
+                side, prem, why = "BUY PE", pe_prem, "Top loser + 9:15 window — prefer ATM PE on break below open"
+            else:
+                side, prem, why = "BUY PE", pe_prem, "Top NSE loser in liquid F&O universe — PE bias until reclaim"
+            tgt = round(prem * 1.4, 1)
+            sl = round(prem * 0.7, 1)
+            recs.append({
+                "Stock": sym,
+                "Universe": "Nifty50/BN/N200",
+                "Strategy": STRATEGY_915_930_NAME if in_915 else "Top-loser PE bias (post 9:30 educational)",
+                "Side": side,
+                "Strike (ATM≈)": atm,
+                "Entry ≈": prem,
+                "Target ≈": tgt,
+                "Stop ≈": sl,
+                "Spot": round(spot, 2),
+                "Day %": round(safe_float(lr.get("Change %")), 2),
+                "Desk note": (
+                    "25Y desk: trade only liquid ATM, exit by 9:30 for 9:15 setup; "
+                    "never average a losing PE; size by premium risk not lot pride."
+                ),
+                "Why": why,
+            })
+            if len(recs) >= max_names // 2:
+                break
+    except Exception:
+        pass
+
+    # --- B) Structure bias on liquid names from scan / sample ---
+    try:
+        sample = list(universe)[:40]
+        # Prefer names present in scan results
+        res = st.session_state.get("results")
+        if res is not None and not getattr(res, "empty", True) and "Stock" in res.columns:
+            in_scan = [str(s).upper().replace(".NS", "") for s in res["Stock"].tolist()]
+            sample = [s for s in in_scan if s in universe][:30] or sample
+        for sym in sample:
+            if any(r["Stock"] == sym for r in recs):
+                continue
+            try:
+                df = stock_history(clean_symbol(sym), interval="15m", period="5d")
+                if df is None or getattr(df, "empty", True) or len(df) < 30:
+                    df = stock_history(clean_symbol(sym), interval="1d", period="3mo")
+                if df is None or getattr(df, "empty", True) or "Close" not in df.columns:
+                    continue
+                c = pd.to_numeric(df["Close"], errors="coerce").dropna()
+                if len(c) < 20:
+                    continue
+                price = float(c.iloc[-1])
+                ema9 = float(c.ewm(span=9, adjust=False).mean().iloc[-1])
+                ema21 = float(c.ewm(span=21, adjust=False).mean().iloc[-1])
+                delta = c.diff()
+                up = delta.clip(lower=0).rolling(14).mean()
+                down = (-delta.clip(upper=0)).rolling(14).mean()
+                rs = up / down.replace(0, np.nan)
+                rsi_v = float((100 - (100 / (1 + rs))).iloc[-1] or 50)
+                step = 5 if price < 500 else (10 if price < 2000 else 20)
+                atm = int(round(price / step) * step)
+                if price > ema9 > ema21 and rsi_v >= 52:
+                    side, strat = "BUY CE", "EMA stack + RSI>52 (stock CE)"
+                    prem = max(2.0, round(price * 0.011, 1))
+                    note = "Trend up — ATM CE only; trail if spot loses EMA9."
+                elif price < ema9 < ema21 and rsi_v <= 48:
+                    side, strat = "BUY PE", "EMA stack down + RSI<48 (stock PE)"
+                    prem = max(2.0, round(price * 0.011, 1))
+                    note = "Trend down — ATM PE; exit if spot reclaims EMA21."
+                else:
+                    continue
+                recs.append({
+                    "Stock": sym,
+                    "Universe": "Nifty50/BN/N200",
+                    "Strategy": strat,
+                    "Side": side,
+                    "Strike (ATM≈)": atm,
+                    "Entry ≈": prem,
+                    "Target ≈": round(prem * 1.35, 1),
+                    "Stop ≈": round(prem * 0.72, 1),
+                    "Spot": round(price, 2),
+                    "Day %": "",
+                    "Desk note": (
+                        "Experience desk: one defined risk (premium), no naked selling; "
+                        "if wrong in 15–20 min, exit — survival > ego."
+                    ),
+                    "Why": note,
+                })
+            except Exception:
+                continue
+            if len(recs) >= max_names:
+                break
+    except Exception:
+        pass
+
+    return pd.DataFrame(recs)
+
+
+
 def show_intraday_fo_desk():
     """
     Intraday + Futures & Options desk:
@@ -7087,34 +7351,96 @@ def show_intraday_fo_desk():
             )
 
     with tab_stk:
-        st.caption("Stock options — **one box**: type to filter (e.g. rel → RELIANCE) then pick from the list.")
+        st.markdown("### Stock options — liquid universe only")
+        st.caption(
+            "**Only Nifty 50 · Bank Nifty stocks · Nifty 200.** "
+            "Recommendations include **strategy name**, approx **CE/PE price**, and desk notes. "
+            "**9:15–9:30** uses **NSE top 20 losers** (same open-break rules)."
+        )
         try:
-            _all = sorted({
-                str(s).replace(".NS", "").replace(".ns", "").upper().strip()
-                for s in (NSE_STOCKS or [])
-                if str(s).strip()
-            })
+            _all = fo_liquid_stock_universe()
         except Exception:
-            _all = ["RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "SBIN"]
+            _all = list(_FALLBACK_NIFTY50)
+        _all = sorted(set(_all))
         if not _all:
-            _all = ["RELIANCE", "TCS", "INFY", "SBIN"]
+            _all = ["RELIANCE", "TCS", "INFY", "SBIN", "HDFCBANK", "ICICIBANK"]
+
+        # ---- Auto recommendations ----
+        st.markdown("#### 📡 Recommended stock option trades")
+        if st.button("🔄 Refresh stock-option recommendations", key="ifo_stk_rec_btn"):
+            try:
+                recommend_stock_option_trades.clear()
+            except Exception:
+                pass
+            try:
+                fetch_nse_top_losers.clear()
+            except Exception:
+                pass
+        with st.spinner("Building CE/PE ideas (Nifty50 / BN / N200 + top losers)…"):
+            try:
+                rec_df = recommend_stock_option_trades(max_names=12)
+            except Exception as _re:
+                rec_df = pd.DataFrame()
+                st.caption(f"Rec engine: {_re}")
+        if rec_df is not None and not rec_df.empty:
+            show_cols = [c for c in [
+                "Stock", "Side", "Strategy", "Strike (ATM≈)", "Entry ≈", "Target ≈", "Stop ≈",
+                "Spot", "Day %", "Why", "Desk note",
+            ] if c in rec_df.columns]
+            st.dataframe(rec_df[show_cols], use_container_width=True, hide_index=True, height=320)
+            st.markdown(
+                """
+                **Desk (experience trader — capital preservation first):**  
+                1. Only **ATM / slight ITM** on these names — skip illiquid far OTM.  
+                2. **9:15 setup:** enter on open-break, **exit by 9:30** — no “hope”.  
+                3. Risk = **premium × lots** only; never average a losing long option.  
+                4. If spot does not move your way in **15–20 minutes**, exit — survival beats one hero trade.  
+                *Educational only — not investment advice; no strategy is loss-free in all markets.*
+                """
+            )
+        else:
+            st.info("No live rec rows yet — use manual picker below or retry after market open.")
+
+        st.divider()
+        st.markdown("#### 🔍 Manual pick (same universe)")
         default = "RELIANCE" if "RELIANCE" in _all else _all[0]
         prev = str(st.session_state.get("ifo_stk_pick", default)).upper()
         if prev not in _all:
             prev = default
         idx = _all.index(prev) if prev in _all else 0
-        # Single control: Streamlit selectbox is type-to-search in one bar
         sym = st.selectbox(
-            "NSE stock (type to search)",
+            "NSE stock (type to search — Nifty50 / BN / N200 only)",
             options=_all,
             index=idx,
             key="ifo_stk_pick",
-            help="Click the box and type letters (rel, tcs, hdfc…) to jump to matching stocks — one bar only.",
         )
         spot_s = _spot_price(sym)
         st.metric("Spot", f"₹{spot_s:,.2f}" if spot_s else "—")
         horizon_s = st.selectbox("Horizon", ["Intraday", "1–2 days", "This week expiry"], key="ifo_stk_hz")
-        act_s = st.selectbox("Action", ["BUY CE", "BUY PE", "SELL CE (spread preferred)", "SELL PE (spread preferred)"], key="ifo_stk_act")
+        act_s = st.selectbox(
+            "Action",
+            ["BUY CE", "BUY PE", "SELL CE (spread preferred)", "SELL PE (spread preferred)"],
+            key="ifo_stk_act",
+        )
+        # Auto-suggest CE/PE from structure
+        try:
+            df_bias = stock_history(clean_symbol(sym), interval="15m", period="5d")
+            if df_bias is None or df_bias.empty:
+                df_bias = stock_history(clean_symbol(sym), interval="1d", period="3mo")
+            if df_bias is not None and not df_bias.empty and "Close" in df_bias.columns:
+                c = pd.to_numeric(df_bias["Close"], errors="coerce").dropna()
+                if len(c) >= 20:
+                    price = float(c.iloc[-1])
+                    ema9 = float(c.ewm(span=9, adjust=False).mean().iloc[-1])
+                    ema21 = float(c.ewm(span=21, adjust=False).mean().iloc[-1])
+                    if price > ema9 > ema21:
+                        st.success(f"**Desk lean:** trend up → prefer **BUY CE** ATM near ₹{price:.0f}")
+                    elif price < ema9 < ema21:
+                        st.warning(f"**Desk lean:** trend down → prefer **BUY PE** ATM near ₹{price:.0f}")
+                    else:
+                        st.info("**Desk lean:** mixed structure — avoid naked options; wait for clear stack.")
+        except Exception:
+            pass
         exps = _option_expiries(sym)
         exp = st.selectbox("Expiry", exps, key="ifo_stk_exp") if exps else None
         df_s = stock_history(clean_symbol(sym), interval="15m")
@@ -7126,9 +7452,12 @@ def show_intraday_fo_desk():
                 x=list(range(len(tail))),
                 open=tail["Open"], high=tail["High"], low=tail["Low"], close=tail["Close"],
             ))
-            fig.update_layout(height=280, xaxis_rangeslider_visible=False, margin=dict(l=6, r=6, t=20, b=6),
-                              paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(15,23,42,0.9)",
-                              font=dict(color="#e2e8f0"))
+            fig.update_layout(
+                height=280, xaxis_rangeslider_visible=False,
+                margin=dict(l=6, r=6, t=20, b=6),
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(15,23,42,0.9)",
+                font=dict(color="#e2e8f0"),
+            )
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
             try:
                 pats = detect_patterns(tail)
@@ -7144,13 +7473,15 @@ def show_intraday_fo_desk():
             calls, puts = _option_chain(sym, exp)
             side_df = calls if "CE" in act_s else puts
             if side_df is not None and not side_df.empty:
-                cols = [c for c in ["strike", "lastPrice", "bid", "ask", "impliedVolatility", "volume", "openInterest"] if c in side_df.columns]
+                cols = [c for c in [
+                    "strike", "lastPrice", "bid", "ask", "impliedVolatility", "volume", "openInterest"
+                ] if c in side_df.columns]
                 st.markdown("**Chain snapshot**")
                 st.dataframe(side_df[cols].head(20), use_container_width=True, hide_index=True)
             else:
                 st.warning("Chain not available for this symbol/expiry on Yahoo.")
         st.write(f"**Plan:** {act_s} · {horizon_s} · {display_symbol(sym)}")
-        st.caption("Stock options are less liquid than NIFTY — check OI & spreads before entry.")
+        st.caption("Stock options less liquid than index — check OI & spreads. Educational only.")
 
     with tab_strat:
         st.markdown("### Strategy rules (detailed)")
