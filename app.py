@@ -340,7 +340,7 @@ st.markdown(
     }
 
     /* Smooth scroll + soft motion */
-    html { scroll-behavior: smooth; }
+    html { scroll-behavior: auto; }
     @media (prefers-reduced-motion: no-preference) {
         .block-container {
             animation: nseFadeIn 0.35s ease-out;
@@ -4710,6 +4710,10 @@ def show_performance_summary():
     Clear strategy performance desk: which source/strategy wins,
     combos, stop-loss behaviour, holding-period profit vs loss.
     """
+    try:
+        force_scroll_top()
+    except Exception:
+        pass
     st.markdown(
         """
         <div style="border-radius:16px;padding:18px 20px;margin-bottom:14px;
@@ -8655,6 +8659,10 @@ def strategies_matching_stock(symbol: str, side_filter: str = "BUY") -> dict:
 
 def show_strategy_lab(results: pd.DataFrame):
     """Everything in one place: learn, edit My Strategy, 5y backtest, live BUY calls, Angel levels."""
+    try:
+        force_scroll_top()
+    except Exception:
+        pass
     st.title("🧪 Strategy Lab — All-in-one (inside main app)")
     st.caption(
         "One file only: run **app.py**. Here you get strategies, **My Strategy** editor, "
@@ -17741,9 +17749,11 @@ def live_market():
 # SELL CALLS PAGE
 # ============================================================
 
-def show_sell_calls(
-    results
-):
+def show_sell_calls(results):
+    try:
+        force_scroll_top()
+    except Exception:
+        pass
 
     st.title(
         "🔴 SELL CALLS"
@@ -18438,6 +18448,10 @@ def manual_feedback_trainer():
 
 
 def show_buy_calls(results):
+    try:
+        force_scroll_top()
+    except Exception:
+        pass
 
     st.title("🟢 BUY CALLS")
     st.caption(
@@ -20134,6 +20148,10 @@ def _success_from_df(df: pd.DataFrame) -> dict:
 
 
 def show_history():
+    try:
+        force_scroll_top()
+    except Exception:
+        pass
     """Past Predictions — ALL stocks visible; success rates with Target/Stop + R:R filters."""
 
     st.title("🕐 PAST PREDICTIONS")
@@ -23017,6 +23035,103 @@ def inject_mobile_sidebar_close():
     )
 
 
+
+def force_scroll_top():
+    """
+    Every tab/page must open at the HEADER + start of content.
+    Streamlit keeps previous scroll — reset parent + iframe + all scroll parents.
+    """
+    # Visible anchor at top (helps mobile browsers)
+    st.markdown(
+        '<div id="jp-page-top" style="height:0;margin:0;padding:0;"></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        """
+        <script>
+        (function () {
+          function zero(el) {
+            if (!el) return;
+            try {
+              el.scrollTop = 0;
+              el.scrollLeft = 0;
+              if (typeof el.scrollTo === "function") el.scrollTo(0, 0);
+            } catch (e) {}
+          }
+          function goTop() {
+            try {
+              // 1) this frame
+              zero(document.documentElement);
+              zero(document.body);
+              window.scrollTo(0, 0);
+
+              // 2) parent (Streamlit Cloud / desktop shell)
+              var w = window;
+              try {
+                if (window.parent && window.parent !== window) w = window.parent;
+              } catch (e) {}
+              try {
+                w.scrollTo(0, 0);
+                zero(w.document.documentElement);
+                zero(w.document.body);
+              } catch (e2) {}
+
+              // 3) every known Streamlit scroll container (parent + self)
+              var docs = [document];
+              try { if (w.document) docs.push(w.document); } catch (e3) {}
+              var sels = [
+                "html", "body",
+                '[data-testid="stAppViewContainer"]',
+                '[data-testid="stAppViewContainer"] > section',
+                '[data-testid="stAppViewContainer"] > .main',
+                "section.main",
+                "section.main > div",
+                ".main",
+                ".main .block-container",
+                ".block-container",
+                '[data-testid="stVerticalBlockBorderWrapper"]',
+                '[data-testid="stVerticalBlock"]',
+                ".stApp",
+                "#root",
+                "#jp-page-top"
+              ];
+              docs.forEach(function (doc) {
+                sels.forEach(function (s) {
+                  try {
+                    doc.querySelectorAll(s).forEach(zero);
+                  } catch (e4) {}
+                });
+              });
+
+              // 4) hash jump to our top marker
+              try {
+                var a = document.getElementById("jp-page-top");
+                if (a && a.scrollIntoView) a.scrollIntoView({ block: "start", behavior: "instant" });
+              } catch (e5) {
+                try {
+                  var a2 = document.getElementById("jp-page-top");
+                  if (a2 && a2.scrollIntoView) a2.scrollIntoView(true);
+                } catch (e6) {}
+              }
+            } catch (err) {}
+          }
+          goTop();
+          [0, 16, 32, 64, 100, 200, 400, 700, 1200].forEach(function (ms) {
+            setTimeout(goTop, ms);
+          });
+          // after fonts/layout
+          try {
+            if (document.fonts && document.fonts.ready) {
+              document.fonts.ready.then(function () { goTop(); });
+            }
+          } catch (e7) {}
+        })();
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _nav_push(page_key: str):
     """Push current page to history then go to page_key."""
     cur = st.session_state.get("page", "Dashboard")
@@ -23031,14 +23146,16 @@ def _nav_push(page_key: str):
 
 
 def _sidebar_go(page_key: str):
-    """Click sidebar item → open that page and hide mobile drawer."""
+    """Click sidebar item → open that page at TOP and hide mobile drawer."""
     _nav_push(page_key)
+    st.session_state["_force_scroll_top"] = True
     st.rerun()
 
 
 def nav_go(page_key: str):
-    """Hub card / in-page link → open page, record history, close mobile menu."""
+    """Hub card / in-page link → open page at TOP, record history, close mobile menu."""
     _nav_push(page_key)
+    st.session_state["_force_scroll_top"] = True
     st.rerun()
 
 
@@ -23561,6 +23678,11 @@ if st.session_state.pop("_force_scan", None):
 
 try:
     render_back_bar()
+except Exception:
+    pass
+
+try:
+    force_scroll_top()
 except Exception:
     pass
 
