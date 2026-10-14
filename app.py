@@ -4705,6 +4705,453 @@ Cash market only — equity institutional activity, not F&O OI.
 
 
 
+
+def run_self_learning_engine(min_closed: int = 2) -> dict:
+    """
+    Learn from every closed prediction (target / stop / holding):
+    - Raise weights for patterns/strategies that hit target
+    - Lower weights after stop-loss clusters
+    - Rank strategies by sector for priority picks
+    - Write lessons into model_learning.json for next scan/calls
+    """
+    learning = load_learning()
+    try:
+        hist = normalize_history_df(load_history())
+    except Exception:
+        hist = pd.DataFrame()
+    out = {
+        "ok": False,
+        "closed": 0,
+        "target_hits": 0,
+        "stop_hits": 0,
+        "top_strategies": [],
+        "lessons": [],
+    }
+    if hist is None or hist.empty:
+        learning["history_stats"] = {"note": "No history yet"}
+        save_learning(learning)
+        return out
+
+    h = hist.copy()
+    for col in ("Result", "Call Source", "Strategy", "Stock", "Sector", "Patterns"):
+        if col not in h.columns:
+            h[col] = ""
+    res_u = h["Result"].astype(str).str.upper()
+    closed = h[res_u.str.contains("TARGET ACHIEVED|STOP LOSS HIT|HOLDING PERIOD|WIN|LOSS", regex=True, na=False)].copy()
+    out["closed"] = int(len(closed))
+    if len(closed) < min_closed:
+        learning["history_stats"] = {"closed": int(len(closed)), "note": "Need more closed trades"}
+        save_learning(learning)
+        return out
+
+    def _is_win(r):
+        s = str(r).upper()
+        return "TARGET ACHIEVED" in s or s == "WIN"
+
+    def _is_loss(r):
+        s = str(r).upper()
+        return "STOP LOSS HIT" in s or s == "LOSS"
+
+    closed["_win"] = closed["Result"].map(_is_win)
+    closed["_loss"] = closed["Result"].map(_is_loss)
+    out["target_hits"] = int(closed["_win"].sum())
+    out["stop_hits"] = int(closed["_loss"].sum())
+
+    # --- Strategy stats ---
+    strat_stats = {}
+    for _, row in closed.iterrows():
+        src = str(row.get("Call Source") or "SCAN").upper().strip()
+        strat = str(row.get("Strategy") or "").strip() or src
+        key = f"{src}::{strat}"
+        stt = strat_stats.setdefault(key, {"source": src, "strategy": strat, "n": 0, "wins": 0, "losses": 0})
+        stt["n"] += 1
+        if row["_win"]:
+            stt["wins"] += 1
+        if row["_loss"]:
+            stt["losses"] += 1
+
+    ranked = []
+    for key, stt in strat_stats.items():
+        n = max(stt["n"], 1)
+        wr = 100.0 * stt["wins"] / n
+        stt["win_rate"] = round(wr, 1)
+        stt["priority_score"] = round(wr + min(stt["wins"], 10) * 2 - stt["losses"] * 3, 2)
+        ranked.append(stt)
+    ranked.sort(key=lambda x: (-x["priority_score"], -x["wins"], -x["n"]))
+
+    # --- Sector stats ---
+    sector_stats = {}
+    for _, row in closed.iterrows():
+        sec = str(row.get("Sector") or "Other").strip() or "Other"
+        ss = sector_stats.setdefault(sec, {"n": 0, "wins": 0, "losses": 0})
+        ss["n"] += 1
+        if row["_win"]:
+            ss["wins"] += 1
+        if row["_loss"]:
+            ss["losses"] += 1
+    for sec, ss in sector_stats.items():
+        ss["win_rate"] = round(100.0 * ss["wins"] / max(ss["n"], 1), 1)
+
+    # --- Pattern weights ---
+    pw = dict(learning.get("pattern_weights") or {})
+    for _, row in closed.iterrows():
+        pats = str(row.get("Patterns") or "")
+        for p in [x.strip() for x in pats.replace(";", ",").split(",") if x.strip()]:
+            cur = float(pw.get(p, 2.0))
+            if row["_win"]:
+                cur = min(5.0, cur + 0.15)
+            elif row["_loss"]:
+                cur = max(0.5, cur - 0.2)
+            pw[p] = round(cur, 2)
+
+    # --- Call adjustments by source ---
+    adj = dict(learning.get("call_adjustments") or {})
+    for stt in ranked:
+        src = stt["source"]
+        if stt["n"] < 3:
+            continue
+        if stt["win_rate"] >= 55:
+            adj[src] = min(5.0, float(adj.get(src, 0)) + 0.5)
+        elif stt["win_rate"] <= 35:
+            adj[src] = max(-5.0, float(adj.get(src, 0)) - 0.8)
+
+    # --- Lessons ---
+    lessons = []
+    for stt in ranked[:8]:
+        if stt["n"] >= 3 and stt["win_rate"] >= 50:
+            lessons.append(
+                f"PRIORITY: {stt['source']} / {stt['strategy'] or '—'} → "
+                f"{stt['wins']}/{stt['n']} targets ({stt['win_rate']}%). "
+                f"Promote this source in scan filters."
+            )
+        if stt["n"] >= 3 and stt["win_rate"] <= 35:
+            lessons.append(
+                f"CAUTION: {stt['source']} / {stt['strategy'] or '—'} → "
+                f"{stt['losses']} stops in {stt['n']} trades ({stt['win_rate']}% win). "
+                f"Tighten entry / skip weak structure."
+            )
+    for sec, ss in sorted(sector_stats.items(), key=lambda x: -x[1].get("win_rate", 0))[:5]:
+        if ss["n"] >= 3:
+            lessons.append(
+                f"SECTOR {sec}: win rate {ss['win_rate']}% on {ss['n']} closed calls."
+            )
+
+    priority = ranked[:12]
+    priority_reasons = []
+    for i, stt in enumerate(priority[:5], 1):
+        priority_reasons.append(
+            f"#{i} {stt['source']} · {stt['strategy'] or 'general'} — "
+            f"{stt['win_rate']}% target rate over {stt['n']} closed trades "
+            f"(score {stt['priority_score']})."
+        )
+
+    learning["pattern_weights"] = pw
+    learning["call_adjustments"] = adj
+    learning["strategy_stats"] = {f"{x['source']}::{x['strategy']}": x for x in ranked}
+    learning["strategy_priority"] = priority
+    learning["sector_stats"] = sector_stats
+    learning["source_stats"] = {
+        s: {
+            "n": sum(1 for x in ranked if x["source"] == s),
+            "wins": sum(x["wins"] for x in ranked if x["source"] == s),
+            "losses": sum(x["losses"] for x in ranked if x["source"] == s),
+        }
+        for s in sorted({x["source"] for x in ranked})
+    }
+    learning["lessons"] = lessons[:20]
+    learning["priority_reasons"] = priority_reasons
+    learning["history_stats"] = {
+        "closed": out["closed"],
+        "target_hits": out["target_hits"],
+        "stop_hits": out["stop_hits"],
+        "win_rate": round(100.0 * out["target_hits"] / max(out["closed"], 1), 1),
+    }
+    save_learning(learning)
+    out["ok"] = True
+    out["top_strategies"] = priority[:5]
+    out["lessons"] = lessons[:10]
+    try:
+        learn_from_history(min_closed=min_closed)
+    except Exception:
+        pass
+    return out
+
+
+def get_priority_strategy_picks(limit: int = 5) -> list:
+    """Top strategies from self-learning for UI badges."""
+    try:
+        learning = load_learning()
+        pri = learning.get("strategy_priority") or []
+        return list(pri)[:limit]
+    except Exception:
+        return []
+
+
+def show_ai_command_dashboard():
+    """
+    Power BI–style command centre:
+    filters (Stock / Strategy / Source / F&O / Bulk) + KPI cards + charts + highlighted results.
+    Self-learning engine updates priorities from past predictions.
+    """
+    try:
+        force_scroll_top()
+    except Exception:
+        pass
+
+    st.markdown(
+        """
+        <div style="border-radius:18px;padding:20px 22px;margin-bottom:16px;
+                    background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 45%,#0e7490 100%);
+                    border:1px solid #38bdf8;box-shadow:0 12px 40px rgba(14,165,233,0.25);">
+          <div style="font-size:1.65rem;font-weight:900;color:#f0f9ff;letter-spacing:-0.02em;">
+            AI Command Dashboard
+          </div>
+          <div style="color:#bae6fd;margin-top:6px;font-size:0.95rem;line-height:1.45;">
+            Learns from every target &amp; stop · ranks strategies · filters like Power BI ·
+            Strategy · F&amp;O · Bulk deals · Stock drill-down
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    c_run, c_info = st.columns([1, 3])
+    with c_run:
+        if st.button("🧠 Run self-learning now", type="primary", use_container_width=True, key="ai_learn_run"):
+            with st.spinner("Learning from closed predictions…"):
+                out = run_self_learning_engine(min_closed=2)
+            if out.get("ok"):
+                st.success(
+                    f"Learned from **{out['closed']}** closed · "
+                    f"Targets **{out['target_hits']}** · Stops **{out['stop_hits']}**"
+                )
+            else:
+                st.warning("Need more closed trades (target/stop) in Past Predictions to learn.")
+            st.rerun()
+    with c_info:
+        learning = load_learning()
+        hs = learning.get("history_stats") or {}
+        st.caption(
+            f"Last learning: **{learning.get('updated_at') or '—'}** · "
+            f"Closed **{hs.get('closed', '—')}** · Win rate **{hs.get('win_rate', '—')}%**"
+        )
+
+    # KPI row
+    try:
+        hist = normalize_history_df(load_history())
+    except Exception:
+        hist = pd.DataFrame()
+    k1, k2, k3, k4, k5 = st.columns(5)
+    n_all = len(hist) if hist is not None and not hist.empty else 0
+    if hist is not None and not hist.empty and "Result" in hist.columns:
+        ru = hist["Result"].astype(str).str.upper()
+        n_tg = int(ru.str.contains("TARGET ACHIEVED", na=False).sum())
+        n_sl = int(ru.str.contains("STOP LOSS HIT", na=False).sum())
+        n_pend = int(ru.str.contains("PENDING|OPEN", na=False).sum()) if True else 0
+        n_pend = int((~ru.str.contains("TARGET|STOP|HOLDING|WIN|LOSS", regex=True, na=False)).sum())
+    else:
+        n_tg = n_sl = n_pend = 0
+    wr = round(100.0 * n_tg / max(n_tg + n_sl, 1), 1)
+    k1.metric("All calls", f"{n_all}")
+    k2.metric("🎯 Targets", f"{n_tg}")
+    k3.metric("🔴 Stops", f"{n_sl}")
+    k4.metric("Open / pending", f"{n_pend}")
+    k5.metric("Hit rate (T vs SL)", f"{wr}%")
+
+    # Priority strategies
+    pri = get_priority_strategy_picks(6)
+    reasons = (load_learning().get("priority_reasons") or [])
+    if pri or reasons:
+        st.markdown("#### ⭐ Priority strategies (from past results)")
+        for r in reasons[:5]:
+            st.markdown(
+                f"<div style='background:#0f172a;border-left:4px solid #22d3ee;padding:10px 14px;"
+                f"margin:6px 0;border-radius:8px;color:#e2e8f0;font-size:0.92rem;'>{r}</div>",
+                unsafe_allow_html=True,
+            )
+        if not reasons and pri:
+            for i, p in enumerate(pri, 1):
+                st.write(
+                    f"**#{i}** {p.get('source')} · {p.get('strategy') or '—'} — "
+                    f"{p.get('win_rate')}% on {p.get('n')} trades"
+                )
+
+    lessons = load_learning().get("lessons") or []
+    if lessons:
+        with st.expander("📚 Model lessons (auto)", expanded=False):
+            for L in lessons[:12]:
+                st.write("• " + str(L))
+
+    st.markdown("#### 🔎 Filters (like Power BI slicers)")
+    f1, f2, f3, f4 = st.columns(4)
+    sources = ["ALL"]
+    strategies = ["ALL"]
+    stocks = ["ALL"]
+    if hist is not None and not hist.empty:
+        if "Call Source" in hist.columns:
+            sources += sorted(hist["Call Source"].astype(str).str.upper().unique().tolist())
+        if "Strategy" in hist.columns:
+            strategies += sorted([s for s in hist["Strategy"].astype(str).unique().tolist() if str(s).strip()])
+        if "Stock" in hist.columns:
+            stocks += sorted(hist["Stock"].astype(str).str.upper().unique().tolist())[:400]
+    with f1:
+        view_mode = st.selectbox(
+            "View",
+            ["All results", "Strategy only", "F&O / Intraday", "Bulk deals", "Sure / High conviction", "Scan only"],
+            key="ai_view_mode",
+        )
+    with f2:
+        src_f = st.selectbox("Call source", sources, key="ai_src_f")
+    with f3:
+        strat_f = st.selectbox("Strategy", strategies, key="ai_strat_f")
+    with f4:
+        stock_f = st.selectbox("Stock", stocks, key="ai_stock_f")
+
+    r1, r2 = st.columns(2)
+    with r1:
+        res_f = st.multiselect(
+            "Result highlight",
+            ["TARGET ACHIEVED", "STOP LOSS HIT", "PENDING", "HOLDING PERIOD COMPLETED"],
+            default=["TARGET ACHIEVED", "STOP LOSS HIT", "PENDING"],
+            key="ai_res_f",
+        )
+    with r2:
+        max_rows = st.slider("Rows to show", 20, 300, 80, key="ai_max_rows")
+
+    view = hist.copy() if hist is not None and not hist.empty else pd.DataFrame()
+    if not view.empty:
+        if "Call Source" not in view.columns:
+            view["Call Source"] = "SCAN"
+        if "Strategy" not in view.columns:
+            view["Strategy"] = ""
+        src_u = view["Call Source"].astype(str).str.upper()
+        if view_mode == "Strategy only":
+            view = view[src_u.str.contains("STRATEGY|MY_STRATEGY|HIGH_CONV", regex=True, na=False)]
+        elif view_mode == "F&O / Intraday":
+            view = view[
+                src_u.str.contains("INTRADAY|F&O|FO|915|OPTION", regex=True, na=False)
+                | view["Strategy"].astype(str).str.contains("9:15|ORB|VWAP|CE|PE|Intraday", case=False, na=False)
+            ]
+        elif view_mode == "Bulk deals":
+            view = view[
+                src_u.str.contains("BULK|BLOCK|SUPERSTAR", regex=True, na=False)
+                | view["Strategy"].astype(str).str.contains("bulk|block|bank deal", case=False, na=False)
+            ]
+        elif view_mode == "Sure / High conviction":
+            view = view[src_u.str.contains("SURE|HIGH_CONV|PRECISION", regex=True, na=False)]
+        elif view_mode == "Scan only":
+            view = view[src_u.str.contains("SCAN", na=False)]
+
+        if src_f != "ALL":
+            view = view[src_u == src_f]
+        if strat_f != "ALL" and "Strategy" in view.columns:
+            view = view[view["Strategy"].astype(str) == strat_f]
+        if stock_f != "ALL" and "Stock" in view.columns:
+            view = view[view["Stock"].astype(str).str.upper() == stock_f]
+
+        if res_f and "Result" in view.columns:
+            mask = pd.Series(False, index=view.index)
+            ru = view["Result"].astype(str).str.upper()
+            for rf in res_f:
+                if "PENDING" in rf.upper():
+                    mask = mask | (~ru.str.contains("TARGET|STOP|HOLDING|WIN|LOSS", regex=True, na=False))
+                else:
+                    mask = mask | ru.str.contains(rf.upper().split()[0], na=False)
+            view = view[mask]
+
+    # Charts
+    cA, cB = st.columns(2)
+    with cA:
+        st.markdown("##### Results mix")
+        if not view.empty and "Result" in view.columns:
+            ru = view["Result"].astype(str).str.upper()
+            mix = pd.Series({
+                "Target": int(ru.str.contains("TARGET ACHIEVED", na=False).sum()),
+                "Stop": int(ru.str.contains("STOP LOSS HIT", na=False).sum()),
+                "Holding done": int(ru.str.contains("HOLDING", na=False).sum()),
+                "Open": int((~ru.str.contains("TARGET|STOP|HOLDING|WIN|LOSS", regex=True, na=False)).sum()),
+            })
+            try:
+                import plotly.express as px
+                fig = px.pie(values=mix.values, names=mix.index, hole=0.45,
+                             color_discrete_sequence=["#22c55e", "#ef4444", "#f59e0b", "#64748b"])
+                fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=280,
+                                  paper_bgcolor="rgba(0,0,0,0)", font_color="#e2e8f0")
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            except Exception:
+                st.write(mix)
+        else:
+            st.info("No rows for chart.")
+    with cB:
+        st.markdown("##### By call source")
+        if not view.empty and "Call Source" in view.columns:
+            by = view["Call Source"].astype(str).str.upper().value_counts().head(10)
+            try:
+                import plotly.express as px
+                fig2 = px.bar(x=by.index, y=by.values, labels={"x": "Source", "y": "Count"},
+                              color=by.values, color_continuous_scale="Teal")
+                fig2.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=280,
+                                   paper_bgcolor="rgba(0,0,0,0)", font_color="#e2e8f0",
+                                   showlegend=False)
+                st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
+            except Exception:
+                st.write(by)
+        else:
+            st.info("No source breakdown.")
+
+    st.markdown("#### 📋 Filtered results")
+    if view is None or view.empty:
+        st.warning("No rows match these filters. Import Strategy/Sure into Past Predictions or run learning after closed trades.")
+    else:
+        # Highlight styling via Result emoji column
+        show = view.copy()
+        if "Result" in show.columns:
+            def _hl(r):
+                s = str(r).upper()
+                if "TARGET" in s:
+                    return "🎯 TARGET"
+                if "STOP" in s:
+                    return "🔴 STOP"
+                if "HOLDING" in s:
+                    return "⏰ HOLDING DONE"
+                return "⏳ OPEN"
+            show["Highlight"] = show["Result"].map(_hl)
+        cols = [c for c in [
+            "Highlight", "Prediction Date", "Stock", "Call", "Call Source", "Strategy",
+            "Entry", "Target", "Stop Loss", "Result", "Return %", "Hold Days",
+        ] if c in show.columns]
+        try:
+            render_clickable_stock_table(show[cols].head(max_rows), stock_col="Stock", height=420)
+        except Exception:
+            st.dataframe(show[cols].head(max_rows), use_container_width=True, hide_index=True, height=420)
+        st.caption(f"Showing **{min(len(show), max_rows)}** of **{len(show)}** filtered rows · click stock name for analysis.")
+
+    # Bulk deals snapshot
+    st.markdown("#### 🏦 Bulk / block deals snapshot")
+    try:
+        if st.button("Load bulk deals into this dashboard", key="ai_bulk_load"):
+            st.session_state.page = "Superstar Bulk"
+            st.rerun()
+        st.caption("Full bulk desk: **Bank deals / Superstar** page. Use filter view **Bulk deals** above when history is tagged.")
+    except Exception:
+        pass
+
+    # F&O snapshot
+    st.markdown("#### 📡 F&O desk link")
+    if st.button("Open Intraday & F&O desk", key="ai_fo_open"):
+        try:
+            nav_go("Intraday FO")
+        except Exception:
+            st.session_state.page = "Intraday FO"
+            st.rerun()
+
+    st.caption(
+        "Self-learning updates `model_learning.json` (pattern weights, strategy priority, lessons). "
+        "Next scans use these weights. Educational — not a guarantee of future returns."
+    )
+
+
+
 def show_performance_summary():
     """
     Clear strategy performance desk: which source/strategy wins,
@@ -4954,6 +5401,7 @@ def show_swing_hub():
     ], key_prefix="swing_hub_c")
     st.markdown("**3 · Track & learn**")
     _hub_card_grid([
+        ("🧠 AI Command Dashboard", "Self-learning · strategy priority · Power BI filters.", "AI Command"),
         ("📊 Performance Summary", "Which strategy wins · stops · holding profit/loss.", "Performance Summary"),
         ("🕐 Past Predictions", "Every call · filters · success %.", "History"),
         ("🧪 Paper Trades", "Practice book with P&L.", "Paper Trading"),
@@ -5986,7 +6434,8 @@ def run_screener_style_query(
         extra = (
             list(lists.get("nifty50") or [])
             + list(lists.get("banknifty") or [])
-            + list(lists.get("nifty200") or [])[:60]
+            + list(lists.get("nifty200") or [])
+            + list(lists.get("nifty500") or [])[:300]
         )
     except Exception:
         extra = list(_FALLBACK_NIFTY50) + list(_FALLBACK_BANKNIFTY)
@@ -6002,7 +6451,7 @@ def run_screener_style_query(
         if s not in seen:
             seen.add(s)
             uniq.append(s)
-    symbols = uniq[: max(30, int(max_symbols))]
+    symbols = uniq[: max(50, int(max_symbols))]
 
     cache = _load_fund_cache()
     rows = []
@@ -6019,9 +6468,12 @@ def run_screener_style_query(
         ok = True
         for field, op, val in conditions:
             left = row.get(field)
-            if left is None or (isinstance(left, float) and (np.isnan(left) if left == left else True) is False and False):
+            try:
+                if left is None or (isinstance(left, float) and np.isnan(left)):
+                    left = None
+            except Exception:
                 pass
-            if left is None or (isinstance(left, float) and str(left) == "nan"):
+            if left is None:
                 if skip_missing:
                     continue  # don't fail stock for missing field
                 ok = False
@@ -6152,7 +6604,9 @@ Return on equity > 15
     with c2:
         if st.button("📂 Load screen", use_container_width=True, key="scr_load"):
             if pick and pick != "— new query —":
-                st.session_state["scr_query_text"] = saved.get(pick, "")
+                q = saved.get(pick, "") or ""
+                st.session_state["scr_query_text"] = q
+                st.session_state["scr_query_box"] = q
                 st.rerun()
     with c3:
         if st.button("🗑 Delete screen", use_container_width=True, key="scr_del"):
@@ -6161,22 +6615,47 @@ Return on equity > 15
                 save_saved_queries(saved)
                 st.rerun()
 
-    default_q = st.session_state.get(
-        "scr_query_text",
-        "Market capitalization > 500 AND\n"
-        "Price to earning < 40 AND\n"
-        "Return on equity > 10\n",
-    )
+    # Query box: key-only (no value=) so text stays visible & editable
+    _classic = "Market capitalization > 500 AND\nPrice to earning < 40 AND\nReturn on equity > 10"
+    if "scr_query_box" not in st.session_state:
+        st.session_state["scr_query_box"] = st.session_state.get("scr_query_text") or _classic
+    if not str(st.session_state.get("scr_query_box") or "").strip():
+        st.session_state["scr_query_box"] = _classic
+
     st.markdown("##### Search Query")
-    st.caption("You can customize the query below:")
+    st.caption("Edit the full query below — text must stay visible. Same field names as Screener.in.")
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stTextArea"] textarea {
+            color: #0f172a !important;
+            background-color: #ffffff !important;
+            font-size: 0.95rem !important;
+            font-weight: 600 !important;
+            line-height: 1.5 !important;
+            border: 2px solid #64748b !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     query_text = st.text_area(
         "Query",
-        value=default_q,
-        height=150,
+        height=160,
         key="scr_query_box",
         label_visibility="collapsed",
     )
     st.session_state["scr_query_text"] = query_text
+    _parsed = parse_screener_query(query_text or "")
+    if _parsed:
+        st.success(
+            "**Parsed conditions:** "
+            + " · ".join(f"`{f} {op} {v}`" for f, op, v in _parsed)
+        )
+    else:
+        st.warning(
+            "No conditions parsed — check names (e.g. **Market capitalization**, **Price to earning**)."
+        )
 
     st.caption(
         "Custom query example:  "
@@ -6187,7 +6666,7 @@ Return on equity > 15
     with b1:
         run = st.button("▶ Run this Query", type="primary", use_container_width=True, key="scr_run")
     with b2:
-        max_n = st.number_input("Universe size", 40, 250, 100, 10, key="scr_maxn")
+        max_n = st.number_input("Universe size", 50, 400, 200, 25, key="scr_maxn")
     with b3:
         save_name = st.text_input("Save screen as", placeholder="e.g. value_roce", key="scr_save_name")
         if st.button("💾 Save screen", use_container_width=True, key="scr_save"):
@@ -6200,11 +6679,15 @@ Return on equity > 15
                 st.success(f"Saved **{nm}**")
 
     skip_missing = st.checkbox(
-        "Skip missing fields (recommended)",
-        value=True,
+        "Skip missing fields (looser)",
+        value=False,
         key="scr_skip_miss",
-        help="If Yahoo has no PE/ROCE for a stock, ignore that condition instead of excluding the stock. "
-             "Turn off for strict Screener-like behaviour.",
+        help="OFF = strict like Screener (missing PE/ROCE excludes the stock). "
+             "ON = ignore missing Yahoo fields so more rows appear.",
+    )
+    st.caption(
+        "⚠️ Data source is **Yahoo / scan** (not Screener.in servers). "
+        "Same query language & ₹ Cr units — exact name lists can differ slightly from screener.in."
     )
 
     if run:
@@ -7387,7 +7870,25 @@ def show_intraday_fo_desk():
                 "Stock", "Side", "Strategy", "Strike (ATM≈)", "Entry ≈", "Target ≈", "Stop ≈",
                 "Spot", "Day %", "Why", "Desk note",
             ] if c in rec_df.columns]
-            st.dataframe(rec_df[show_cols], use_container_width=True, hide_index=True, height=320)
+            st.caption("Click the **blue stock name** → Detailed Analysis (multi-TF chart + experience desk).")
+            try:
+                render_clickable_stock_table(rec_df[show_cols], stock_col="Stock", height=340)
+            except Exception:
+                st.dataframe(rec_df[show_cols], use_container_width=True, hide_index=True, height=320)
+            # Quick open buttons (backup)
+            picks = rec_df["Stock"].astype(str).unique().tolist()[:15]
+            if picks:
+                c1, c2 = st.columns([3, 1])
+                with c1:
+                    _p = st.selectbox("Or select stock for full analysis", picks, key="ifo_stk_an_pick")
+                with c2:
+                    st.write("")
+                    st.write("")
+                    if st.button("Open analysis →", type="primary", key="ifo_stk_an_btn"):
+                        st.session_state.selected_stock = str(_p).upper().replace(".NS", "")
+                        st.session_state.page = "Stock Analysis"
+                        st.session_state["_force_scroll_top"] = True
+                        st.rerun()
             st.markdown(
                 """
                 **Desk (experience trader — capital preservation first):**  
@@ -7628,6 +8129,10 @@ def show_intraday_fo_desk():
         catalog = [
             {
                 "name": "9:15–9:30 · 15-min trading strategy",
+                "style": "Intraday open",
+                "rule": "Open-break ATM CE/PE · enter ≤40s after break · exit all by 9:30 IST.",
+                "fn": None,
+                "side": "PE if break below open · CE if break above open",
                 "blurb": "Open-break ATM CE/PE · enter ≤40s · exit 9:30 IST",
             },
             {
@@ -7676,8 +8181,15 @@ def show_intraday_fo_desk():
 
         rows = []
         for item in catalog:
-            rec = {"Strategy": item["name"], "Style": item["style"], "Side focus": item["side"],
-                   "Trades": "—", "Win %": "—", "Avg %": "—", "Rank score": 0.0}
+            rec = {
+                "Strategy": item.get("name") or "—",
+                "Style": item.get("style") or "—",
+                "Side focus": item.get("side") or "—",
+                "Trades": "—",
+                "Win %": "—",
+                "Avg %": "—",
+                "Rank score": 0.0,
+            }
             if item.get("fn") and bt_df is not None and not bt_df.empty:
                 try:
                     r = item["fn"](bt_df)
@@ -7702,11 +8214,11 @@ def show_intraday_fo_desk():
         st.success(f"**Suggested focus today:** {best} — see side focus in the table (CE vs PE are not interchangeable).")
 
         for item in catalog:
-            st.markdown(
-                f"**{item['name']}** · `{item['style']}`  \n"
-                f"{item['rule']}  \n"
-                f"*Side:* {item['side']}"
-            )
+            _nm = str(item.get("name") or "-")
+            _st = str(item.get("style") or "-")
+            _rl = str(item.get("rule") or item.get("blurb") or "")
+            _sd = str(item.get("side") or "-")
+            st.markdown("**" + _nm + "** · `" + _st + "`  \n" + _rl + "  \n*Side:* " + _sd)
             st.divider()
 
         st.warning(
@@ -18245,6 +18757,12 @@ def load_learning() -> dict:
         "call_adjustments": {},
         "manual_feedback": [],
         "history_stats": {},
+        "strategy_priority": [],
+        "strategy_stats": {},
+        "sector_stats": {},
+        "source_stats": {},
+        "lessons": [],
+        "priority_reasons": [],
         "updated_at": "",
     }
     try:
@@ -23193,6 +23711,7 @@ except Exception:
 
 # Parent hub for each inner page → Back returns here
 PAGE_PARENT = {
+    "AI Command": "Dashboard",
     "Nifty Analysis": "Swing Hub",
     "BankNifty Analysis": "Swing Hub",
     "BUY Calls": "Swing Hub",
@@ -23232,6 +23751,7 @@ PAGE_PARENT = {
 }
 
 PAGE_LABELS = {
+    "AI Command": "AI Command Dashboard",
     "Dashboard": "Dashboard",
     "Swing Hub": "Swing Trading Setup",
     "Pattern Hub": "Chart Patterns",
@@ -23610,7 +24130,7 @@ def render_header_nav():
         if key == "home" and cur == "Dashboard":
             active = True
         elif key == "swing" and cur in (
-            "BUY Calls", "SELL Calls", "Strategy Lab", "Sure Calls", "Swing Hub",
+            "BUY Calls", "SELL Calls", "Strategy Lab", "Sure Calls", "AI Command", "Swing Hub",
             "History", "Paper Trading", "Performance Summary", "Trade Tracker",
             "Holding Advisor", "Portfolio",
         ):
@@ -24641,6 +25161,9 @@ elif st.session_state.page == "Trade Tracker":
 
 elif st.session_state.page == "Swing Hub":
     show_swing_hub()
+
+elif st.session_state.page == "AI Command":
+    show_ai_command_dashboard()
 
 elif st.session_state.page == "Performance Summary":
     show_performance_summary()
