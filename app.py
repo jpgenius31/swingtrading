@@ -7763,55 +7763,126 @@ def _pulse_pcr(underlying: str = "NIFTY") -> dict:
 
 @st.cache_data(ttl=120, show_spinner=False)
 def _pulse_sector_scope(results_hash: str = "") -> pd.DataFrame:
-    """Sector average day % from scan results or Nifty sample."""
+    """
+    TradeBrahma-style sector scope:
+    Prefer NSE sector / thematic index day % (Yahoo).
+    Fallback: group scan stocks by Sector with up/down counts.
+    Columns: Sector, Avg %, Advances, Declines, N
+    """
+    # NSE-style sector indices (Yahoo symbols — best effort)
+    SECTOR_YF = [
+        ("NIFTY 50", "^NSEI"),
+        ("SENSEX", "^BSESN"),
+        ("NIFTY BANK", "^NSEBANK"),
+        ("NIFTY IT", "^CNXIT"),
+        ("NIFTY PHARMA", "^CNXPHARMA"),
+        ("NIFTY AUTO", "^CNXAUTO"),
+        ("NIFTY METAL", "^CNXMETAL"),
+        ("NIFTY REALTY", "^CNXREALTY"),
+        ("NIFTY ENERGY", "^CNXENERGY"),
+        ("NIFTY FMCG", "^CNXFMCG"),
+        ("NIFTY MEDIA", "^CNXMEDIA"),
+        ("NIFTY PSU BANK", "^CNXPSUBANK"),
+        ("NIFTY INFRA", "^CNXINFRA"),
+        ("NIFTY PSE", "^CNXPSE"),
+        ("NIFTY SERVICE", "^CNXSERVICE"),
+        ("NIFTY FIN SERVICE", "NIFTY_FIN_SERVICE.NS"),
+        ("NIFTY MIDCAP 100", "^NSEMDCP50"),
+    ]
     rows = []
-    res = None
+    for name, yf_sym in SECTOR_YF:
+        try:
+            df = stock_history(yf_sym, interval="1d", period="5d")
+            if df is None or len(df) < 2 or "Close" not in df.columns:
+                # try .NS suffix variants
+                df = stock_history(str(yf_sym).replace("^", "") + ".NS", interval="1d", period="5d")
+            if df is None or len(df) < 2:
+                continue
+            c = pd.to_numeric(df["Close"], errors="coerce").dropna()
+            if len(c) < 2 or float(c.iloc[-2]) == 0:
+                continue
+            pct = (float(c.iloc[-1]) / float(c.iloc[-2]) - 1) * 100
+            rows.append({
+                "Sector": name,
+                "Avg %": round(pct, 2),
+                "Advances": None,
+                "Declines": None,
+                "N": 1,
+                "Source": "INDEX",
+            })
+        except Exception:
+            continue
+
+    # Enrich Advances/Declines from scan results when Sector column exists
     try:
         res = st.session_state.get("results")
     except Exception:
         res = None
-    if res is not None and not getattr(res, "empty", True) and "Sector" in res.columns:
+    if res is not None and not getattr(res, "empty", True) and "Sector" in getattr(res, "columns", []):
         x = res.copy()
+        # build day change if missing
         if "Change %" not in x.columns:
-            # compute from Price vs rough - skip
-            pass
-        else:
-            x["Change %"] = pd.to_numeric(x["Change %"], errors="coerce")
-            g = x.groupby(x["Sector"].astype(str))["Change %"].agg(["mean", "count"])
-            g = g.reset_index()
-            g.columns = ["Sector", "Avg %", "N"]
-            g = g.dropna(subset=["Avg %"]).sort_values("Avg %", ascending=False)
-            return g
-    # fallback: tag Nifty50 by simple buckets
-    try:
-        lists = load_index_constituents() or {}
-        bank = set(str(s).upper() for s in (lists.get("banknifty") or _FALLBACK_BANKNIFTY))
-        n50 = [str(s).upper() for s in (lists.get("nifty50") or _FALLBACK_NIFTY50)][:40]
-        buckets = {"BANK": [], "IT": [], "OTHER": []}
-        it_set = {"TCS", "INFY", "WIPRO", "HCLTECH", "TECHM", "LTIM", "PERSISTENT", "COFORGE"}
-        for sym in n50:
-            try:
-                df = stock_history(clean_symbol(sym), interval="1d", period="5d")
-                if df is None or len(df) < 2:
-                    continue
-                c = pd.to_numeric(df["Close"], errors="coerce").dropna()
-                if len(c) < 2:
-                    continue
-                pct = (float(c.iloc[-1]) / float(c.iloc[-2]) - 1) * 100
-                if sym in bank:
-                    buckets["BANK"].append(pct)
-                elif sym in it_set:
-                    buckets["IT"].append(pct)
-                else:
-                    buckets["OTHER"].append(pct)
-            except Exception:
+            x["Change %"] = pd.NA
+            if "Price" in x.columns and "Current Price" in x.columns:
+                p0 = pd.to_numeric(x["Price"], errors="coerce")
+                p1 = pd.to_numeric(x["Current Price"], errors="coerce")
+                x["Change %"] = (p1 / p0 - 1) * 100
+        x["Change %"] = pd.to_numeric(x["Change %"], errors="coerce")
+        x["Sector"] = x["Sector"].astype(str).str.strip()
+        for sec, g in x.groupby("Sector"):
+            if not sec or sec.lower() in ("nan", "none", ""):
                 continue
-        for sec, vals in buckets.items():
-            if vals:
-                rows.append({"Sector": sec, "Avg %": round(sum(vals) / len(vals), 2), "N": len(vals)})
-        return pd.DataFrame(rows).sort_values("Avg %", ascending=False) if rows else pd.DataFrame()
-    except Exception:
+            ch = g["Change %"].dropna()
+            if ch.empty:
+                continue
+            # only add if not already covered by index name match
+            label = str(sec).upper()
+            already = any(label in str(r["Sector"]).upper() or str(r["Sector"]).upper() in label for r in rows)
+            if already:
+                # update advances on matching row
+                for r in rows:
+                    if label in str(r["Sector"]).upper() or str(r["Sector"]).upper() in label:
+                        r["Advances"] = int((ch > 0).sum())
+                        r["Declines"] = int((ch < 0).sum())
+                        r["N"] = int(len(ch))
+                continue
+            rows.append({
+                "Sector": str(sec),
+                "Avg %": round(float(ch.mean()), 2),
+                "Advances": int((ch > 0).sum()),
+                "Declines": int((ch < 0).sum()),
+                "N": int(len(ch)),
+                "Source": "SCAN",
+            })
+
+    if not rows:
         return pd.DataFrame()
+    out = pd.DataFrame(rows)
+    out = out.sort_values("Avg %", ascending=False).reset_index(drop=True)
+    return out
+
+
+def _sector_tile_color(pct) -> str:
+    """Heatmap tile color like TradeBrahma legend."""
+    try:
+        p = float(pct)
+    except Exception:
+        return "#334155"
+    if p >= 2:
+        return "#166534"  # dark green
+    if p >= 1:
+        return "#16a34a"
+    if p >= 0:
+        return "#4ade80"
+    if p >= -0.5:
+        return "#fda4af"
+    if p >= -1:
+        return "#f87171"
+    if p >= -2:
+        return "#ef4444"
+    return "#b91c1c"
+
+
 
 
 @st.cache_data(ttl=90, show_spinner=False)
@@ -8020,36 +8091,84 @@ def show_fo_market_pulse():
         st.caption("PCR = Put OI ÷ Call OI. Educational only — not a standalone signal.")
 
     with t3:
-        st.markdown("#### Sector Scope")
+        st.markdown("#### SECTOR SCOPE · LIVE style")
+        st.caption("NSE sector / thematic indices day change · heatmap tiles like TradeBrahma")
         if st.button("Refresh sectors", key="pulse_sec_btn"):
             try:
                 _pulse_sector_scope.clear()
             except Exception:
                 pass
-        with st.spinner("Sector averages…"):
-            sec = _pulse_sector_scope("1")
+        with st.spinner("Loading sector indices…"):
+            sec = _pulse_sector_scope(str(st.session_state.get("_sync_version_seen", "1")))
         if sec is not None and not sec.empty:
+            # Bar chart — green up / red down
             try:
-                import plotly.express as px
-                fig = px.bar(
-                    sec, x="Sector", y="Avg %", color="Avg %",
-                    color_continuous_scale=["#ef4444", "#fef08a", "#22c55e"],
-                )
+                import plotly.graph_objects as go
+                colors = ["#22c55e" if float(v) >= 0 else "#ef4444" for v in sec["Avg %"].tolist()]
+                fig = go.Figure(data=[go.Bar(
+                    x=sec["Sector"].tolist(),
+                    y=sec["Avg %"].tolist(),
+                    marker_color=colors,
+                    text=[f"{float(v):+.2f}%" for v in sec["Avg %"].tolist()],
+                    textposition="outside",
+                )])
                 fig.update_layout(
-                    height=360, margin=dict(l=10, r=10, t=20, b=10),
-                    paper_bgcolor="rgba(0,0,0,0)", font_color="#e2e8f0",
-                    showlegend=False,
+                    height=380,
+                    margin=dict(l=10, r=10, t=30, b=80),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(15,23,42,0.6)",
+                    font_color="#e2e8f0",
+                    yaxis=dict(title="", gridcolor="#334155", zeroline=True, zerolinecolor="#64748b"),
+                    xaxis=dict(tickangle=-35),
+                    title=dict(text="SECTOR SCOPE", font=dict(size=16, color="#86efac")),
                 )
                 st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-            except Exception:
-                pass
-            st.dataframe(sec, use_container_width=True, hide_index=True)
+            except Exception as e:
+                st.caption(f"Bar chart: {e}")
+
+            # Heatmap tiles
+            st.markdown("##### SECTOR HEATMAP")
+            st.caption("Sorted by average change % · Legend: dark green >2% · green 0–2% · pink/red negative")
+            tiles_html = [
+                '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:8px 0 16px 0;">'
+            ]
+            for _, r in sec.iterrows():
+                pct = float(r.get("Avg %") or 0)
+                bg = _sector_tile_color(pct)
+                adv = r.get("Advances")
+                dec = r.get("Declines")
+                foot = ""
+                if adv is not None and dec is not None:
+                    foot = (
+                        f'<div style="margin-top:8px;font-size:0.75rem;opacity:0.9;">'
+                        f'↑ {int(adv)} &nbsp; ↓ {int(dec)}</div>'
+                    )
+                tiles_html.append(
+                    f'<div style="background:{bg};border-radius:12px;padding:14px 12px;'
+                    f'color:#fff;min-height:88px;box-shadow:0 4px 14px rgba(0,0,0,0.25);">'
+                    f'<div style="font-size:0.72rem;font-weight:700;letter-spacing:0.02em;opacity:0.95;">'
+                    f'{r.get("Sector")}</div>'
+                    f'<div style="font-size:1.35rem;font-weight:900;margin-top:6px;">'
+                    f'{pct:+.2f}%</div>{foot}</div>'
+                )
+            tiles_html.append("</div>")
+            st.markdown("".join(tiles_html), unsafe_allow_html=True)
+
             pos = sec[sec["Avg %"] > 0]
             neg = sec[sec["Avg %"] < 0]
-            st.success(f"**Positive sectors:** {', '.join(pos['Sector'].astype(str).tolist()[:8]) or '—'}")
-            st.error(f"**Negative sectors:** {', '.join(neg['Sector'].astype(str).tolist()[:8]) or '—'}")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.success(
+                    "**Positive:** " + (", ".join(pos["Sector"].astype(str).tolist()[:10]) or "—")
+                )
+            with c2:
+                st.error(
+                    "**Negative:** " + (", ".join(neg["Sector"].astype(str).tolist()[:10]) or "—")
+                )
+            with st.expander("Raw sector table"):
+                st.dataframe(sec, use_container_width=True, hide_index=True)
         else:
-            st.info("Run a market scan for richer sector tags, or retry refresh.")
+            st.info("No sector index data this run — press Refresh or check market data feed.")
 
     with t4:
         st.markdown("#### Market Gainers & Losers")
