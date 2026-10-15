@@ -4980,6 +4980,25 @@ def show_ai_command_dashboard():
     k4.metric("Open / pending", f"{n_pend}")
     k5.metric("Hit rate (T vs SL)", f"{wr}%")
 
+    with st.expander("📖 How to use this dashboard", expanded=True):
+        st.markdown(
+            """
+**This page is your Power BI–style desk** for all saved calls (Past Predictions history).
+
+1. **KPIs (top)** — how many calls, targets, stops, open, hit rate.  
+2. **Auto-learn** — runs by itself; optional **Force re-learn** after many new closes.  
+3. **Filters**  
+   - **View** → All / Strategy only / F&O / Bulk / Sure / Scan  
+   - **Call source / Strategy / Stock** → slice one book or one name  
+   - **Result highlight** → Targets, Stops, Pending  
+4. **Charts** — mix of outcomes + count by source.  
+5. **Table** — click **blue stock name** → Detailed Analysis.  
+6. **Prices** — press **Refresh Current Prices** on the table (Entry/Target/Stop never change).  
+
+**Tip:** Your list shows many **PENDING** ADX Trend Rider rows from one scan day — that is history, not a live LTP feed. Use the price button to see where those stocks trade **now**.
+            """
+        )
+
     # Priority strategies
     pri = get_priority_strategy_picks(6)
     reasons = (load_learning().get("priority_reasons") or [])
@@ -5004,11 +5023,34 @@ def show_ai_command_dashboard():
             for L in lessons[:12]:
                 st.write("• " + str(L))
 
+    st.markdown("#### 🧠 Model capabilities & learning (date-wise)")
+    learning = load_learning()
+    hs = learning.get("history_stats") or {}
+    lc1, lc2, lc3, lc4 = st.columns(4)
+    lc1.metric("Pattern weights stored", str(len(learning.get("pattern_weights") or {})))
+    lc2.metric("Strategy ranks", str(len(learning.get("strategy_priority") or [])))
+    lc3.metric("Lessons", str(len(learning.get("lessons") or [])))
+    lc4.metric("Learning win rate", f"{hs.get('win_rate', '—')}%")
+    with st.expander("What the model has learned (full)", expanded=False):
+        st.write("**Priority reasons**")
+        for r in (learning.get("priority_reasons") or [])[:10]:
+            st.write("• " + str(r))
+        st.write("**Lessons**")
+        for L in (learning.get("lessons") or [])[:15]:
+            st.write("• " + str(L))
+        st.write("**Top pattern weights**")
+        pw = learning.get("pattern_weights") or {}
+        if pw:
+            top_pw = sorted(pw.items(), key=lambda x: -float(x[1] or 0))[:15]
+            st.dataframe(pd.DataFrame(top_pw, columns=["Pattern", "Weight"]), hide_index=True, use_container_width=True)
+        st.caption(f"File: model_learning.json · updated {learning.get('updated_at') or '—'}")
+
     st.markdown("#### 🔎 Filters (like Power BI slicers)")
-    f1, f2, f3, f4 = st.columns(4)
+    f0, f1, f2, f3, f4 = st.columns(5)
     sources = ["ALL"]
     strategies = ["ALL"]
     stocks = ["ALL"]
+    date_opts = ["ALL DATES"]
     if hist is not None and not hist.empty:
         try:
             if "Call Source" in hist.columns:
@@ -5037,6 +5079,20 @@ def show_ai_command_dashboard():
                 })[:400]
         except Exception:
             pass
+        try:
+            if "Prediction Date" in hist.columns:
+                _dates = (
+                    pd.to_datetime(hist["Prediction Date"], errors="coerce")
+                    .dt.strftime("%Y-%m-%d")
+                    .dropna()
+                    .unique()
+                    .tolist()
+                )
+                date_opts += sorted([d for d in _dates if d and d != "NaT"], reverse=True)
+        except Exception:
+            pass
+    with f0:
+        date_f = st.selectbox("Date (call day)", date_opts, key="ai_date_f")
     with f1:
         view_mode = st.selectbox(
             "View",
@@ -5067,6 +5123,13 @@ def show_ai_command_dashboard():
             view["Call Source"] = "SCAN"
         if "Strategy" not in view.columns:
             view["Strategy"] = ""
+        # Date filter
+        try:
+            if date_f and date_f != "ALL DATES" and "Prediction Date" in view.columns:
+                _pd = pd.to_datetime(view["Prediction Date"], errors="coerce")
+                view = view[_pd.dt.strftime("%Y-%m-%d") == date_f]
+        except Exception:
+            pass
         src_u = view["Call Source"].astype(str).str.upper()
         if view_mode == "Strategy only":
             view = view[src_u.str.contains("STRATEGY|MY_STRATEGY|HIGH_CONV", regex=True, na=False)]
@@ -5143,10 +5206,13 @@ def show_ai_command_dashboard():
             st.info("No source breakdown.")
 
     st.markdown("#### 📋 Filtered results")
+    st.caption(
+        "**Entry / Target / Stop** stay locked from the call date. "
+        "**Current Price** refreshes when you press the button below (or when Live prices is ON in the header)."
+    )
     if view is None or view.empty:
         st.warning("No rows match these filters. Import Strategy/Sure into Past Predictions or run learning after closed trades.")
     else:
-        # Highlight styling via Result emoji column
         show = view.copy()
         if "Result" in show.columns:
             def _hl(r):
@@ -5159,15 +5225,48 @@ def show_ai_command_dashboard():
                     return "⏰ HOLDING DONE"
                 return "⏳ OPEN"
             show["Highlight"] = show["Result"].map(_hl)
+
+        # Live Current Price overlay (open rows only — limited batch for speed)
+        refresh_px = st.button("💹 Refresh Current Prices on this table", key="ai_dash_px")
+        if "Current Price" not in show.columns:
+            show["Current Price"] = None
+        if refresh_px or st.session_state.get("live_prices") or st.session_state.get("_lp_on"):
+            try:
+                n_upd = 0
+                for idx, row in show.head(max_rows).iterrows():
+                    sym = str(row.get("Stock") or "").upper().replace(".NS", "").strip()
+                    if not sym:
+                        continue
+                    try:
+                        px = _spot_price(sym) or live_quote(clean_symbol(sym))
+                        px = safe_float(px)
+                        if px and px > 0:
+                            show.at[idx, "Current Price"] = round(px, 2)
+                            n_upd += 1
+                            # unrealized % vs entry when still open
+                            entry = safe_float(row.get("Entry") or row.get("Price"))
+                            res = str(row.get("Result") or "").upper()
+                            if entry and entry > 0 and ("TARGET" not in res and "STOP" not in res and "HOLDING" not in res):
+                                show.at[idx, "Return %"] = round((px - entry) / entry * 100, 2)
+                    except Exception:
+                        continue
+                if refresh_px:
+                    st.success(f"Updated **{n_upd}** live prices on this view.")
+            except Exception as _pe:
+                st.caption(f"Price refresh: {_pe}")
+
         cols = [c for c in [
             "Highlight", "Prediction Date", "Stock", "Call", "Call Source", "Strategy",
-            "Entry", "Target", "Stop Loss", "Result", "Return %", "Hold Days",
+            "Entry", "Current Price", "Target", "Stop Loss", "Result", "Return %", "Hold Days",
         ] if c in show.columns]
         try:
             render_clickable_stock_table(show[cols].head(max_rows), stock_col="Stock", height=420)
         except Exception:
             st.dataframe(show[cols].head(max_rows), use_container_width=True, hide_index=True, height=420)
-        st.caption(f"Showing **{min(len(show), max_rows)}** of **{len(show)}** filtered rows · click stock name for analysis.")
+        st.caption(
+            f"Showing **{min(len(show), max_rows)}** of **{len(show)}** filtered rows · "
+            "click **blue stock name** for analysis."
+        )
 
     # Bulk deals snapshot
     st.markdown("#### 🏦 Bulk / block deals snapshot")
@@ -5444,7 +5543,6 @@ def show_swing_hub():
     ], key_prefix="swing_hub_c")
     st.markdown("**3 · Track & learn**")
     _hub_card_grid([
-        ("🧠 AI Command Dashboard", "Self-learning · strategy priority · Power BI filters.", "AI Command"),
         ("📊 Performance Summary", "Which strategy wins · stops · holding profit/loss.", "Performance Summary"),
         ("🕐 Past Predictions", "Every call · filters · success %.", "History"),
         ("🧪 Paper Trades", "Practice book with P&L.", "Paper Trading"),
@@ -7428,12 +7526,809 @@ def recommend_stock_option_trades(max_names: int = 12) -> pd.DataFrame:
 
 
 
+
+def _sector_of_symbol(sym: str, results: pd.DataFrame = None) -> str:
+    try:
+        if results is not None and not results.empty and "Stock" in results.columns:
+            m = results[results["Stock"].astype(str).str.upper().str.replace(".NS", "", regex=False) == sym.upper()]
+            if not m.empty and "Sector" in m.columns:
+                return str(m.iloc[0].get("Sector") or "Other")
+    except Exception:
+        pass
+    try:
+        # light map from known lists
+        lists = load_index_constituents() or {}
+        if sym.upper() in [str(x).upper() for x in (lists.get("banknifty") or [])]:
+            return "Banking"
+    except Exception:
+        pass
+    return "Other"
+
+
+def _fo_bias_reason(sym: str) -> dict:
+    """Quick swing+FO bias and reason text for one stock."""
+    out = {
+        "Stock": sym, "Spot": None, "Bias": "NEUTRAL", "Side": "HOLD",
+        "Reason": "", "Sector": "Other", "RSI": None, "ADX": None,
+    }
+    try:
+        df = stock_history(clean_symbol(sym), interval="1d", period="6mo")
+        if df is None or len(df) < 30 or "Close" not in df.columns:
+            out["Reason"] = "Not enough history"
+            return out
+        c = pd.to_numeric(df["Close"], errors="coerce").dropna()
+        price = float(c.iloc[-1])
+        out["Spot"] = round(price, 2)
+        ema9 = float(c.ewm(span=9, adjust=False).mean().iloc[-1])
+        ema21 = float(c.ewm(span=21, adjust=False).mean().iloc[-1])
+        ema50 = float(c.ewm(span=50, adjust=False).mean().iloc[-1]) if len(c) >= 50 else ema21
+        delta = c.diff()
+        up = delta.clip(lower=0).rolling(14).mean()
+        down = (-delta.clip(upper=0)).rolling(14).mean()
+        rs = up / down.replace(0, np.nan)
+        rsi = float((100 - (100 / (1 + rs))).iloc[-1] or 50)
+        out["RSI"] = round(rsi, 1)
+        # simple ADX proxy from range
+        tr = (df["High"] - df["Low"]).astype(float).tail(20).mean()
+        out["ADX"] = round(min(50, (tr / price) * 1000), 1) if price else None
+        reasons = []
+        if price > ema9 > ema21:
+            out["Bias"] = "BULLISH"
+            out["Side"] = "BUY CE / swing BUY"
+            reasons.append("Price above EMA9 > EMA21 (uptrend stack)")
+        elif price < ema9 < ema21:
+            out["Bias"] = "BEARISH"
+            out["Side"] = "BUY PE / swing SELL bias"
+            reasons.append("Price below EMA9 < EMA21 (downtrend stack)")
+        else:
+            reasons.append("Mixed EMAs — no clear directional FO lean")
+        if price > ema50:
+            reasons.append("Still above EMA50 (medium-term support intact)")
+        elif price < ema50:
+            reasons.append("Below EMA50 (medium-term pressure)")
+        if 55 <= rsi <= 70:
+            reasons.append(f"RSI {rsi:.0f} in healthy bull zone")
+        elif rsi > 75:
+            reasons.append(f"RSI {rsi:.0f} stretched — avoid chasing CE")
+        elif rsi < 35:
+            reasons.append(f"RSI {rsi:.0f} oversold — PE bounce risk / CE mean-revert only")
+        chg = (price / float(c.iloc[-6]) - 1) * 100 if len(c) >= 6 else 0
+        if chg >= 3:
+            reasons.append(f"Up ~{chg:.1f}% over ~5 sessions (momentum)")
+        elif chg <= -3:
+            reasons.append(f"Down ~{chg:.1f}% over ~5 sessions (weakness)")
+        out["Reason"] = " · ".join(reasons)
+    except Exception as e:
+        out["Reason"] = f"Analysis error: {e}"
+    return out
+
+
+
+# ---------- F&O Market Pulse (TradeBrahma-style: Index Mover, PCR, Sector, Gainers) ----------
+
+@st.cache_data(ttl=90, show_spinner=False)
+def _pulse_index_movers(index_key: str = "NIFTY50") -> dict:
+    """
+    Build Index Mover style table: day % change, up/down count, contribution proxy.
+    Fast: limited Yahoo batch, cached 90s.
+    """
+    try:
+        lists = load_index_constituents() or {}
+    except Exception:
+        lists = {}
+    if index_key == "BANKNIFTY":
+        syms = [str(s).upper().replace(".NS", "") for s in (lists.get("banknifty") or _FALLBACK_BANKNIFTY)]
+        idx_yf, idx_name = "^NSEBANK", "BANK NIFTY"
+    elif index_key == "SENSEX":
+        # approximate with Nifty50 heavyweights if no sensex list
+        syms = [str(s).upper().replace(".NS", "") for s in (lists.get("nifty50") or _FALLBACK_NIFTY50)][:30]
+        idx_yf, idx_name = "^BSESN", "SENSEX"
+    else:
+        syms = [str(s).upper().replace(".NS", "") for s in (lists.get("nifty50") or _FALLBACK_NIFTY50)]
+        idx_yf, idx_name = "^NSEI", "NIFTY 50"
+
+    rows = []
+    for sym in syms[:50]:
+        try:
+            df = stock_history(clean_symbol(sym), interval="1d", period="5d")
+            if df is None or len(df) < 2 or "Close" not in df.columns:
+                continue
+            c = pd.to_numeric(df["Close"], errors="coerce").dropna()
+            if len(c) < 2:
+                continue
+            last, prev = float(c.iloc[-1]), float(c.iloc[-2])
+            if prev <= 0:
+                continue
+            chg = last - prev
+            pct = (chg / prev) * 100
+            rows.append({
+                "Stock": sym,
+                "LTP": round(last, 2),
+                "Change": round(chg, 2),
+                "Change %": round(pct, 2),
+                "AbsContrib": abs(pct),  # proxy without official weights
+            })
+        except Exception:
+            continue
+
+    df = pd.DataFrame(rows)
+    idx_ltp, idx_chg, idx_pct = None, None, None
+    try:
+        idf = stock_history(idx_yf, interval="1d", period="5d")
+        if idf is not None and len(idf) >= 2:
+            ic = pd.to_numeric(idf["Close"], errors="coerce").dropna()
+            if len(ic) >= 2:
+                idx_ltp = float(ic.iloc[-1])
+                idx_chg = float(ic.iloc[-1] - ic.iloc[-2])
+                idx_pct = (idx_chg / float(ic.iloc[-2])) * 100 if ic.iloc[-2] else 0
+    except Exception:
+        pass
+
+    gainers = int((df["Change %"] > 0).sum()) if not df.empty else 0
+    losers = int((df["Change %"] < 0).sum()) if not df.empty else 0
+    flat = int((df["Change %"] == 0).sum()) if not df.empty else 0
+    return {
+        "index_name": idx_name,
+        "index_ltp": idx_ltp,
+        "index_chg": idx_chg,
+        "index_pct": idx_pct,
+        "gainers": gainers,
+        "losers": losers,
+        "flat": flat,
+        "df": df.sort_values("Change %", ascending=False) if not df.empty else df,
+    }
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _pulse_pcr(underlying: str = "NIFTY") -> dict:
+    """Option PCR + strike OI snapshot via Yahoo chain (best-effort, cached)."""
+    yf_sym = "^NSEI" if underlying.upper().startswith("NIFTY") and "BANK" not in underlying.upper() else "^NSEBANK"
+    if underlying.upper() == "BANKNIFTY":
+        yf_sym = "^NSEBANK"
+    out = {
+        "underlying": underlying,
+        "spot": None,
+        "expiry": None,
+        "pcr": None,
+        "put_oi": 0,
+        "call_oi": 0,
+        "strikes": pd.DataFrame(),
+        "bias": "NEUTRAL",
+    }
+    try:
+        out["spot"] = _spot_price(yf_sym) or 0
+    except Exception:
+        out["spot"] = 0
+    try:
+        exps = _option_expiries(yf_sym) or []
+        if not exps:
+            return out
+        exp = exps[0]
+        out["expiry"] = exp
+        calls, puts = _option_chain(yf_sym, exp)
+        def _oi_sum(frame):
+            if frame is None or getattr(frame, "empty", True):
+                return 0.0
+            for col in ("openInterest", "openInterest", "oi", "Open Interest"):
+                if col in frame.columns:
+                    return float(pd.to_numeric(frame[col], errors="coerce").fillna(0).sum())
+            return 0.0
+        call_oi = _oi_sum(calls)
+        put_oi = _oi_sum(puts)
+        out["call_oi"] = call_oi
+        out["put_oi"] = put_oi
+        out["pcr"] = round(put_oi / call_oi, 2) if call_oi > 0 else None
+        if out["pcr"] is not None:
+            if out["pcr"] >= 1.2:
+                out["bias"] = "BULLISH (high put OI)"
+            elif out["pcr"] <= 0.8:
+                out["bias"] = "BEARISH (high call OI)"
+            else:
+                out["bias"] = "NEUTRAL"
+        # near ATM strikes
+        spot = out["spot"] or 0
+        rows = []
+        if calls is not None and not calls.empty and "strike" in calls.columns:
+            for _, r in calls.iterrows():
+                k = safe_float(r.get("strike"))
+                if not k or (spot and abs(k - spot) > spot * 0.04):
+                    continue
+                oi = safe_float(r.get("openInterest") or r.get("oi") or 0)
+                rows.append({"Strike": k, "Call OI": oi, "Put OI": 0})
+        if puts is not None and not puts.empty and "strike" in puts.columns:
+            put_map = {}
+            for _, r in puts.iterrows():
+                k = safe_float(r.get("strike"))
+                oi = safe_float(r.get("openInterest") or r.get("oi") or 0)
+                if k:
+                    put_map[k] = oi
+            if rows:
+                for row in rows:
+                    row["Put OI"] = put_map.get(row["Strike"], 0)
+            else:
+                for k, oi in put_map.items():
+                    if spot and abs(k - spot) > spot * 0.04:
+                        continue
+                    rows.append({"Strike": k, "Call OI": 0, "Put OI": oi})
+        if rows:
+            sdf = pd.DataFrame(rows).sort_values("Strike")
+            sdf["PCR"] = sdf.apply(
+                lambda r: round(r["Put OI"] / r["Call OI"], 2) if r["Call OI"] else None, axis=1
+            )
+            out["strikes"] = sdf.head(16)
+    except Exception:
+        pass
+    return out
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _pulse_sector_scope(results_hash: str = "") -> pd.DataFrame:
+    """Sector average day % from scan results or Nifty sample."""
+    rows = []
+    res = None
+    try:
+        res = st.session_state.get("results")
+    except Exception:
+        res = None
+    if res is not None and not getattr(res, "empty", True) and "Sector" in res.columns:
+        x = res.copy()
+        if "Change %" not in x.columns:
+            # compute from Price vs rough - skip
+            pass
+        else:
+            x["Change %"] = pd.to_numeric(x["Change %"], errors="coerce")
+            g = x.groupby(x["Sector"].astype(str))["Change %"].agg(["mean", "count"])
+            g = g.reset_index()
+            g.columns = ["Sector", "Avg %", "N"]
+            g = g.dropna(subset=["Avg %"]).sort_values("Avg %", ascending=False)
+            return g
+    # fallback: tag Nifty50 by simple buckets
+    try:
+        lists = load_index_constituents() or {}
+        bank = set(str(s).upper() for s in (lists.get("banknifty") or _FALLBACK_BANKNIFTY))
+        n50 = [str(s).upper() for s in (lists.get("nifty50") or _FALLBACK_NIFTY50)][:40]
+        buckets = {"BANK": [], "IT": [], "OTHER": []}
+        it_set = {"TCS", "INFY", "WIPRO", "HCLTECH", "TECHM", "LTIM", "PERSISTENT", "COFORGE"}
+        for sym in n50:
+            try:
+                df = stock_history(clean_symbol(sym), interval="1d", period="5d")
+                if df is None or len(df) < 2:
+                    continue
+                c = pd.to_numeric(df["Close"], errors="coerce").dropna()
+                if len(c) < 2:
+                    continue
+                pct = (float(c.iloc[-1]) / float(c.iloc[-2]) - 1) * 100
+                if sym in bank:
+                    buckets["BANK"].append(pct)
+                elif sym in it_set:
+                    buckets["IT"].append(pct)
+                else:
+                    buckets["OTHER"].append(pct)
+            except Exception:
+                continue
+        for sec, vals in buckets.items():
+            if vals:
+                rows.append({"Sector": sec, "Avg %": round(sum(vals) / len(vals), 2), "N": len(vals)})
+        return pd.DataFrame(rows).sort_values("Avg %", ascending=False) if rows else pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=90, show_spinner=False)
+def _pulse_gainers_losers(n: int = 20) -> tuple:
+    """Top gainers / losers from Nifty200 sample (fast)."""
+    try:
+        lists = load_index_constituents() or {}
+        syms = list(lists.get("nifty200") or lists.get("nifty50") or _FALLBACK_NIFTY50)[:80]
+    except Exception:
+        syms = list(_FALLBACK_NIFTY50)
+    rows = []
+    for sym in [str(s).upper().replace(".NS", "") for s in syms]:
+        try:
+            df = stock_history(clean_symbol(sym), interval="1d", period="5d")
+            if df is None or len(df) < 2:
+                continue
+            c = pd.to_numeric(df["Close"], errors="coerce").dropna()
+            if len(c) < 2:
+                continue
+            last, prev = float(c.iloc[-1]), float(c.iloc[-2])
+            o = float(pd.to_numeric(df["Open"], errors="coerce").dropna().iloc[-1]) if "Open" in df.columns else prev
+            h = float(pd.to_numeric(df["High"], errors="coerce").dropna().iloc[-1]) if "High" in df.columns else last
+            l = float(pd.to_numeric(df["Low"], errors="coerce").dropna().iloc[-1]) if "Low" in df.columns else last
+            pct = (last / prev - 1) * 100 if prev else 0
+            rows.append({
+                "Symbol": sym,
+                "LTP": round(last, 2),
+                "Move %": round(pct, 2),
+                "Open": round(o, 2),
+                "Day High": round(h, 2),
+                "Day Low": round(l, 2),
+            })
+        except Exception:
+            continue
+    if not rows:
+        return pd.DataFrame(), pd.DataFrame()
+    df = pd.DataFrame(rows)
+    up = df.sort_values("Move %", ascending=False).head(n)
+    dn = df.sort_values("Move %", ascending=True).head(n)
+    return up, dn
+
+
+def show_fo_market_pulse():
+    """
+    F&O Market Pulse — limited top tabs, TradeBrahma-style visuals, cached for fast clicks.
+    Tabs: Index Mover | Option PCR | Sector Scope | Gainers/Losers | Bulk
+    """
+    try:
+        force_scroll_top()
+    except Exception:
+        pass
+    st.markdown(
+        """
+        <div style="border-radius:16px;padding:16px 18px;margin-bottom:12px;
+                    background:linear-gradient(90deg,#020617 0%,#0f172a 40%,#14532d 100%);
+                    border:1px solid #22c55e;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+            <div>
+              <div style="font-size:1.45rem;font-weight:900;color:#f0fdf4;">F&amp;O Market Pulse</div>
+              <div style="color:#86efac;font-size:0.9rem;">Index Mover · PCR · Sector · Gainers — fast cached panels</div>
+            </div>
+            <div style="background:#14532d;color:#bbf7d0;padding:6px 12px;border-radius:999px;font-weight:700;font-size:0.85rem;">
+              LIVE STYLE · 90s cache
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    t1, t2, t3, t4, t5 = st.tabs([
+        "📈 Index Mover",
+        "🕰 Option PCR",
+        "📊 Sector Scope",
+        "🚀 Gainers / Losers",
+        "🏦 Bulk deals",
+    ])
+
+    with t1:
+        idx = st.selectbox("Index", ["NIFTY50", "BANKNIFTY", "SENSEX"], key="pulse_idx")
+        if st.button("Refresh Index Mover", key="pulse_idx_btn"):
+            try:
+                _pulse_index_movers.clear()
+            except Exception:
+                pass
+        with st.spinner("Loading index movers…"):
+            data = _pulse_index_movers(idx)
+        df = data.get("df")
+        # KPI row
+        k1, k2, k3, k4 = st.columns(4)
+        name = data.get("index_name") or idx
+        ltp = data.get("index_ltp")
+        chg = data.get("index_chg")
+        pct = data.get("index_pct")
+        k1.metric(name, f"{ltp:,.2f}" if ltp else "—",
+                  f"{chg:+.2f} ({pct:+.2f}%)" if chg is not None and pct is not None else None)
+        k2.metric("Gainers", data.get("gainers", 0))
+        k3.metric("Losers", data.get("losers", 0))
+        k4.metric("Flat", data.get("flat", 0))
+        # Breadth bar
+        g, l = int(data.get("gainers") or 0), int(data.get("losers") or 0)
+        tot = max(g + l, 1)
+        st.progress(g / tot)
+        st.caption(f"Market breadth · **{g}** up · **{l}** down")
+
+        if df is not None and not df.empty:
+            # Donut of top absolute movers (contribution proxy)
+            top = df.copy()
+            top["side"] = top["Change %"].apply(lambda x: "Up" if x >= 0 else "Down")
+            top_n = pd.concat([
+                top.nlargest(8, "Change %"),
+                top.nsmallest(4, "Change %"),
+            ]).drop_duplicates(subset=["Stock"])
+            try:
+                import plotly.express as px
+                fig = px.pie(
+                    top_n,
+                    values="AbsContrib",
+                    names="Stock",
+                    color="Change %",
+                    color_continuous_scale=["#ef4444", "#22c55e"],
+                    hole=0.55,
+                )
+                fig.update_layout(
+                    height=380,
+                    margin=dict(l=10, r=10, t=30, b=10),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    font_color="#e2e8f0",
+                    title=dict(text=f"{name} · mover weights (proxy)", font=dict(size=14)),
+                    annotations=[dict(
+                        text=f"<b>{name}</b><br>{ltp:,.0f}" if ltp else name,
+                        x=0.5, y=0.5, showarrow=False, font=dict(size=14, color="#f8fafc"),
+                    )],
+                )
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            except Exception as e:
+                st.caption(f"Chart: {e}")
+            cA, cB = st.columns(2)
+            with cA:
+                st.markdown("##### Top contributors (up)")
+                st.dataframe(
+                    df[df["Change %"] > 0][["Stock", "LTP", "Change", "Change %"]].head(12),
+                    use_container_width=True, hide_index=True, height=320,
+                )
+            with cB:
+                st.markdown("##### Top drags (down)")
+                st.dataframe(
+                    df[df["Change %"] < 0][["Stock", "LTP", "Change", "Change %"]].head(12),
+                    use_container_width=True, hide_index=True, height=320,
+                )
+        else:
+            st.warning("No mover data — market data feed may be limited on Cloud.")
+
+    with t2:
+        und = st.selectbox("Underlying", ["NIFTY", "BANKNIFTY"], key="pulse_pcr_und")
+        if st.button("Refresh PCR", key="pulse_pcr_btn"):
+            try:
+                _pulse_pcr.clear()
+            except Exception:
+                pass
+        with st.spinner("Loading option chain PCR…"):
+            p = _pulse_pcr(und)
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Spot", f"{p.get('spot'):,.2f}" if p.get("spot") else "—")
+        c2.metric("PCR (OI)", p.get("pcr") if p.get("pcr") is not None else "—")
+        c3.metric("Put OI", f"{p.get('put_oi', 0):,.0f}")
+        c4.metric("Call OI", f"{p.get('call_oi', 0):,.0f}")
+        bias = p.get("bias") or "NEUTRAL"
+        if "BULL" in bias.upper():
+            st.success(f"Market distribution lean: **{bias}** · Expiry `{p.get('expiry')}`")
+        elif "BEAR" in bias.upper():
+            st.error(f"Market distribution lean: **{bias}** · Expiry `{p.get('expiry')}`")
+        else:
+            st.info(f"Market distribution lean: **{bias}** · Expiry `{p.get('expiry')}`")
+        # PCR gauge-like pie
+        try:
+            poi, coi = float(p.get("put_oi") or 0), float(p.get("call_oi") or 0)
+            if poi + coi > 0:
+                import plotly.graph_objects as go
+                fig = go.Figure(data=[go.Pie(
+                    labels=["Put OI", "Call OI"],
+                    values=[poi, coi],
+                    hole=0.6,
+                    marker_colors=["#ef4444", "#22c55e"],
+                )])
+                fig.update_layout(
+                    height=300,
+                    margin=dict(l=10, r=10, t=20, b=10),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    font_color="#e2e8f0",
+                    annotations=[dict(
+                        text=f"<b>PCR</b><br>{p.get('pcr')}",
+                        x=0.5, y=0.5, showarrow=False, font=dict(size=18, color="#f8fafc"),
+                    )],
+                    showlegend=True,
+                )
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        except Exception:
+            pass
+        strikes = p.get("strikes")
+        if strikes is not None and not getattr(strikes, "empty", True):
+            st.markdown("##### Near-ATM strikes (Put OI vs Call OI)")
+            st.dataframe(strikes, use_container_width=True, hide_index=True, height=360)
+        else:
+            st.caption("Strike OI not available from Yahoo for this session — PCR totals still shown when possible.")
+        st.caption("PCR = Put OI ÷ Call OI. Educational only — not a standalone signal.")
+
+    with t3:
+        st.markdown("#### Sector Scope")
+        if st.button("Refresh sectors", key="pulse_sec_btn"):
+            try:
+                _pulse_sector_scope.clear()
+            except Exception:
+                pass
+        with st.spinner("Sector averages…"):
+            sec = _pulse_sector_scope("1")
+        if sec is not None and not sec.empty:
+            try:
+                import plotly.express as px
+                fig = px.bar(
+                    sec, x="Sector", y="Avg %", color="Avg %",
+                    color_continuous_scale=["#ef4444", "#fef08a", "#22c55e"],
+                )
+                fig.update_layout(
+                    height=360, margin=dict(l=10, r=10, t=20, b=10),
+                    paper_bgcolor="rgba(0,0,0,0)", font_color="#e2e8f0",
+                    showlegend=False,
+                )
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            except Exception:
+                pass
+            st.dataframe(sec, use_container_width=True, hide_index=True)
+            pos = sec[sec["Avg %"] > 0]
+            neg = sec[sec["Avg %"] < 0]
+            st.success(f"**Positive sectors:** {', '.join(pos['Sector'].astype(str).tolist()[:8]) or '—'}")
+            st.error(f"**Negative sectors:** {', '.join(neg['Sector'].astype(str).tolist()[:8]) or '—'}")
+        else:
+            st.info("Run a market scan for richer sector tags, or retry refresh.")
+
+    with t4:
+        st.markdown("#### Market Gainers & Losers")
+        if st.button("Refresh gainers/losers", key="pulse_gl_btn"):
+            try:
+                _pulse_gainers_losers.clear()
+            except Exception:
+                pass
+        with st.spinner("Scanning movers…"):
+            up, dn = _pulse_gainers_losers(20)
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("##### 🟢 Up movers")
+            if up is not None and not up.empty:
+                st.dataframe(up, use_container_width=True, hide_index=True, height=420)
+            else:
+                st.caption("No up movers loaded.")
+        with c2:
+            st.markdown("##### 🔴 Down movers")
+            if dn is not None and not dn.empty:
+                st.dataframe(dn, use_container_width=True, hide_index=True, height=420)
+            else:
+                st.caption("No down movers loaded.")
+
+    with t5:
+        st.markdown("#### Bulk / block deals")
+        st.caption("Full desk with filters — opens Bank deals page.")
+        if st.button("Open Bank deals / Superstar", type="primary", key="pulse_bulk"):
+            try:
+                nav_go("Superstar Bulk")
+            except Exception:
+                st.session_state.page = "Superstar Bulk"
+                st.rerun()
+        st.info("Bulk data stays on its own page so this pulse stays fast.")
+
+    st.divider()
+    x1, x2, x3 = st.columns(3)
+    with x1:
+        if st.button("F&O Analysis (stock/sector)", key="pulse_to_foan"):
+            nav_go("FO Analysis")
+    with x2:
+        if st.button("Intraday CE/PE desk", key="pulse_to_ifo"):
+            nav_go("Intraday FO")
+    with x3:
+        if st.button("AI Command", key="pulse_to_ai"):
+            nav_go("AI Command")
+
+
+
+def show_fo_analysis_dashboard(results: pd.DataFrame = None):
+    """
+    F&O + Swing analysis desk (general — not inside Swing Hub):
+    Nifty50 / sector reports, single stock CE/PE lean, peer stocks in same sector.
+    """
+    try:
+        force_scroll_top()
+    except Exception:
+        pass
+    st.markdown(
+        """
+        <div style="border-radius:16px;padding:18px 20px;margin-bottom:14px;
+                    background:linear-gradient(135deg,#0f172a 0%,#7c2d12 50%,#0e7490 100%);
+                    border:1px solid #fb923c;">
+          <div style="font-size:1.5rem;font-weight:900;color:#fff7ed;">F&amp;O Analysis Dashboard</div>
+          <div style="color:#fed7aa;margin-top:6px;">
+            Nifty 50 · Sector report · Single stock (swing + CE/PE lean) · Peers when sector is strong
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    results = results if results is not None else st.session_state.get("results")
+    if results is None:
+        results = pd.DataFrame()
+    try:
+        lists = load_index_constituents() or {}
+    except Exception:
+        lists = {}
+    n50 = [str(s).upper().replace(".NS", "") for s in (lists.get("nifty50") or _FALLBACK_NIFTY50)]
+    n200 = [str(s).upper().replace(".NS", "") for s in (lists.get("nifty200") or n50)]
+
+    mode = st.radio(
+        "Report type",
+        ["Nifty 50 overview", "Sector report", "Single stock (Swing + F&O)", "Nifty 200 sample"],
+        horizontal=True,
+        key="fo_an_mode",
+    )
+
+    if mode == "Nifty 50 overview":
+        st.markdown("#### Nifty 50 — bias map (swing + FO lean)")
+        max_n = st.slider("How many Nifty 50 names to score", 10, 50, 25, key="fo_n50_n")
+        if st.button("▶ Build Nifty 50 report", type="primary", key="fo_n50_run"):
+            rows = []
+            with st.spinner("Scoring Nifty 50…"):
+                for sym in n50[:max_n]:
+                    r = _fo_bias_reason(sym)
+                    r["Sector"] = _sector_of_symbol(sym, results)
+                    rows.append(r)
+            st.session_state["_fo_n50_table"] = pd.DataFrame(rows)
+        tab = st.session_state.get("_fo_n50_table")
+        if tab is not None and not getattr(tab, "empty", True):
+            bull = int((tab["Bias"] == "BULLISH").sum())
+            bear = int((tab["Bias"] == "BEARISH").sum())
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Bullish lean", bull)
+            c2.metric("Bearish lean", bear)
+            c3.metric("Neutral / mixed", len(tab) - bull - bear)
+            st.dataframe(tab, use_container_width=True, hide_index=True, height=420)
+            st.caption("Click a name in Analyze Stock / AI Command for full chart. Educational only.")
+        else:
+            st.info("Press **Build Nifty 50 report** to score the index basket.")
+
+    elif mode == "Sector report":
+        st.markdown("#### Sector report")
+        # sectors from scan
+        secs = ["Banking", "IT", "Pharma", "Auto", "Metal", "Energy", "FMCG", "Realty", "Other"]
+        if results is not None and not results.empty and "Sector" in results.columns:
+            secs = sorted({str(s).strip() for s in results["Sector"].dropna().unique() if str(s).strip()}) or secs
+        sec = st.selectbox("Sector", secs, key="fo_sec_pick")
+        # candidates
+        cands = []
+        if results is not None and not results.empty and "Stock" in results.columns:
+            if "Sector" in results.columns:
+                cands = (
+                    results[results["Sector"].astype(str).str.strip() == sec]["Stock"]
+                    .astype(str).str.upper().str.replace(".NS", "", regex=False).unique().tolist()
+                )
+        if not cands and sec == "Banking":
+            try:
+                cands = [str(s).upper() for s in (lists.get("banknifty") or _FALLBACK_BANKNIFTY)]
+            except Exception:
+                cands = ["HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "KOTAKBANK"]
+        if not cands:
+            cands = n50[:15]
+        max_s = st.slider("Stocks to score in sector", 5, 40, min(20, len(cands) or 10), key="fo_sec_n")
+        if st.button("▶ Build sector report", type="primary", key="fo_sec_run"):
+            rows = []
+            with st.spinner(f"Scoring {sec}…"):
+                for sym in cands[:max_s]:
+                    r = _fo_bias_reason(sym)
+                    r["Sector"] = sec
+                    rows.append(r)
+            st.session_state["_fo_sec_table"] = pd.DataFrame(rows)
+            st.session_state["_fo_sec_name"] = sec
+        tab = st.session_state.get("_fo_sec_table")
+        if tab is not None and not getattr(tab, "empty", True):
+            st.markdown(f"**Sector: {st.session_state.get('_fo_sec_name', sec)}**")
+            bull = tab[tab["Bias"] == "BULLISH"]
+            st.metric("Bullish names in sample", f"{len(bull)} / {len(tab)}")
+            if len(bull) >= max(2, len(tab) // 3):
+                st.success(
+                    f"**Sector looks constructive** — {len(bull)} bullish leans. "
+                    "Peers below with **Reason** (why the move / structure)."
+                )
+            elif len(tab[tab["Bias"] == "BEARISH"]) >= max(2, len(tab) // 3):
+                st.warning("**Sector under pressure** — prefer PE bias / wait; see reasons per stock.")
+            else:
+                st.info("**Sector mixed** — stock-pick only; avoid blanket FO.")
+            st.dataframe(tab, use_container_width=True, hide_index=True, height=420)
+            if not bull.empty:
+                st.markdown("##### Stronger names in this sector (bullish lean + reason)")
+                st.dataframe(
+                    bull[["Stock", "Spot", "Side", "RSI", "Reason"]],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+        else:
+            st.info("Select sector and press **Build sector report**.")
+
+    elif mode == "Single stock (Swing + F&O)":
+        st.markdown("#### Single stock — swing + F&O lean")
+        try:
+            universe = sorted(set(n200 + n50 + (
+                results["Stock"].astype(str).str.upper().str.replace(".NS", "", regex=False).tolist()
+                if results is not None and not results.empty and "Stock" in results.columns else []
+            )))
+        except Exception:
+            universe = n50
+        if not universe:
+            universe = ["RELIANCE", "TCS", "INFY", "HDFCBANK"]
+        default = "RELIANCE" if "RELIANCE" in universe else universe[0]
+        sym = st.selectbox("Stock", universe, index=universe.index(default) if default in universe else 0, key="fo_an_sym")
+        if st.button("▶ Analyze stock", type="primary", key="fo_an_go") or st.session_state.get("fo_an_last") == sym:
+            st.session_state["fo_an_last"] = sym
+            r = _fo_bias_reason(sym)
+            sec = _sector_of_symbol(sym, results)
+            r["Sector"] = sec
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Spot", f"₹{r['Spot']}" if r.get("Spot") else "—")
+            c2.metric("Bias", r.get("Bias") or "—")
+            c3.metric("FO / Swing lean", r.get("Side") or "—")
+            c4.metric("RSI", r.get("RSI") if r.get("RSI") is not None else "—")
+            st.info(f"**Reason:** {r.get('Reason') or '—'}")
+            st.caption(f"Sector tag: **{sec}**")
+            # Peers if sector constructive
+            st.markdown("##### Same sector — all scored peers")
+            peers = []
+            if results is not None and not results.empty and "Sector" in results.columns:
+                peers = (
+                    results[results["Sector"].astype(str).str.strip() == sec]["Stock"]
+                    .astype(str).str.upper().str.replace(".NS", "", regex=False).unique().tolist()
+                )
+            if not peers and sec == "Banking":
+                try:
+                    peers = [str(s).upper() for s in (lists.get("banknifty") or [])]
+                except Exception:
+                    peers = []
+            peers = [p for p in peers if p != sym][:15]
+            if peers:
+                prows = []
+                with st.spinner("Scoring sector peers…"):
+                    for p in peers:
+                        pr = _fo_bias_reason(p)
+                        pr["Sector"] = sec
+                        prows.append(pr)
+                pdf = pd.DataFrame(prows)
+                st.dataframe(pdf, use_container_width=True, hide_index=True)
+                bull_n = int((pdf["Bias"] == "BULLISH").sum()) if not pdf.empty else 0
+                if bull_n >= max(2, len(pdf) // 3):
+                    st.success(
+                        f"Sector **{sec}** has **{bull_n}** bullish peers — strength is not only in {sym}. "
+                        "See **Reason** column for why each name is rising / holding trend."
+                    )
+                else:
+                    st.caption("Sector peers mixed — treat this name as a single-stock idea only.")
+            else:
+                st.caption("No peer list from scan for this sector — run market scan for fuller sector map.")
+            if st.button("Open full Detailed Analysis →", key="fo_an_detail"):
+                st.session_state.selected_stock = sym
+                st.session_state.page = "Stock Analysis"
+                st.rerun()
+        else:
+            st.info("Pick a stock and press **Analyze stock**.")
+
+    else:  # Nifty 200 sample
+        st.markdown("#### Nifty 200 sample bias")
+        max_n = st.slider("Names to score", 15, 80, 30, key="fo_n200_n")
+        if st.button("▶ Build Nifty 200 sample", type="primary", key="fo_n200_run"):
+            rows = []
+            with st.spinner("Scoring sample…"):
+                for sym in n200[:max_n]:
+                    r = _fo_bias_reason(sym)
+                    r["Sector"] = _sector_of_symbol(sym, results)
+                    rows.append(r)
+            st.session_state["_fo_n200_table"] = pd.DataFrame(rows)
+        tab = st.session_state.get("_fo_n200_table")
+        if tab is not None and not getattr(tab, "empty", True):
+            st.dataframe(tab, use_container_width=True, hide_index=True, height=420)
+        else:
+            st.info("Press **Build Nifty 200 sample**.")
+
+    st.divider()
+    b1, b2, b3 = st.columns(3)
+    with b1:
+        if st.button("Open Intraday / F&O desk", key="fo_an_to_ifo"):
+            nav_go("Intraday FO")
+    with b2:
+        if st.button("Open AI Command (learning)", key="fo_an_to_ai"):
+            nav_go("AI Command")
+    with b3:
+        if st.button("Open Strategy Lab", key="fo_an_to_lab"):
+            nav_go("Strategy Lab")
+    st.caption("Educational desk only — not investment advice. CE/PE leans are structure-based, not order tips.")
+
+
+
 def show_intraday_fo_desk():
     """
     Intraday + Futures & Options desk:
     NIFTY 50 · BANK NIFTY · stocks — CE/PE buy/sell, expiry or 1–2 day trades,
     chart patterns + strategy explanations.
     """
+    c_p1, c_p2 = st.columns([1, 1])
+    with c_p1:
+        if st.button("📈 Open F&O Market Pulse (Index Mover · PCR · Sector)", use_container_width=True, key="ifo_open_pulse"):
+            nav_go("FO Pulse")
+    with c_p2:
+        if st.button("📡 Open F&O Analysis (Nifty50 / sector / stock)", use_container_width=True, key="ifo_open_foan"):
+            nav_go("FO Analysis")
     st.markdown(
         """
         <div style="border-radius:16px;padding:18px 20px;margin-bottom:14px;
@@ -8799,6 +9694,9 @@ def show_tools_hub():
         unsafe_allow_html=True,
     )
     _hub_card_grid([
+        ("🧠 AI Command Dashboard", "Learning · capabilities · date-wise results · all sources.", "AI Command"),
+        ("📡 F&O Market Pulse", "Index Mover · PCR · Sector · Gainers — live-style fast tabs.", "FO Pulse"),
+        ("📡 F&O Analysis Dashboard", "Nifty50 · sector · single stock swing+FO · peer reasons.", "FO Analysis"),
         ("🔍 Find Stock", "Search by keywords and get recommendations.", "Find Stock"),
         ("🏭 Sector Analysis", "Sector-wise stocks and charts.", "Sector Analysis"),
         ("🔍 Analyze Stock", "Full technical + fundamental analysis for any NSE symbol.", "Stock Analysis"),
@@ -23755,6 +24653,8 @@ except Exception:
 # Parent hub for each inner page → Back returns here
 PAGE_PARENT = {
     "AI Command": "Dashboard",
+    "FO Analysis": "Dashboard",
+    "FO Pulse": "Dashboard",
     "Nifty Analysis": "Swing Hub",
     "BankNifty Analysis": "Swing Hub",
     "BUY Calls": "Swing Hub",
@@ -23795,6 +24695,8 @@ PAGE_PARENT = {
 
 PAGE_LABELS = {
     "AI Command": "AI Command Dashboard",
+    "FO Analysis": "F&O Analysis Dashboard",
+    "FO Pulse": "F&O Market Pulse",
     "Dashboard": "Dashboard",
     "Swing Hub": "Swing Trading Setup",
     "Pattern Hub": "Chart Patterns",
@@ -24173,7 +25075,7 @@ def render_header_nav():
         if key == "home" and cur == "Dashboard":
             active = True
         elif key == "swing" and cur in (
-            "BUY Calls", "SELL Calls", "Strategy Lab", "Sure Calls", "AI Command", "Swing Hub",
+            "BUY Calls", "SELL Calls", "Strategy Lab", "Sure Calls", "Swing Hub",
             "History", "Paper Trading", "Performance Summary", "Trade Tracker",
             "Holding Advisor", "Portfolio",
         ):
@@ -25207,6 +26109,12 @@ elif st.session_state.page == "Swing Hub":
 
 elif st.session_state.page == "AI Command":
     show_ai_command_dashboard()
+
+elif st.session_state.page == "FO Analysis":
+    show_fo_analysis_dashboard(st.session_state.results if st.session_state.get("results") is not None else pd.DataFrame())
+
+elif st.session_state.page == "FO Pulse":
+    show_fo_market_pulse()
 
 elif st.session_state.page == "Performance Summary":
     show_performance_summary()
