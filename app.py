@@ -66,9 +66,11 @@ if str(APP_DIR) not in _jp_sys.path:
 try:
     import jp_learning as JPL
     import jp_ui as JPUI
+    import jp_symbols as JPS
 except Exception:
     JPL = None
     JPUI = None
+    JPS = None
 FUND_SCREEN_CACHE = APP_DIR / "fund_screen_cache.json"
 INDEX_LIST_CACHE = APP_DIR / "index_constituents_cache.json"
 
@@ -4666,7 +4668,7 @@ def show_fii_dii_page():
     )
     s1, s2 = st.columns([2, 1])
     with s1:
-        sym = st.text_input(
+        sym = sym_input(
             "NSE symbol",
             value=str(st.session_state.get("selected_stock", "RELIANCE") or "RELIANCE"),
             key="fii_stock_sym_rg",
@@ -9458,7 +9460,7 @@ def show_nse_tools_workspace():
 def show_tool_square9():
     st.markdown("### ✦ Square of 9")
     st.caption("Support / resistance from the Square of 9 wheel on a **real NSE last price** — no manual price required unless you override.")
-    sym = st.text_input("NSE symbol", value="NIFTY" if False else "RELIANCE", key="sq9_sym")
+    sym = sym_input("NSE symbol", value="NIFTY" if False else "RELIANCE", key="sq9_sym")
     # Map index aliases
     yf_sym = sym
     if sym.upper() in ("NIFTY", "NIFTY50"):
@@ -9490,7 +9492,7 @@ def show_tool_square9():
 def show_tool_iv():
     st.markdown("### 📉 IV Tool")
     st.caption("Latest implied volatility from the **live Yahoo option chain** (NSE stocks).")
-    sym = st.text_input("Underlying (NSE)", value="RELIANCE", key="iv_sym")
+    sym = sym_input("Underlying (NSE)", value="RELIANCE", key="iv_sym")
     exps = _option_expiries(sym)
     if not exps:
         st.warning("No option expiries returned for this symbol (Yahoo). Try RELIANCE, TCS, INFY, SBIN…")
@@ -9527,7 +9529,7 @@ def show_tool_iv():
 def show_tool_oi_chain():
     st.markdown("### 📊 Open Interest Chain")
     st.caption("Full option chain with OI, volume, LTP — max-pain estimate from OI.")
-    sym = st.text_input("Underlying (NSE)", value="RELIANCE", key="oi_sym")
+    sym = sym_input("Underlying (NSE)", value="RELIANCE", key="oi_sym")
     spot = _spot_price(sym)
     st.metric("Spot", f"₹{spot:,.2f}" if spot else "—")
     exps = _option_expiries(sym)
@@ -9587,7 +9589,7 @@ def show_tool_option_calculator():
     with left:
         st.markdown("**Trade inputs**")
         instrument = st.selectbox("Instrument", ["Stock"], key="oc_inst")
-        sym = st.text_input("Stock", value="RELIANCE", key="oc_sym")
+        sym = sym_input("Stock", value="RELIANCE", key="oc_sym")
         direction = st.selectbox("Direction", ["CE (Call)", "PE (Put)"], key="oc_dir")
         opt = "CE" if direction.startswith("CE") else "PE"
         lot = st.number_input("Lot size", min_value=0, value=0, key="oc_lot",
@@ -9690,7 +9692,7 @@ def show_tool_option_history():
         "Underlying OHLC is live from Yahoo. Full expired-option candle history needs a paid NSE options DB "
         "(as on RG Tools). Here we chart the **stock** and overlay **current chain IV/OI** snapshot."
     )
-    sym = st.text_input("Underlying", value="RELIANCE", key="oh_sym")
+    sym = sym_input("Underlying", value="RELIANCE", key="oh_sym")
     df = stock_history(clean_symbol(sym), interval="1d")
     if df is None or df.empty:
         st.warning("No history.")
@@ -9719,7 +9721,7 @@ def show_tool_option_backtester():
         "Educational approximation: long straddle / strangle marked with Black–Scholes on historical underlying. "
         "Not exchange-settled option ticks (those need a full options history DB)."
     )
-    sym = st.text_input("Underlying", value="RELIANCE", key="ob_sym")
+    sym = sym_input("Underlying", value="RELIANCE", key="ob_sym")
     strat = st.selectbox("Strategy", ["Long Straddle", "Long Strangle"], key="ob_strat")
     hold = st.slider("Hold trading days", 3, 20, 5, key="ob_hold")
     iv0 = st.number_input("Entry IV %", value=22.0, key="ob_iv") / 100.0
@@ -9763,7 +9765,7 @@ def show_tool_candles():
     st.caption("Named one/two/three candle formations on real OHLC.")
     mode = st.radio("Mode", ["One stock", "Sweep market (sample)"], horizontal=True, key="cdl_mode")
     if mode.startswith("One"):
-        sym = st.text_input("Symbol", value="RELIANCE", key="cdl_sym")
+        sym = sym_input("Symbol", value="RELIANCE", key="cdl_sym")
         df = stock_history(clean_symbol(sym), interval="1d")
         if df is None or df.empty:
             st.warning("No data.")
@@ -10855,7 +10857,7 @@ Only take calls when the pattern is **ready to build / just formed**.
 If the pattern **already built and 2–3 days have passed** (or price already bounced) → **NOT a buy call** (stock will correctly **disappear** from My Strategy list).
             """
         )
-        sym_my = st.text_input(
+        sym_my = sym_input(
             "NSE symbol to analyse on chart",
             value="SHIVAMILLS",
             key="my_strat_chart_sym",
@@ -11041,7 +11043,7 @@ My Strategy is **price vs RSI divergence** — it also applies to **index future
             else:
                 st.info("Click **Run all strategy backtests** after a market scan for best universe.")
         else:
-            sym = st.text_input("NSE symbol", value="RELIANCE", key="bt_one_sym").upper().strip()
+            sym = sym_input("NSE symbol", value="RELIANCE", key="bt_one_sym").upper().strip()
             sid = st.selectbox(
                 "Strategy",
                 list(SWING_STRATEGIES.keys()),
@@ -11644,7 +11646,7 @@ If **My Strategy** is ACTIVE_FRESH **and** another strategy matches → prefer t
     with tab_ao:
         st.subheader("Levels for manual Angel One order")
         st.caption("This app does not place broker orders. Copy Entry / SL / Target into Angel One.")
-        sym_a = st.text_input("Symbol", value="INFY", key="ao_sym").upper().strip()
+        sym_a = sym_input("Symbol", value="INFY", key="ao_sym").upper().strip()
         if st.button("Get levels", key="ao_btn"):
             try:
                 raw = stock_history(clean_symbol(sym_a), interval="1d")
@@ -16834,7 +16836,7 @@ def show_paper_trading():
         )
     c1, c2, c3 = st.columns(3)
     with c1:
-        stock = st.text_input("NSE Symbol", value="", key="paper_sym").upper().strip()
+        stock = sym_input("NSE Symbol", value="", key="paper_sym").upper().strip()
     with c2:
         side = st.selectbox("Side", ["BUY", "SELL"], key="paper_side")
     with c3:
@@ -20008,6 +20010,75 @@ def learn_from_history(min_closed: int = 3) -> dict:
         return learning
 
 
+def _jp_company_names() -> dict:
+    """Symbol -> company name (NSE EQUITY_L.csv), cached in nse_company_names.csv; retried at most daily."""
+    f = APP_DIR / "nse_company_names.csv"
+    try:
+        if f.exists():
+            d = pd.read_csv(f)
+            if len(d) > 100 or (time.time() - f.stat().st_mtime) < 86400:
+                return dict(zip(d["Symbol"].astype(str), d["Name"].astype(str)))
+    except Exception:
+        pass
+    out = {}
+    try:
+        import io
+        import requests
+        for url in (
+            "https://archives.nseindia.com/content/equities/EQUITY_L.csv",
+            "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv",
+        ):
+            try:
+                r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+                r.raise_for_status()
+                u = pd.read_csv(io.StringIO(r.text))
+                u.columns = [str(c).strip().upper() for c in u.columns]
+                if "SYMBOL" in u.columns and "NAME OF COMPANY" in u.columns:
+                    out = {str(a).strip().upper(): str(b).strip() for a, b in zip(u["SYMBOL"], u["NAME OF COMPANY"])}
+                    break
+            except Exception:
+                continue
+    except Exception:
+        pass
+    try:
+        pd.DataFrame({"Symbol": list(out.keys()), "Name": list(out.values())}).to_csv(f, index=False)
+    except Exception:
+        pass
+    return out
+
+
+def _jp_symbol_index():
+    """Fuzzy index over every NSE symbol (+ company names, + anything in the current scan)."""
+    if JPS is None:
+        return None
+    try:
+        _res = st.session_state.get("results")
+        _n_scan = 0 if _res is None else len(_res)
+        cached = st.session_state.get("_jp_sym_idx")
+        if cached is not None and st.session_state.get("_jp_sym_idx_n") == (len(NSE_STOCKS), _n_scan):
+            return cached
+        syms = list(NSE_STOCKS)
+        if _res is not None and "Stock" in getattr(_res, "columns", []):
+            syms += _res["Stock"].astype(str).tolist()
+        idx = JPS.SymbolIndex(syms, _jp_company_names())
+        st.session_state["_jp_sym_idx"] = idx
+        st.session_state["_jp_sym_idx_n"] = (len(NSE_STOCKS), _n_scan)
+        return idx
+    except Exception:
+        return None
+
+
+def sym_input(label, value="", key=None, placeholder=None, help=None):
+    """Drop-in for st.text_input wherever an NSE symbol is typed: adds fuzzy 'did you mean' suggestions."""
+    if JPUI is None or JPS is None:
+        return st.text_input(label, value=value, key=key, placeholder=placeholder, help=help)
+    try:
+        return JPUI.symbol_input(st, label, key=key, value=value, placeholder=placeholder,
+                                 help=help, index=_jp_symbol_index())
+    except Exception:
+        return st.text_input(label, value=value, key=key, placeholder=placeholder, help=help)
+
+
 def _jp_open_stock(sym):
     """Open the Stock Analysis page for one symbol (used by the quick finder)."""
     st.session_state.selected_stock = str(sym).upper().replace(".NS", "").strip()
@@ -21433,7 +21504,7 @@ def show_sure_calls_page(results: pd.DataFrame):
         st.write("Run the full two-stage checklist on any symbol (independent of scan).")
         c1, c2 = st.columns(2)
         with c1:
-            msym = st.text_input("Symbol", value="RELIANCE", key="sure_manual_sym").upper().strip()
+            msym = sym_input("Symbol", value="RELIANCE", key="sure_manual_sym").upper().strip()
         with c2:
             mside = st.selectbox("Side", ["BUY", "SELL"], key="sure_manual_side")
         if st.button("Run two-stage analysis", key="sure_manual_btn"):
@@ -23451,7 +23522,7 @@ def show_holding_advisor(results=None):
 
     c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
     with c1:
-        sym_in = st.text_input(
+        sym_in = sym_input(
             "NSE symbol",
             value=st.session_state.get("holding_sym", "RELIANCE"),
             placeholder="RELIANCE, TCS, INFY…",
@@ -24064,7 +24135,8 @@ def show_find_stock(
 
         if JPUI is not None:
             JPUI.render_quick_finder(
-                st, results, load_learning(), _jp_open_stock, _jp_base_weights(), key="findpg"
+                st, results, load_learning(), _jp_open_stock, _jp_base_weights(), key="findpg",
+                sym_index=_jp_symbol_index()
             )
         else:
             st.info(
@@ -25857,7 +25929,7 @@ if st.session_state.page == "Dashboard":
     if JPUI is not None:
         try:
             _lrn = load_learning()
-            JPUI.render_quick_finder(st, results, _lrn, _jp_open_stock, _jp_base_weights(), key="dashfind")
+            JPUI.render_quick_finder(st, results, _lrn, _jp_open_stock, _jp_base_weights(), key="dashfind", sym_index=_jp_symbol_index())
             with st.expander("🧠 What the bot learned from its mistakes", expanded=False):
                 JPUI.render_learning_report(st, _lrn, on_relearn=_jp_relearn, key="dashlearn")
             st.divider()
@@ -26464,8 +26536,8 @@ elif st.session_state.page == "Stock Analysis":
         "🔍 ANALYZE ANY NSE STOCK"
     )
 
-    typed = st.text_input(
-        "Type NSE stock symbol",
+    typed = sym_input(
+        "Type NSE stock symbol (typos are fine - pick from the suggestions)",
         value=st.session_state.selected_stock,
         placeholder=(
             "RELIANCE, TCS, SBIN, INFY, TATAMOTORS"
