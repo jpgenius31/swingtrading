@@ -1593,7 +1593,20 @@ def render_clickable_stock_table(df: pd.DataFrame, stock_col: str = "Stock", hei
                     t = ""
                 else:
                     t = str(val).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                cells.append(f"<td style='{td}'>{t}</td>")
+                # Colour BUY / SELL / HOLD for faster scanning
+                extra = ""
+                cu = str(val).upper().strip() if c in ("Call", "Side", "Result") else ""
+                if cu == "BUY" or cu.startswith("BUY"):
+                    extra = "color:#15803d;font-weight:800;"
+                elif cu == "SELL" or cu.startswith("SELL"):
+                    extra = "color:#b91c1c;font-weight:800;"
+                elif cu in ("HOLD", "WATCH"):
+                    extra = "color:#a16207;font-weight:700;"
+                elif "TARGET" in cu:
+                    extra = "color:#15803d;font-weight:700;"
+                elif "STOP" in cu:
+                    extra = "color:#b91c1c;font-weight:700;"
+                cells.append(f"<td style='{td}{extra}'>{t}</td>")
         parts.append("<tr>" + "".join(cells) + "</tr>")
 
     st.markdown(
@@ -19821,6 +19834,7 @@ def load_learning() -> dict:
         "strategy_stats": {},
         "sector_stats": {},
         "source_stats": {},
+        "stock_cooldown": {},
         "lessons": [],
         "priority_reasons": [],
         "updated_at": "",
@@ -19876,8 +19890,9 @@ def pattern_weight(pattern_name: str, learning: dict = None) -> float:
 
 def learning_score_adjustment(pred, risk_level, call, patterns, learning=None):
     """
-    Small delta to prediction score from past learning + pattern weights.
-    Returns (delta, notes_list).
+    Delta to prediction score from past learning + pattern weights.
+    Losses on a pattern reduce weight faster than wins raise it (see learn_from_history).
+    Returns (delta, notes_list). Does not change stored Price/Target/Call.
     """
     if learning is None:
         learning = load_learning()
@@ -19888,23 +19903,34 @@ def learning_score_adjustment(pred, risk_level, call, patterns, learning=None):
         for p in (patterns or []):
             w = pattern_weight(p, learning)
             if w:
-                delta += (w - 2.0) * 0.5  # neutral at weight 2
-                if w >= 3:
-                    notes.append(f"+ pattern {p}")
-                elif w <= 1:
-                    notes.append(f"- weak pattern {p}")
+                # Stronger than before so mistakes actually move rankings
+                delta += (w - 2.0) * 1.15
+                if w >= 3.2:
+                    notes.append(f"+ proven pattern {p} (w={w:.1f})")
+                elif w <= 1.2:
+                    notes.append(f"- weak pattern {p} (w={w:.1f})")
         adj = (learning or {}).get("call_adjustments") or {}
         key = str(call or "").upper()
-        if key in adj:
-            delta += float(adj[key])
-            notes.append(f"call adj {key}")
+        if key in adj and key in ("BUY", "SELL", "HOLD", "WATCH"):
+            try:
+                delta += float(adj[key])
+                notes.append(f"call adj {key}:{adj[key]}")
+            except Exception:
+                pass
         # history_stats global tilt
         hs = (learning or {}).get("history_stats") or {}
         wr = safe_float(hs.get("win_rate"), 0)
         if wr >= 55:
             delta += 1.5
+            notes.append(f"book WR {wr:.0f}% healthy")
         elif wr and wr < 40:
-            delta -= 2.0
+            delta -= 2.5
+            notes.append(f"book WR {wr:.0f}% — cautious")
+        # High risk + weak pattern → extra caution on BUY
+        rl = str(risk_level or "").upper()
+        if key == "BUY" and ("HIGH" in rl) and delta < 0:
+            delta -= 1.5
+            notes.append("high risk + weak learning")
     except Exception:
         pass
     return round(delta, 2), notes
@@ -19912,7 +19938,15 @@ def learning_score_adjustment(pred, risk_level, call, patterns, learning=None):
 
 def learn_from_history(min_closed: int = 3) -> dict:
     """
-    Update pattern weights and win-rate from closed Past Predictions.
+    Learn from closed Past Predictions (wins + mistakes).
+
+    Improvements vs simple tally:
+    - Asymmetric updates: losses reduce pattern weight more than wins raise it
+      (protect capital / fewer repeat mistakes).
+    - Stock cooldown after 2+ recent stop-losses (down-rank in Find / precision).
+    - Sector win-rate book for ranking tilt.
+    - Explicit mistake lessons written into model_learning.json.
+    Does not rewrite scan prices or past CSV rows — only the learning file.
     """
     learning = load_learning()
     try:
@@ -19920,12 +19954,27 @@ def learn_from_history(min_closed: int = 3) -> dict:
         if hist is None or hist.empty or "Result" not in hist.columns:
             return learning
         res_u = hist["Result"].astype(str).str.upper()
-        closed = hist[res_u.str.contains("TARGET ACHIEVED|STOP LOSS HIT|WIN|LOSS", na=False, regex=True)]
+        closed = hist[res_u.str.contains("TARGET ACHIEVED|STOP LOSS HIT|WIN|LOSS", na=False, regex=True)].copy()
         if len(closed) < int(min_closed):
+            learning["history_stats"] = {
+                "closed": int(len(closed)),
+                "note": f"Need ≥{min_closed} closed trades to retrain",
+            }
+            save_learning(learning)
             return learning
-        wins = closed[res_u.loc[closed.index].str.contains("TARGET ACHIEVED|^WIN$", na=False, regex=True)]
-        losses = closed[res_u.loc[closed.index].str.contains("STOP LOSS|^LOSS$", na=False, regex=True)]
-        n_w, n_l = len(wins), len(losses)
+
+        def _is_win(r):
+            s = str(r).upper()
+            return "TARGET ACHIEVED" in s or s == "WIN"
+
+        def _is_loss(r):
+            s = str(r).upper()
+            return "STOP LOSS HIT" in s or s == "LOSS"
+
+        closed["_win"] = closed["Result"].map(_is_win)
+        closed["_loss"] = closed["Result"].map(_is_loss)
+        n_w = int(closed["_win"].sum())
+        n_l = int(closed["_loss"].sum())
         total = n_w + n_l
         win_rate = (100.0 * n_w / total) if total else 0.0
         learning["history_stats"] = {
@@ -19934,13 +19983,13 @@ def learn_from_history(min_closed: int = 3) -> dict:
             "losses": int(n_l),
             "win_rate": round(win_rate, 2),
         }
-        # Pattern-level success
+
+        # --- Pattern weights (asymmetric: punish mistakes harder) ---
         pw = dict(learning.get("pattern_weights") or {})
         if "Patterns" in closed.columns:
             for _, row in closed.iterrows():
-                res = str(row.get("Result", "")).upper()
-                is_win = "TARGET" in res or res == "WIN"
-                is_loss = "STOP" in res or res == "LOSS"
+                is_win = bool(row["_win"])
+                is_loss = bool(row["_loss"])
                 if not is_win and not is_loss:
                     continue
                 pats = [p.strip() for p in str(row.get("Patterns", "") or "").split(",") if p.strip()]
@@ -19949,11 +19998,99 @@ def learn_from_history(min_closed: int = 3) -> dict:
                         continue
                     cur = float(pw.get(p, 2.0))
                     if is_win:
-                        cur = min(5.0, cur + 0.15)
+                        cur = min(5.5, cur + 0.18)
                     else:
-                        cur = max(0.5, cur - 0.2)
+                        # Stronger penalty so repeated failure patterns fade faster
+                        cur = max(0.3, cur - 0.28)
                     pw[p] = round(cur, 2)
         learning["pattern_weights"] = pw
+
+        # --- Stock cooldown: 2+ losses in last 5 closed for that name ---
+        cooldown = dict(learning.get("stock_cooldown") or {})
+        if "Stock" in closed.columns:
+            # Prefer most recent rows if date exists
+            h2 = closed.copy()
+            if "Prediction Date" in h2.columns:
+                h2["_d"] = pd.to_datetime(h2["Prediction Date"], errors="coerce")
+                h2 = h2.sort_values("_d", ascending=False)
+            for stock, g in h2.groupby(h2["Stock"].astype(str).str.upper()):
+                tail = g.head(5)
+                recent_losses = int(tail["_loss"].sum())
+                recent_wins = int(tail["_win"].sum())
+                cooldown[str(stock).upper()] = {
+                    "recent_losses": recent_losses,
+                    "recent_wins": recent_wins,
+                    "cooldown": recent_losses >= 2 and recent_losses > recent_wins,
+                    "note": (
+                        f"{recent_losses} stops in last {len(tail)} closed — down-rank"
+                        if recent_losses >= 2
+                        else "ok"
+                    ),
+                }
+        learning["stock_cooldown"] = cooldown
+
+        # --- Sector book ---
+        sector_stats = dict(learning.get("sector_stats") or {})
+        if "Sector" in closed.columns:
+            for sec, g in closed.groupby(closed["Sector"].astype(str)):
+                if not sec or sec.lower() in ("nan", "none", ""):
+                    continue
+                n = len(g)
+                wins = int(g["_win"].sum())
+                losses = int(g["_loss"].sum())
+                sector_stats[str(sec)] = {
+                    "n": n,
+                    "wins": wins,
+                    "losses": losses,
+                    "win_rate": round(100.0 * wins / max(n, 1), 1),
+                }
+        learning["sector_stats"] = sector_stats
+
+        # --- Actionable mistake lessons ---
+        lessons = list(learning.get("lessons") or [])
+        # Worst patterns
+        weak_pats = sorted(
+            [(k, v) for k, v in pw.items() if float(v) < 1.4],
+            key=lambda x: x[1],
+        )[:5]
+        for name, w in weak_pats:
+            msg = (
+                f"MISTAKE PATTERN «{name}»: weight {w} after repeated stops — "
+                f"skip or demand extra confirmation before BUY."
+            )
+            if msg not in lessons:
+                lessons.insert(0, msg)
+        # Cooldown stocks
+        for sym, info in list(cooldown.items())[:20]:
+            if info.get("cooldown"):
+                msg = (
+                    f"COOLDOWN {sym}: {info.get('recent_losses')} recent stops — "
+                    f"avoid fresh BUY until structure improves."
+                )
+                if msg not in lessons:
+                    lessons.insert(0, msg)
+        # Weak sectors
+        for sec, ss in sorted(sector_stats.items(), key=lambda x: x[1].get("win_rate", 50))[:4]:
+            if ss.get("n", 0) >= 4 and ss.get("win_rate", 50) < 40:
+                msg = (
+                    f"WEAK SECTOR {sec}: {ss['win_rate']}% win on {ss['n']} closed — "
+                    f"size smaller / higher bar for new BUYs."
+                )
+                if msg not in lessons:
+                    lessons.insert(0, msg)
+        learning["lessons"] = lessons[:25]
+
+        # Call-level adjustment: if overall win rate poor, bias slightly cautious
+        adj = dict(learning.get("call_adjustments") or {})
+        if total >= 8:
+            if win_rate < 40:
+                adj["BUY"] = round(max(-8.0, float(adj.get("BUY", 0)) - 1.0), 2)
+                adj["note"] = "Overall win rate low — BUY threshold raised"
+            elif win_rate > 60:
+                adj["BUY"] = round(min(5.0, float(adj.get("BUY", 0)) + 0.5), 2)
+                adj["note"] = "Healthy win rate — pattern weights trusted more"
+        learning["call_adjustments"] = adj
+
         save_learning(learning)
     except Exception:
         pass
@@ -23848,51 +23985,131 @@ def show_sector_page(
 # ============================================================
 
 def recommend_stocks_from_words(results: pd.DataFrame, query: str, limit: int = 15) -> pd.DataFrame:
-    """Natural-language-ish recommendations from a few words."""
+    """Natural-language recommendations + fuzzy symbol match + learning-aware rank.
+
+    Does not change scan data — only filters/ranks what already exists.
+    """
     if results is None or results.empty or not str(query).strip():
         return pd.DataFrame()
     q = str(query).lower().strip()
     x = ensure_result_columns(results).copy()
-    # Start from scan search
-    try:
-        found = find_stock_results(x, query)
-    except Exception:
-        found = x.copy()
+
+    # --- Fuzzy / partial symbol match first (easier discovery) ---
+    tokens = re.findall(r"[a-zA-Z0-9&]+", q)
+    symbol_hits = []
+    if "Stock" in x.columns and tokens:
+        stocks_u = x["Stock"].astype(str).str.upper()
+        for t in tokens:
+            tu = t.upper()
+            if len(tu) < 2:
+                continue
+            # exact → startswith → contains
+            exact = x[stocks_u.eq(tu)]
+            starts = x[stocks_u.str.startswith(tu, na=False)]
+            contains = x[stocks_u.str.contains(tu, na=False, regex=False)]
+            for part in (exact, starts, contains):
+                if not part.empty:
+                    symbol_hits.append(part)
+        if symbol_hits:
+            found = pd.concat(symbol_hits).drop_duplicates(subset=["Stock"] if "Stock" in x.columns else None)
+        else:
+            try:
+                found = find_stock_results(x, query)
+            except Exception:
+                found = x.copy()
+    else:
+        try:
+            found = find_stock_results(x, query)
+        except Exception:
+            found = x.copy()
+
     if found is None or found.empty:
         found = x.copy()
 
     # Intent filters
     call_u = found["Call"].astype(str).str.upper() if "Call" in found.columns else pd.Series([""] * len(found))
-    if any(w in q for w in ("buy", "long", "accumulate", "upside")):
+    if any(w in q for w in ("buy", "long", "accumulate", "upside", "bullish")):
         found = found[call_u.str.contains("BUY|HOLD|WATCH", na=False)]
-    if any(w in q for w in ("sell", "short", "exit", "weak")):
+    if any(w in q for w in ("sell", "short", "exit", "weak", "bearish")):
         found = found[call_u.str.contains("SELL", na=False)]
-    if "low risk" in q or "safe" in q:
+    if "low risk" in q or "safe" in q or "conservative" in q:
         if "Risk Level" in found.columns:
             found = found[found["Risk Level"].astype(str).str.upper().isin(["LOW", "MEDIUM"])]
-    if "high risk" in q:
+    if "high risk" in q or "aggressive" in q:
         if "Risk Level" in found.columns:
             found = found[found["Risk Level"].astype(str).str.upper().str.contains("HIGH", na=False)]
 
-    # Sector keywords
+    # Sector keywords (broader matching)
     sector_map = {
-        "bank": "Bank", "banking": "Bank", "it ": "IT", " software": "IT", "pharma": "Pharma",
-        "auto": "Auto", "metal": "Metal", "fmcg": "FMCG", "energy": "Energy", "oil": "Energy",
-        "realty": "Realty", "infra": "Infra", "finance": "Finance",
+        "bank": "Bank", "banking": "Bank", "it": "IT", "software": "IT", "tech": "IT",
+        "pharma": "Pharma", "drug": "Pharma", "auto": "Auto", "metal": "Metal",
+        "fmcg": "FMCG", "energy": "Energy", "oil": "Energy", "realty": "Realty",
+        "infra": "Infra", "finance": "Finance", "defence": "Defence", "defense": "Defence",
+        "cement": "Cement", "chemical": "Chemical", "retail": "Retail", "telecom": "Telecom",
     }
     if "Sector" in found.columns:
         for kw, sec in sector_map.items():
-            if kw in q:
+            if kw in q.split() or f" {kw}" in f" {q}" or q.startswith(kw):
                 found = found[found["Sector"].astype(str).str.contains(sec, case=False, na=False)]
 
-    # Price under X
-    import re
+    # Price under / above
     m = re.search(r"under\s+(\d+)", q)
     if m and "Price" in found.columns:
         found = found[pd.to_numeric(found["Price"], errors="coerce") <= float(m.group(1))]
+    m2 = re.search(r"above\s+(\d+)", q)
+    if m2 and "Price" in found.columns:
+        found = found[pd.to_numeric(found["Price"], errors="coerce") >= float(m2.group(1))]
 
-    if "Prediction" in found.columns:
-        found = found.sort_values("Prediction", ascending=False)
+    if found.empty:
+        return found
+
+    # --- Learning-aware rank (does not alter Call/Price) ---
+    try:
+        learning = load_learning()
+    except Exception:
+        learning = {}
+    found = found.copy()
+    pred = pd.to_numeric(found.get("Prediction"), errors="coerce").fillna(0)
+    risk = pd.to_numeric(found.get("Risk %"), errors="coerce").fillna(5)
+    found["_rank"] = pred - risk * 0.35
+
+    # Boost patterns that historically win; penalize loss-heavy patterns
+    pw = (learning or {}).get("pattern_weights") or {}
+    if "Patterns" in found.columns and pw:
+        def _pat_boost(cell):
+            boost = 0.0
+            for p in str(cell or "").split(","):
+                p = p.strip()
+                if not p or p.lower().startswith("no major"):
+                    continue
+                w = float(pw.get(p, 2.0))
+                boost += (w - 2.0) * 2.5  # stronger influence than before
+            return boost
+        found["_rank"] = found["_rank"] + found["Patterns"].map(_pat_boost)
+
+    # Sector win-rate tilt
+    sec_stats = (learning or {}).get("sector_stats") or {}
+    if "Sector" in found.columns and sec_stats:
+        def _sec_tilt(sec):
+            ss = sec_stats.get(str(sec), {}) or {}
+            n = int(ss.get("n") or 0)
+            if n < 3:
+                return 0.0
+            wr = float(ss.get("win_rate") or 50)
+            return (wr - 50) * 0.12
+        found["_rank"] = found["_rank"] + found["Sector"].map(_sec_tilt)
+
+    # Cooldown: stocks with recent stop-loss cluster rank lower
+    cooldown = (learning or {}).get("stock_cooldown") or {}
+    if "Stock" in found.columns and cooldown:
+        def _cd(s):
+            info = cooldown.get(str(s).upper(), {}) or {}
+            losses = int(info.get("recent_losses") or 0)
+            return -8.0 * min(losses, 3) if losses >= 2 else 0.0
+        found["_rank"] = found["_rank"] + found["Stock"].astype(str).str.upper().map(_cd)
+
+    found = found.sort_values("_rank", ascending=False)
+    found = found.drop(columns=["_rank"], errors="ignore")
     return found.head(limit)
 
 
@@ -23900,75 +24117,133 @@ def show_find_stock(
     results
 ):
 
-    st.title(
-        "🔍 FIND STOCK"
+    st.title("🔍 Find stock")
+    st.caption(
+        "Search by symbol, sector, risk, or plain English. "
+        "Results are ranked with learning from past wins/losses — scan data is not changed."
     )
 
-    st.write(
-        "Type a few words — get stock **recommendations** (buy/sell, sector, risk)."
-    )
-
-    query = st.text_input(
-        "Search / recommend",
-        placeholder=(
-            "Example: low risk banking stocks to buy"
-        ),
-        key="find_stock_q",
-    )
-
-    examples = st.multiselect(
-        "Quick phrases",
-        [
-            "low risk bank stocks to buy",
-            "IT stocks to buy",
-            "strong pharma",
-            "stocks under 500",
-            "sell calls high risk",
-            "metal stocks",
-            "RELIANCE",
-        ],
-        key="find_quick",
-    )
-    if examples and not query.strip():
-        query = examples[0]
-
-    if results.empty:
-
-        st.info(
-            "Run FULL MARKET SCAN first for best recommendations."
+    # --- Search bar + one-click chips ---
+    c_search, c_hint = st.columns([3, 1])
+    with c_search:
+        query = st.text_input(
+            "Search",
+            placeholder="RELIANCE · low risk bank buy · IT under 2000 · sell metals",
+            key="find_stock_q",
+            label_visibility="collapsed",
+        )
+    with c_hint:
+        st.markdown(
+            "<div style='padding-top:0.45rem;color:#64748b;font-size:0.85rem;'>"
+            "Tip: type 2–3 letters of a symbol</div>",
+            unsafe_allow_html=True,
         )
 
+    chips = [
+        ("🏦 Banks buy", "low risk bank stocks to buy"),
+        ("💻 IT", "IT stocks to buy"),
+        ("💊 Pharma", "strong pharma"),
+        ("₹ under 500", "stocks under 500"),
+        ("🔴 High-risk sell", "sell calls high risk"),
+        ("⚙️ Metals", "metal stocks"),
+        ("🛡️ Defence", "defence stocks"),
+        ("📌 RELIANCE", "RELIANCE"),
+    ]
+    chip_cols = st.columns(len(chips))
+    for i, (label, phrase) in enumerate(chips):
+        with chip_cols[i]:
+            if st.button(label, key=f"find_chip_{i}", use_container_width=True):
+                st.session_state.find_stock_q = phrase
+                st.rerun()
+
+    if results is None or results.empty:
+        st.info("Run a market scan first (header **Scan** → Nifty 50 is enough).")
         return
 
-    if not query.strip():
-
-        st.info(
-            "Examples: "
-            "low risk bank stocks, "
-            "IT stocks to buy, "
-            "strong pharma stocks, "
-            "stocks under 1000, "
-            "sell calls, RELIANCE"
+    if not str(query or "").strip():
+        # Empty state: show top liquid names + learning lessons so page is never blank
+        st.markdown(
+            """
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;
+                        padding:14px 16px;margin:8px 0 14px 0;color:#334155;">
+              <b>How to search</b><br>
+              • Symbol: <code>TCS</code> or partial <code>HDFC</code><br>
+              • Intent: <code>buy</code> · <code>sell</code> · <code>low risk</code><br>
+              • Sector: <code>bank</code> · <code>IT</code> · <code>pharma</code><br>
+              • Price: <code>under 500</code> · <code>above 1000</code>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
-
+        try:
+            lessons = (load_learning() or {}).get("lessons") or []
+            if lessons:
+                with st.expander("📚 What the model learned recently (from mistakes)", expanded=False):
+                    for L in lessons[:6]:
+                        st.write(f"• {L}")
+        except Exception:
+            pass
+        # Quick pick table: highest prediction, easy scan
+        try:
+            preview = ensure_result_columns(results).copy()
+            preview = preview.sort_values("Prediction", ascending=False).head(12)
+            st.subheader("Quick pick — highest prediction in last scan")
+            render_clickable_stock_table(
+                preview[[c for c in [
+                    "Stock", "Sector", "Call", "Price", "Prediction",
+                    "Risk Level", "Target", "Stop Loss",
+                ] if c in preview.columns]],
+                stock_col="Stock",
+                height=320,
+            )
+        except Exception:
+            pass
         return
 
-    found = recommend_stocks_from_words(results, query, limit=25)
-    if found.empty:
+    found = recommend_stocks_from_words(results, query, limit=30)
+    if found is None or found.empty:
         found = find_stock_results(results, query)
 
-    if found.empty:
-
-        st.warning(
-            "No matching stocks found in the current scan."
-        )
-
+    if found is None or found.empty:
+        st.warning(f"No match for **{query}**. Try a shorter symbol or a sector word (bank, IT, pharma).")
+        # Suggest closest symbols
+        try:
+            all_s = ensure_result_columns(results)["Stock"].astype(str).str.upper().unique().tolist()
+            q0 = re.findall(r"[a-zA-Z0-9&]+", str(query).upper())
+            suggestions = []
+            for t in q0:
+                suggestions.extend([s for s in all_s if t in s][:5])
+            suggestions = list(dict.fromkeys(suggestions))[:8]
+            if suggestions:
+                st.caption("Closest symbols in scan: " + " · ".join(suggestions))
+        except Exception:
+            pass
         return
 
-    st.success(
-        f"**{len(found)}** recommendations for: _{query}_"
+    # Summary strip
+    n_buy = int((found["Call"].astype(str).str.upper() == "BUY").sum()) if "Call" in found.columns else 0
+    n_sell = int((found["Call"].astype(str).str.upper() == "SELL").sum()) if "Call" in found.columns else 0
+    st.markdown(
+        f"""
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin:6px 0 12px 0;">
+          <span style="background:#ecfdf5;border:1px solid #6ee7b7;color:#065f46;
+                       padding:6px 12px;border-radius:999px;font-weight:700;font-size:0.9rem;">
+            {len(found)} matches
+          </span>
+          <span style="background:#eff6ff;border:1px solid #93c5fd;color:#1e40af;
+                       padding:6px 12px;border-radius:999px;font-weight:600;font-size:0.9rem;">
+            BUY {n_buy} · SELL {n_sell}
+          </span>
+          <span style="background:#f8fafc;border:1px solid #e2e8f0;color:#475569;
+                       padding:6px 12px;border-radius:999px;font-size:0.85rem;">
+            Ranked with past win/loss learning
+          </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
+    # Clean table first (Stock name clickable → analysis)
     filterable_dataframe(
         found.drop(columns=["Data", "News"], errors="ignore"),
         key="find_rec_table",
@@ -23976,42 +24251,14 @@ def show_find_stock(
             "Stock", "Sector", "Call", "Price", "Prediction", "Risk Level",
             "Target", "Stop Loss", "Patterns",
         ] if c in found.columns],
+        height=380,
     )
 
-    st.subheader("Cards — buy/sell executes to Paper Trading")
-    for stock in found["Stock"].head(10).tolist():
+    st.subheader("Top cards")
+    st.caption("Click the blue stock name in the table, or open a card below.")
+    for stock in found["Stock"].head(8).tolist():
         row = found[found["Stock"] == stock].iloc[0]
         render_call_stock_card(row.to_dict(), section_key="find")
-
-    st.subheader(
-        "Open Detailed Analysis"
-    )
-
-    for stock in found[
-        "Stock"
-    ].head(50).tolist():
-
-        row = found[
-            found["Stock"]
-            ==
-            stock
-        ].iloc[0]
-
-        if st.button(
-            f"📈 {stock} | {row['Call']} | Prediction {row['Prediction']}%",
-            key="find_"
-            + stock
-        ):
-
-            st.session_state.selected_stock = (
-                stock
-            )
-
-            st.session_state.page = (
-                "Stock Analysis"
-            )
-
-            st.rerun()
 
 
 # ============================================================
