@@ -7959,8 +7959,8 @@ def show_fo_market_pulse():
                     border:1px solid #22c55e;">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
             <div>
-              <div style="font-size:1.45rem;font-weight:900;color:#f0fdf4;">F&amp;O Market Pulse</div>
-              <div style="color:#86efac;font-size:0.9rem;">Index Mover · PCR · Sector · Gainers — fast cached panels</div>
+              <div style="font-size:1.45rem;font-weight:900;color:#f0fdf4;">Market Pulse</div>
+              <div style="color:#86efac;font-size:0.9rem;">Home · Index Mover · PCR · Sector · F&amp;O / Options — fast cached tabs</div>
             </div>
             <div style="background:#14532d;color:#bbf7d0;padding:6px 12px;border-radius:999px;font-weight:700;font-size:0.85rem;">
               LIVE STYLE · 90s cache
@@ -7971,11 +7971,12 @@ def show_fo_market_pulse():
         unsafe_allow_html=True,
     )
 
-    t1, t2, t3, t4, t5 = st.tabs([
+    t1, t2, t3, t4, t5, t6 = st.tabs([
         "📈 Index Mover",
         "🕰 Option PCR",
         "📊 Sector Scope",
         "🚀 Gainers / Losers",
+        "📡 F&O / Options board",
         "🏦 Bulk deals",
     ])
 
@@ -8212,6 +8213,134 @@ def show_fo_market_pulse():
                 st.caption("No down movers loaded.")
 
     with t5:
+        st.markdown("#### F&O / Options board")
+        st.caption("India VIX · Nifty & BankNifty ATM snapshot · PCR side-by-side · quick CE/PE lean (cached)")
+        if st.button("Refresh F&O board", key="pulse_fo_board_btn"):
+            try:
+                _pulse_pcr.clear()
+            except Exception:
+                pass
+            try:
+                stock_history.clear()
+            except Exception:
+                pass
+
+        # India VIX + index spots
+        vix_ltp, vix_chg = None, None
+        try:
+            vdf = stock_history("^INDIAVIX", interval="1d", period="5d")
+            if vdf is not None and len(vdf) >= 1 and "Close" in vdf.columns:
+                vc = pd.to_numeric(vdf["Close"], errors="coerce").dropna()
+                if len(vc) >= 1:
+                    vix_ltp = float(vc.iloc[-1])
+                if len(vc) >= 2:
+                    vix_chg = float(vc.iloc[-1] - vc.iloc[-2])
+        except Exception:
+            pass
+        n_spot = b_spot = None
+        try:
+            n_spot = _spot_price("^NSEI")
+        except Exception:
+            pass
+        try:
+            b_spot = _spot_price("^NSEBANK")
+        except Exception:
+            pass
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("India VIX", f"{vix_ltp:.2f}" if vix_ltp else "—",
+                  f"{vix_chg:+.2f}" if vix_chg is not None else None)
+        m2.metric("Nifty spot", f"{n_spot:,.1f}" if n_spot else "—")
+        m3.metric("Bank Nifty spot", f"{b_spot:,.1f}" if b_spot else "—")
+        if vix_ltp:
+            if vix_ltp >= 18:
+                m4.metric("Vol regime", "HIGH", "prefer defined risk")
+            elif vix_ltp <= 12:
+                m4.metric("Vol regime", "LOW", "premiums thin")
+            else:
+                m4.metric("Vol regime", "NORMAL", None)
+
+        # Dual PCR
+        with st.spinner("Loading Nifty + BankNifty option PCR…"):
+            pn = _pulse_pcr("NIFTY")
+            pb = _pulse_pcr("BANKNIFTY")
+        cA, cB = st.columns(2)
+        with cA:
+            st.markdown("##### Nifty options")
+            st.write(
+                f"**PCR** `{pn.get('pcr')}` · Put OI `{pn.get('put_oi', 0):,.0f}` · "
+                f"Call OI `{pn.get('call_oi', 0):,.0f}` · **{pn.get('bias')}**"
+            )
+            st.caption(f"Expiry `{pn.get('expiry')}`")
+            if pn.get("strikes") is not None and not getattr(pn.get("strikes"), "empty", True):
+                st.dataframe(pn["strikes"].head(10), use_container_width=True, hide_index=True, height=260)
+        with cB:
+            st.markdown("##### Bank Nifty options")
+            st.write(
+                f"**PCR** `{pb.get('pcr')}` · Put OI `{pb.get('put_oi', 0):,.0f}` · "
+                f"Call OI `{pb.get('call_oi', 0):,.0f}` · **{pb.get('bias')}**"
+            )
+            st.caption(f"Expiry `{pb.get('expiry')}`")
+            if pb.get("strikes") is not None and not getattr(pb.get("strikes"), "empty", True):
+                st.dataframe(pb["strikes"].head(10), use_container_width=True, hide_index=True, height=260)
+
+        # ATM premium estimates + desk lean
+        st.markdown("##### ATM CE / PE lean (structure, educational)")
+        for label, yf_sym, spot in (("NIFTY", "^NSEI", n_spot), ("BANKNIFTY", "^NSEBANK", b_spot)):
+            if not spot:
+                continue
+            step = 50 if label == "NIFTY" else 100
+            atm = int(round(float(spot) / step) * step)
+            try:
+                df = stock_history(yf_sym, interval="15m", period="5d")
+                if df is None or len(df) < 20:
+                    df = stock_history(yf_sym, interval="1d", period="3mo")
+                bias, reason = "NEUTRAL", "Mixed structure"
+                if df is not None and len(df) >= 20 and "Close" in df.columns:
+                    c = pd.to_numeric(df["Close"], errors="coerce").dropna()
+                    ema9 = float(c.ewm(span=9, adjust=False).mean().iloc[-1])
+                    ema21 = float(c.ewm(span=21, adjust=False).mean().iloc[-1])
+                    px = float(c.iloc[-1])
+                    if px > ema9 > ema21:
+                        bias, reason = "BUY CE bias", "Price > EMA9 > EMA21"
+                    elif px < ema9 < ema21:
+                        bias, reason = "BUY PE bias", "Price < EMA9 < EMA21"
+                ce_est = max(20.0, float(spot) * 0.0045)
+                pe_est = max(18.0, float(spot) * 0.0042)
+                st.info(
+                    f"**{label}** ATM ≈ **{atm}** · lean **{bias}** ({reason}) · "
+                    f"est. prem CE ₹{ce_est:.0f} / PE ₹{pe_est:.0f} (approx — check chain)"
+                )
+            except Exception:
+                pass
+
+        st.markdown("##### Most active F&O names (from liquid universe)")
+        try:
+            lists = load_index_constituents() or {}
+            fo_names = list(lists.get("nifty50") or _FALLBACK_NIFTY50)[:15]
+        except Exception:
+            fo_names = list(_FALLBACK_NIFTY50)[:15]
+        fo_rows = []
+        for sym in [str(s).upper().replace(".NS", "") for s in fo_names]:
+            try:
+                df = stock_history(clean_symbol(sym), interval="1d", period="5d")
+                if df is None or len(df) < 2:
+                    continue
+                c = pd.to_numeric(df["Close"], errors="coerce").dropna()
+                if len(c) < 2:
+                    continue
+                last, prev = float(c.iloc[-1]), float(c.iloc[-2])
+                pct = (last / prev - 1) * 100 if prev else 0
+                fo_rows.append({"Stock": sym, "LTP": round(last, 2), "Day %": round(pct, 2)})
+            except Exception:
+                continue
+        if fo_rows:
+            st.dataframe(
+                pd.DataFrame(fo_rows).sort_values("Day %", ascending=False),
+                use_container_width=True, hide_index=True, height=280,
+            )
+        st.caption("Educational only — premiums are estimates; use Intraday desk for full CE/PE plans.")
+
+    with t6:
         st.markdown("#### Bulk / block deals")
         st.caption("Full desk with filters — opens Bank deals page.")
         if st.button("Open Bank deals / Superstar", type="primary", key="pulse_bulk"):
@@ -8459,13 +8588,13 @@ def show_intraday_fo_desk():
     NIFTY 50 · BANK NIFTY · stocks — CE/PE buy/sell, expiry or 1–2 day trades,
     chart patterns + strategy explanations.
     """
-    c_p1, c_p2 = st.columns([1, 1])
-    with c_p1:
-        if st.button("📈 Open F&O Market Pulse (Index Mover · PCR · Sector)", use_container_width=True, key="ifo_open_pulse"):
-            nav_go("FO Pulse")
-    with c_p2:
-        if st.button("📡 Open F&O Analysis (Nifty50 / sector / stock)", use_container_width=True, key="ifo_open_foan"):
+    st.caption("**Market Pulse** (Index Mover · PCR · Sector · F&O board) is on **Home** — open Home first for the market overview.")
+    if st.button("📡 Open F&O Analysis (Nifty50 / sector / stock)", use_container_width=True, key="ifo_open_foan"):
+        try:
             nav_go("FO Analysis")
+        except Exception:
+            st.session_state.page = "FO Analysis"
+            st.rerun()
     st.markdown(
         """
         <div style="border-radius:16px;padding:18px 20px;margin-bottom:14px;
@@ -9832,7 +9961,7 @@ def show_tools_hub():
     )
     _hub_card_grid([
         ("🧠 AI Command Dashboard", "Learning · capabilities · date-wise results · all sources.", "AI Command"),
-        ("📡 F&O Market Pulse", "Index Mover · PCR · Sector · Gainers — live-style fast tabs.", "FO Pulse"),
+        ("🏠 Market Pulse (Home)", "Index Mover · PCR · Sector · F&O board — opens Home.", "Dashboard"),
         ("📡 F&O Analysis Dashboard", "Nifty50 · sector · single stock swing+FO · peer reasons.", "FO Analysis"),
         ("🔍 Find Stock", "Search by keywords and get recommendations.", "Find Stock"),
         ("🏭 Sector Analysis", "Sector-wise stocks and charts.", "Sector Analysis"),
@@ -25938,6 +26067,15 @@ if st.session_state.page == "Dashboard":
 
     live_market()
 
+    # ===== HOME Market Pulse (Index Mover · PCR · Sector · F&O) — first market view =====
+    try:
+        show_fo_market_pulse()
+    except Exception as _mp_err:
+        st.warning(f"Market Pulse: {_mp_err}")
+
+    st.divider()
+    st.markdown("### Quick actions")
+
     # Quick access to index charts + BUY/SELL
     q1, q2, q3, q4 = st.columns(4)
     with q1:
@@ -26450,6 +26588,7 @@ elif st.session_state.page == "FO Analysis":
     show_fo_analysis_dashboard(st.session_state.results if st.session_state.get("results") is not None else pd.DataFrame())
 
 elif st.session_state.page == "FO Pulse":
+    st.info("**Market Pulse** is the first section on **Home**.")
     show_fo_market_pulse()
 
 elif st.session_state.page == "Performance Summary":
