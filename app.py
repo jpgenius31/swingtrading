@@ -4905,6 +4905,104 @@ def get_priority_strategy_picks(limit: int = 5) -> list:
         return []
 
 
+
+def render_page_ai_assist(page: str = None):
+    """
+    AI details for the *current* screen (not a jump away).
+    Expandable: what is working on this page + link to full AI Command Dashboard.
+    """
+    page = page or st.session_state.get("page", "Dashboard")
+    with st.expander("🧠 AI on this page — what is working here", expanded=False):
+        try:
+            learning = load_learning()
+        except Exception:
+            learning = {}
+        hs = (learning or {}).get("history_stats") or {}
+        lessons = (learning or {}).get("lessons") or []
+        reasons = (learning or {}).get("priority_reasons") or []
+
+        # Page-specific briefing
+        brief = {
+            "Dashboard": (
+                "**Home Market Pulse** is active: Index Mover, PCR, Sector Scope, Gainers/Losers, F&O board. "
+                "Use these for market bias before taking swing or option trades. "
+                "Gainers/Losers prefer **NSE official** lists when the feed is available."
+            ),
+            "FO Pulse": "Same Market Pulse panels as Home — use for quick F&O context.",
+            "Intraday FO": (
+                "CE/PE desk: strategies (including 9:15), live calls, backtest. "
+                "Market overview lives on **Home**. Prefer liquid Nifty50 / BankNifty names."
+            ),
+            "Strategy Lab": (
+                "Strategy Lab ranks setups from scan + rules. Learning boosts strategies with higher "
+                "target hit rates and reduces weight on stop-heavy patterns."
+            ),
+            "History": (
+                "Past Predictions: locked Entry/Target/Stop. AI uses closed target vs stop rows to re-rank strategies."
+            ),
+            "BUY Calls": "Precision / BUY shortlist. Prefer high Prediction + controlled Risk %; check prior call history.",
+            "AI Command": "Full Power BI–style learning dashboard (filters, KPIs, all sources).",
+        }.get(page, f"You are on **{page}**. Model learning applies globally from closed Past Predictions.")
+
+        st.markdown(brief)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Closed (learned)", hs.get("closed", "—"))
+        c2.metric("Win rate", f"{hs.get('win_rate', '—')}%")
+        c3.metric("Lessons", len(lessons))
+        if reasons:
+            st.caption("**Top learning notes**")
+            for r in reasons[:3]:
+                st.write("• " + str(r))
+        if lessons:
+            st.caption("**Recent lessons**")
+            for L in lessons[:4]:
+                st.write("• " + str(L))
+
+        # Mini dashboard of current page context
+        st.markdown("##### AI mini-dashboard (this page)")
+        try:
+            hist = normalize_history_df(load_history())
+        except Exception:
+            hist = pd.DataFrame()
+        if hist is not None and not hist.empty:
+            # map page → filter
+            src_u = hist["Call Source"].astype(str).str.upper() if "Call Source" in hist.columns else pd.Series([""] * len(hist))
+            view = hist
+            if page in ("Strategy Lab", "Swing Hub"):
+                view = hist[src_u.str.contains("STRATEGY|MY_STRATEGY|HIGH_CONV", regex=True, na=False)]
+            elif page in ("Intraday FO", "FO Analysis", "FO Pulse"):
+                view = hist[
+                    src_u.str.contains("INTRADAY|F&O|FO|915|OPTION", regex=True, na=False)
+                    | hist.get("Strategy", pd.Series(dtype=str)).astype(str).str.contains(
+                        "9:15|ORB|VWAP|CE|PE|Intraday", case=False, na=False
+                    )
+                ] if "Strategy" in hist.columns else hist[src_u.str.contains("INTRADAY|F&O|FO|915|OPTION", regex=True, na=False)]
+            elif page == "Dashboard":
+                view = hist.tail(200)
+            ru = view["Result"].astype(str).str.upper() if "Result" in view.columns else pd.Series(dtype=str)
+            t = int(ru.str.contains("TARGET ACHIEVED", na=False).sum()) if len(ru) else 0
+            s = int(ru.str.contains("STOP LOSS HIT", na=False).sum()) if len(ru) else 0
+            o = max(0, len(view) - t - s)
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("Rows in scope", len(view))
+            k2.metric("Targets", t)
+            k3.metric("Stops", s)
+            k4.metric("Open/other", o)
+            if t + s > 0:
+                st.progress(t / (t + s))
+                st.caption(f"Hit rate in this page scope: **{100 * t / (t + s):.1f}%**")
+        else:
+            st.caption("No past prediction rows yet — run scan / strategy to feed learning.")
+
+        if st.button("Open full AI Command Dashboard →", key=f"ai_full_{page}"):
+            try:
+                nav_go("AI Command")
+            except Exception:
+                st.session_state.page = "AI Command"
+                st.rerun()
+
+
+
 def show_ai_command_dashboard():
     """
     Power BI–style command centre:
@@ -7313,6 +7411,53 @@ def fo_liquid_stock_universe() -> list:
 
 
 @st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=90, show_spinner=False)
+def fetch_nse_top_gainers(limit: int = 30) -> pd.DataFrame:
+    """Top gainers from NSE live-analysis-variations (official-style list)."""
+    rows = []
+    try:
+        data = nse_get_json("/api/live-analysis-variations", params={"index": "gainers"}, timeout=12)
+        if not data:
+            # alternate path used by some NSE pages
+            data = nse_get_json("https://www.nseindia.com/api/live-analysis-variations?index=gainers", timeout=12)
+        items = None
+        if isinstance(data, dict):
+            items = data.get("data") or data.get("NIFTY") or data.get("FOSec") or data.get("allSec")
+            if isinstance(items, dict):
+                for k in ("NIFTY", "FOSec", "allSec", "data", "SecGainer", "gainer"):
+                    if k in items and isinstance(items[k], list):
+                        items = items[k]
+                        break
+        elif isinstance(data, list):
+            items = data
+        if isinstance(items, list):
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                sym = it.get("symbol") or it.get("symbolName")
+                if not sym and isinstance(it.get("meta"), dict):
+                    sym = it["meta"].get("symbol")
+                if not sym:
+                    continue
+                rows.append({
+                    "Symbol": str(sym).upper().strip(),
+                    "LTP": safe_float(it.get("lastPrice") or it.get("ltp") or it.get("last")),
+                    "Move %": safe_float(it.get("pChange") or it.get("perChange") or it.get("percentChange")),
+                    "Open": safe_float(it.get("open") or it.get("openPrice")),
+                    "Day High": safe_float(it.get("dayHigh") or it.get("high") or it.get("highPrice")),
+                    "Day Low": safe_float(it.get("dayLow") or it.get("low") or it.get("lowPrice")),
+                    "Volume": safe_float(it.get("totalTradedVolume") or it.get("volume")),
+                    "Source": "NSE",
+                })
+    except Exception:
+        pass
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows)
+    df = df.drop_duplicates(subset=["Symbol"]).sort_values("Move %", ascending=False)
+    return df.head(limit)
+
+
 def fetch_nse_top_losers(limit: int = 20) -> pd.DataFrame:
     """
     Top losers from NSE live analysis (loosers). Fallback: Yahoo/scan day % change.
@@ -7904,43 +8049,90 @@ def _sector_tile_color(pct) -> str:
 
 
 @st.cache_data(ttl=90, show_spinner=False)
-def _pulse_gainers_losers(n: int = 20) -> tuple:
-    """Top gainers / losers from Nifty200 sample (fast)."""
+@st.cache_data(ttl=90, show_spinner=False)
+def _pulse_gainers_losers(n: int = 25) -> tuple:
+    """
+    Prefer NSE official gainers / loosers API so lists match NSE website.
+    Fallback: Yahoo day-change on Nifty200 + F&O liquid set.
+    """
+    up = pd.DataFrame()
+    dn = pd.DataFrame()
+    # --- NSE official ---
     try:
-        lists = load_index_constituents() or {}
-        syms = list(lists.get("nifty200") or lists.get("nifty50") or _FALLBACK_NIFTY50)[:80]
+        g = fetch_nse_top_gainers(limit=max(n, 30))
+        if g is not None and not g.empty:
+            up = g.copy()
+            cols = [c for c in ["Symbol", "LTP", "Move %", "Open", "Day High", "Day Low", "Volume", "Source"] if c in up.columns]
+            up = up[cols].head(n)
     except Exception:
-        syms = list(_FALLBACK_NIFTY50)
-    rows = []
-    for sym in [str(s).upper().replace(".NS", "") for s in syms]:
+        pass
+    try:
+        # existing losers helper returns Stock/Change %
+        lo = fetch_nse_top_losers(limit=max(n, 30))
+        if lo is not None and not lo.empty:
+            dn = lo.copy()
+            rename = {}
+            if "Stock" in dn.columns and "Symbol" not in dn.columns:
+                rename["Stock"] = "Symbol"
+            if "Change %" in dn.columns and "Move %" not in dn.columns:
+                rename["Change %"] = "Move %"
+            if rename:
+                dn = dn.rename(columns=rename)
+            if "Source" not in dn.columns:
+                dn["Source"] = "NSE"
+            cols = [c for c in ["Symbol", "LTP", "Move %", "Open", "Day High", "Day Low", "Volume", "Source"] if c in dn.columns]
+            if "Symbol" in dn.columns and "Move %" in dn.columns:
+                dn = dn.sort_values("Move %", ascending=True)
+            dn = dn[cols].head(n) if cols else dn.head(n)
+    except Exception:
+        pass
+
+    # --- Fallback Yahoo if NSE empty (Cloud blocks) ---
+    need_up = up is None or getattr(up, "empty", True)
+    need_dn = dn is None or getattr(dn, "empty", True)
+    if need_up or need_dn:
         try:
-            df = stock_history(clean_symbol(sym), interval="1d", period="5d")
-            if df is None or len(df) < 2:
-                continue
-            c = pd.to_numeric(df["Close"], errors="coerce").dropna()
-            if len(c) < 2:
-                continue
-            last, prev = float(c.iloc[-1]), float(c.iloc[-2])
-            o = float(pd.to_numeric(df["Open"], errors="coerce").dropna().iloc[-1]) if "Open" in df.columns else prev
-            h = float(pd.to_numeric(df["High"], errors="coerce").dropna().iloc[-1]) if "High" in df.columns else last
-            l = float(pd.to_numeric(df["Low"], errors="coerce").dropna().iloc[-1]) if "Low" in df.columns else last
-            pct = (last / prev - 1) * 100 if prev else 0
-            rows.append({
-                "Symbol": sym,
-                "LTP": round(last, 2),
-                "Move %": round(pct, 2),
-                "Open": round(o, 2),
-                "Day High": round(h, 2),
-                "Day Low": round(l, 2),
-            })
+            lists = load_index_constituents() or {}
+            syms = list(lists.get("nifty200") or []) + list(lists.get("nifty50") or _FALLBACK_NIFTY50)
+            try:
+                syms = list(dict.fromkeys(syms + fo_liquid_stock_universe()))
+            except Exception:
+                pass
+            rows = []
+            for sym in [str(s).upper().replace(".NS", "") for s in syms][:120]:
+                try:
+                    df = stock_history(clean_symbol(sym), interval="1d", period="5d")
+                    if df is None or len(df) < 2:
+                        continue
+                    c = pd.to_numeric(df["Close"], errors="coerce").dropna()
+                    if len(c) < 2:
+                        continue
+                    last, prev = float(c.iloc[-1]), float(c.iloc[-2])
+                    o = float(pd.to_numeric(df["Open"], errors="coerce").dropna().iloc[-1]) if "Open" in df.columns else prev
+                    h = float(pd.to_numeric(df["High"], errors="coerce").dropna().iloc[-1]) if "High" in df.columns else last
+                    l = float(pd.to_numeric(df["Low"], errors="coerce").dropna().iloc[-1]) if "Low" in df.columns else last
+                    pct = (last / prev - 1) * 100 if prev else 0
+                    rows.append({
+                        "Symbol": sym, "LTP": round(last, 2), "Move %": round(pct, 2),
+                        "Open": round(o, 2), "Day High": round(h, 2), "Day Low": round(l, 2),
+                        "Source": "Yahoo",
+                    })
+                except Exception:
+                    continue
+            if rows:
+                ydf = pd.DataFrame(rows)
+                if need_up:
+                    up = ydf.sort_values("Move %", ascending=False).head(n)
+                if need_dn:
+                    dn = ydf.sort_values("Move %", ascending=True).head(n)
         except Exception:
-            continue
-    if not rows:
-        return pd.DataFrame(), pd.DataFrame()
-    df = pd.DataFrame(rows)
-    up = df.sort_values("Move %", ascending=False).head(n)
-    dn = df.sort_values("Move %", ascending=True).head(n)
+            pass
+    if up is None:
+        up = pd.DataFrame()
+    if dn is None:
+        dn = pd.DataFrame()
     return up, dn
+
 
 
 def show_fo_market_pulse():
@@ -7970,6 +8162,11 @@ def show_fo_market_pulse():
         """,
         unsafe_allow_html=True,
     )
+
+    try:
+        render_page_ai_assist(st.session_state.get("page", "Dashboard"))
+    except Exception:
+        pass
 
     t1, t2, t3, t4, t5, t6 = st.tabs([
         "📈 Index Mover",
@@ -8191,9 +8388,18 @@ def show_fo_market_pulse():
 
     with t4:
         st.markdown("#### Market Gainers & Losers")
+        st.caption("Prefers **NSE official** gainers / losers when the exchange feed responds; else Yahoo day-change fallback.")
         if st.button("Refresh gainers/losers", key="pulse_gl_btn"):
             try:
                 _pulse_gainers_losers.clear()
+            except Exception:
+                pass
+            try:
+                fetch_nse_top_gainers.clear()
+            except Exception:
+                pass
+            try:
+                fetch_nse_top_losers.clear()
             except Exception:
                 pass
         with st.spinner("Scanning movers…"):
@@ -24892,6 +25098,152 @@ def save_scan_to_disk(results: pd.DataFrame) -> int:
         return 0
 
 
+
+def _github_results_urls() -> list:
+    """Possible raw URLs for latest_results.csv after GitHub Actions scan."""
+    urls = []
+    try:
+        u = (st.secrets.get("GITHUB_RESULTS_RAW") if hasattr(st, "secrets") else None) or ""
+        if u:
+            urls.append(str(u).strip())
+    except Exception:
+        pass
+    try:
+        import os
+        u = os.environ.get("GITHUB_RESULTS_RAW", "")
+        if u:
+            urls.append(u.strip())
+    except Exception:
+        pass
+    # Common: same repo — user can set secrets; also try relative meta hint
+    try:
+        meta_p = APP_DIR / "latest_results_meta.json"
+        if meta_p.exists():
+            meta = json.loads(meta_p.read_text(encoding="utf-8"))
+            if meta.get("raw_csv_url"):
+                urls.append(str(meta["raw_csv_url"]))
+    except Exception:
+        pass
+    return list(dict.fromkeys([u for u in urls if u.startswith("http")]))
+
+
+def pull_scan_from_github(force: bool = False) -> int:
+    """
+    Download latest_results.csv (+ meta) from GitHub raw URL so Cloud
+    gets GitHub Actions output without waiting for a full redeploy.
+    Returns rows written, or 0.
+    """
+    urls = _github_results_urls()
+    if not urls:
+        return 0
+    try:
+        import requests
+    except Exception:
+        return 0
+    # Skip if local file is very fresh (< 10 min) unless force
+    try:
+        if not force and RESULT_FILE.exists():
+            age = time.time() - RESULT_FILE.stat().st_mtime
+            if age < 600:
+                return 0
+    except Exception:
+        pass
+    for url in urls:
+        try:
+            r = requests.get(url, timeout=45)
+            if r.status_code != 200 or not r.text or "Stock" not in r.text[:2000]:
+                continue
+            RESULT_FILE.write_text(r.text, encoding="utf-8")
+            # try meta beside it
+            meta_url = url.replace("latest_results.csv", "latest_results_meta.json")
+            if meta_url != url:
+                try:
+                    rm = requests.get(meta_url, timeout=20)
+                    if rm.status_code == 200 and rm.text.strip().startswith("{"):
+                        SCAN_META_FILE.write_text(rm.text, encoding="utf-8")
+                except Exception:
+                    pass
+            try:
+                bump_sync_version("github_scan_pull")
+            except Exception:
+                pass
+            # count rows
+            try:
+                df = pd.read_csv(RESULT_FILE)
+                return len(df) if df is not None else 0
+            except Exception:
+                return 1
+        except Exception:
+            continue
+    return 0
+
+
+def auto_load_latest_scan(silent: bool = True) -> int:
+    """
+    Auto-load scan results for all devices:
+    1) If disk CSV newer than session → load
+    2) Optionally pull from GitHub raw if configured
+    3) Load into session — user does NOT need to press Reload scan
+    """
+    # Throttle to once per 45s per session
+    try:
+        now = time.time()
+        last = float(st.session_state.get("_auto_scan_check_ts") or 0)
+        if (now - last) < 45 and not st.session_state.get("_force_auto_scan"):
+            return int(len(st.session_state.results) if st.session_state.get("results") is not None else 0)
+        st.session_state["_auto_scan_check_ts"] = now
+        st.session_state.pop("_force_auto_scan", None)
+    except Exception:
+        pass
+
+    # Pull from GitHub if secrets set
+    try:
+        pull_scan_from_github(force=False)
+    except Exception:
+        pass
+
+    # Compare mtime vs last loaded
+    force = False
+    try:
+        if RESULT_FILE.exists():
+            mtime = RESULT_FILE.stat().st_mtime
+            last_m = float(st.session_state.get("_scan_file_mtime") or 0)
+            if mtime > last_m + 1:
+                force = True
+                st.session_state["_scan_file_mtime"] = mtime
+    except Exception:
+        force = True
+
+    # Empty session always load
+    try:
+        empty = (
+            st.session_state.get("results") is None
+            or getattr(st.session_state.results, "empty", True)
+        )
+    except Exception:
+        empty = True
+    if empty:
+        force = True
+
+    n = 0
+    try:
+        n = int(load_scan_from_disk(force=force) or 0)
+    except Exception:
+        n = 0
+    if n and not silent:
+        try:
+            meta = st.session_state.get("_scan_meta") or {}
+            when = meta.get("saved_at_ist") or meta.get("saved_at") or ""
+            st.session_state["_scan_auto_banner"] = (
+                f"Auto-loaded **{n}** stocks from scan file"
+                + (f" · {when}" if when else "")
+            )
+        except Exception:
+            pass
+    return n
+
+
+
 def load_scan_from_disk(force: bool = False) -> int:
     """
     Load latest_results.csv into session.
@@ -24948,7 +25300,17 @@ def load_scan_from_disk(force: bool = False) -> int:
                 n_mem = len(st.session_state.results)
         except Exception:
             n_mem = 0
-        if force or n_mem == 0 or n_disk > n_mem:
+        # Also reload when disk file is newer (GitHub Actions updated CSV)
+        file_newer = False
+        try:
+            if used and Path(used).exists():
+                mt = Path(used).stat().st_mtime
+                if mt > float(st.session_state.get("_scan_file_mtime") or 0) + 0.5:
+                    file_newer = True
+                    st.session_state["_scan_file_mtime"] = mt
+        except Exception:
+            file_newer = force
+        if force or n_mem == 0 or n_disk > n_mem or file_newer:
             st.session_state.results = saved
             st.session_state["_scan_loaded_from_disk"] = True
             st.session_state["_scan_source_file"] = str(used) if used else str(RESULT_FILE)
@@ -24974,11 +25336,16 @@ def load_scan_from_disk(force: bool = False) -> int:
 def ensure_scan_on_reload() -> int:
     """
     Reload scan fix:
+    0) Pull from GitHub raw if configured
     1) Load latest_results.csv / history if present
     2) If still empty → run a light Nifty 50 scan and save CSV
     Returns number of rows available in session.
     """
     n = 0
+    try:
+        pull_scan_from_github(force=True)
+    except Exception:
+        pass
     try:
         n = int(load_scan_from_disk(force=True) or 0)
     except Exception:
@@ -25077,7 +25444,10 @@ def ensure_scan_on_reload() -> int:
 
 # Always try to pick up a newer/shared scan from disk at session start
 try:
-    load_scan_from_disk(force=False)
+    try:
+        auto_load_latest_scan(silent=True)
+    except Exception:
+        load_scan_from_disk(force=False)
 except Exception:
     pass
 
@@ -25898,7 +26268,10 @@ try:
     if st.session_state.get("results") is None or (
         hasattr(st.session_state.get("results"), "empty") and st.session_state.results.empty
     ):
-        _n = load_scan_from_disk(force=False)
+        try:
+            _n = auto_load_latest_scan(silent=True)
+        except Exception:
+            _n = load_scan_from_disk(force=False)
         if _n:
             st.session_state["_autoload_scan_rows"] = _n
 except Exception:
@@ -26066,6 +26439,18 @@ if st.session_state.page == "Dashboard":
             st.caption(f"Finder note: {_qf_err}")
 
     live_market()
+
+    try:
+        auto_load_latest_scan(silent=True)
+        _meta = st.session_state.get("_scan_meta") or {}
+        if _meta:
+            st.caption(
+                f"📂 Auto scan: **{_meta.get('rows', '—')}** rows · "
+                f"{_meta.get('saved_at_ist') or _meta.get('saved_at') or '—'} · "
+                f"file updates load automatically (GitHub / disk) — Reload optional"
+            )
+    except Exception:
+        pass
 
     # ===== HOME Market Pulse (Index Mover · PCR · Sector · F&O) — first market view =====
     try:
@@ -26582,7 +26967,15 @@ elif st.session_state.page == "Swing Hub":
     show_swing_hub()
 
 elif st.session_state.page == "AI Command":
-    show_ai_command_dashboard()
+    try:
+        show_ai_command_dashboard()
+    except Exception as _ai_err:
+        st.error(f"AI Command error: {_ai_err}")
+        st.info("You can still use **Home → AI on this page** for a lighter learning summary.")
+        try:
+            render_page_ai_assist("AI Command")
+        except Exception:
+            pass
 
 elif st.session_state.page == "FO Analysis":
     show_fo_analysis_dashboard(st.session_state.results if st.session_state.get("results") is not None else pd.DataFrame())
