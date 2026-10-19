@@ -5700,16 +5700,33 @@ def _option_chain(sym: str, expiry: str):
 
 
 def _spot_price(sym: str) -> float:
+    """Spot as float — NSE/Yahoo via live_quote or best_live_quote, never NaN."""
     try:
         q = live_quote(sym)
-        if q and q.get("price"):
-            return safe_float(q["price"])
+        # live_quote may return float OR dict
+        if isinstance(q, (int, float)):
+            px = safe_float(q)
+            if px and px > 0 and px == px:  # not NaN
+                return px
+        elif isinstance(q, dict):
+            px = safe_float(q.get("price"))
+            if px and px > 0 and px == px:
+                return px
     except Exception:
         pass
     try:
-        d = stock_history(clean_symbol(sym), interval="1d")
-        if d is not None and not d.empty:
-            return safe_float(d["Close"].iloc[-1])
+        bq = best_live_quote(sym) or {}
+        px = safe_float(bq.get("price"))
+        if px and px > 0 and px == px:
+            return px
+    except Exception:
+        pass
+    try:
+        d = stock_history(clean_symbol(sym) if not str(sym).startswith("^") else sym, interval="1d", period="5d")
+        if d is not None and not d.empty and "Close" in d.columns:
+            px = safe_float(d["Close"].iloc[-1])
+            if px and px > 0 and px == px:
+                return px
     except Exception:
         pass
     return 0.0
@@ -7316,7 +7333,7 @@ def render_strategy_915_930_panel(underlying_label: str, yf_symbol: str, spot: f
         try:
             if spot and spot > 0:
                 step = 50 if ("NIFTY" in underlying_label.upper() and "BANK" not in underlying_label.upper()) else 100
-                atm = int(round(float(spot) / step) * step)
+                atm = int(round(float(spot) / step) * step) if spot and spot == spot and float(spot) > 0 else 0
                 st.caption(f"Suggested ATM strike zone: **{atm}** · side **{sig.get('side')}**")
         except Exception:
             atm = None
@@ -7842,89 +7859,218 @@ def _pulse_index_movers(index_key: str = "NIFTY50") -> dict:
     }
 
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=90, show_spinner=False)
 def _pulse_pcr(underlying: str = "NIFTY") -> dict:
-    """Option PCR + strike OI snapshot via Yahoo chain (best-effort, cached)."""
-    yf_sym = "^NSEI" if underlying.upper().startswith("NIFTY") and "BANK" not in underlying.upper() else "^NSEBANK"
-    if underlying.upper() == "BANKNIFTY":
-        yf_sym = "^NSEBANK"
+    """
+    Live PCR for index or stock options.
+    1) NSE option-chain API (best for India)
+    2) Yahoo option_chain fallback
+    underlying: NIFTY | BANKNIFTY | SENSEX | or equity symbol e.g. RELIANCE
+    """
+    u = str(underlying or "NIFTY").upper().replace(".NS", "").strip()
     out = {
-        "underlying": underlying,
+        "underlying": u,
         "spot": None,
         "expiry": None,
         "pcr": None,
-        "put_oi": 0,
-        "call_oi": 0,
+        "put_oi": 0.0,
+        "call_oi": 0.0,
+        "put_vol": 0.0,
+        "call_vol": 0.0,
+        "pcr_volume": None,
         "strikes": pd.DataFrame(),
         "bias": "NEUTRAL",
+        "source": "",
+        "expiries": [],
     }
+
+    # Map display → NSE symbol + Yahoo
+    nse_sym = u
+    yf_sym = clean_symbol(u)
+    if u in ("NIFTY", "NIFTY50", "NIFTY 50"):
+        nse_sym, yf_sym = "NIFTY", "^NSEI"
+    elif u in ("BANKNIFTY", "NIFTYBANK", "BANK NIFTY"):
+        nse_sym, yf_sym = "BANKNIFTY", "^NSEBANK"
+    elif u in ("SENSEX",):
+        nse_sym, yf_sym = "SENSEX", "^BSESN"
+    elif u in ("FINNIFTY",):
+        nse_sym, yf_sym = "FINNIFTY", "NIFTY_FIN_SERVICE.NS"
+    elif u in ("MIDCPNIFTY", "MIDCAPNIFTY"):
+        nse_sym, yf_sym = "MIDCPNIFTY", "^NSEMDCP50"
+
+    # Spot
     try:
-        out["spot"] = _spot_price(yf_sym) or 0
+        if nse_sym in ("NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY", "MIDCPNIFTY"):
+            out["spot"] = _spot_price(yf_sym) or 0.0
+        else:
+            out["spot"] = _spot_price(nse_sym) or 0.0
+        if out["spot"] != out["spot"]:  # NaN
+            out["spot"] = 0.0
     except Exception:
-        out["spot"] = 0
+        out["spot"] = 0.0
+
+    def _finish_bias(o):
+        pcr = o.get("pcr")
+        if pcr is None:
+            o["bias"] = "NEUTRAL"
+        elif pcr >= 1.2:
+            o["bias"] = "BULLISH (high put OI)"
+        elif pcr <= 0.8:
+            o["bias"] = "BEARISH (high call OI)"
+        else:
+            o["bias"] = "NEUTRAL"
+        return o
+
+    # ---------- 1) NSE option chain ----------
     try:
-        exps = _option_expiries(yf_sym) or []
+        if nse_sym in ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX"):
+            path = f"/api/option-chain-indices?symbol={nse_sym}"
+        else:
+            path = f"/api/option-chain-equities?symbol={nse_sym}"
+        data = nse_get_json(path, timeout=18)
+        if data and isinstance(data, dict):
+            rec = data.get("records") or {}
+            exp_list = rec.get("expiryDates") or []
+            out["expiries"] = list(exp_list)[:12]
+            exp = exp_list[0] if exp_list else None
+            # preferred: data["filtered"]["data"] for nearest expiry
+            rows = None
+            filt = data.get("filtered") or {}
+            if isinstance(filt, dict) and filt.get("data"):
+                rows = filt["data"]
+            if not rows:
+                rows = rec.get("data") or []
+            if exp:
+                out["expiry"] = exp
+            # spot from NSE
+            try:
+                us = rec.get("underlyingValue")
+                if us and float(us) > 0:
+                    out["spot"] = float(us)
+            except Exception:
+                pass
+            call_oi = put_oi = call_vol = put_vol = 0.0
+            strike_rows = []
+            spot = safe_float(out.get("spot")) or 0.0
+            for it in rows or []:
+                if not isinstance(it, dict):
+                    continue
+                # filter to selected expiry when present
+                if exp and it.get("expiryDate") and str(it.get("expiryDate")) != str(exp):
+                    # filtered block is already nearest; records data has all
+                    if filt.get("data"):
+                        pass  # already nearest
+                    else:
+                        continue
+                strike = safe_float(it.get("strikePrice"))
+                ce = it.get("CE") or {}
+                pe = it.get("PE") or {}
+                c_oi = safe_float(ce.get("openInterest"))
+                p_oi = safe_float(pe.get("openInterest"))
+                c_v = safe_float(ce.get("totalTradedVolume"))
+                p_v = safe_float(pe.get("totalTradedVolume"))
+                call_oi += c_oi
+                put_oi += p_oi
+                call_vol += c_v
+                put_vol += p_v
+                if strike and spot and abs(strike - spot) <= max(spot * 0.04, 500):
+                    strike_rows.append({
+                        "Strike": strike,
+                        "Call OI": c_oi,
+                        "Put OI": p_oi,
+                        "Call Vol": c_v,
+                        "Put Vol": p_v,
+                        "PCR": round(p_oi / c_oi, 2) if c_oi > 0 else None,
+                        "CE LTP": safe_float(ce.get("lastPrice")),
+                        "PE LTP": safe_float(pe.get("lastPrice")),
+                    })
+            out["call_oi"] = call_oi
+            out["put_oi"] = put_oi
+            out["call_vol"] = call_vol
+            out["put_vol"] = put_vol
+            out["pcr"] = round(put_oi / call_oi, 2) if call_oi > 0 else None
+            out["pcr_volume"] = round(put_vol / call_vol, 2) if call_vol > 0 else None
+            if strike_rows:
+                out["strikes"] = pd.DataFrame(strike_rows).sort_values("Strike")
+            if call_oi > 0 or put_oi > 0:
+                out["source"] = "NSE"
+                return _finish_bias(out)
+    except Exception:
+        pass
+
+    # ---------- 2) Yahoo option chain ----------
+    try:
+        # Index options on Yahoo often fail; stocks work better with .NS
+        y_candidates = [yf_sym]
+        if not str(yf_sym).startswith("^"):
+            y_candidates.append(clean_symbol(nse_sym))
+        else:
+            # try without caret
+            y_candidates.append(nse_sym)
+        exps = []
+        used_sym = yf_sym
+        for ys in y_candidates:
+            try:
+                t = yf.Ticker(ys)
+                exps = list(t.options or [])
+                if exps:
+                    used_sym = ys
+                    break
+            except Exception:
+                continue
+        out["expiries"] = exps[:12]
         if not exps:
-            return out
+            out["source"] = out.get("source") or "none"
+            return _finish_bias(out)
         exp = exps[0]
         out["expiry"] = exp
-        calls, puts = _option_chain(yf_sym, exp)
-        def _oi_sum(frame):
+        calls, puts = _option_chain(used_sym, exp)
+        def _oi_sum(frame, cols=("openInterest", "Open Interest", "oi")):
             if frame is None or getattr(frame, "empty", True):
                 return 0.0
-            for col in ("openInterest", "openInterest", "oi", "Open Interest"):
+            for col in cols:
                 if col in frame.columns:
                     return float(pd.to_numeric(frame[col], errors="coerce").fillna(0).sum())
             return 0.0
+        def _vol_sum(frame):
+            return _oi_sum(frame, cols=("volume", "Volume"))
         call_oi = _oi_sum(calls)
         put_oi = _oi_sum(puts)
         out["call_oi"] = call_oi
         out["put_oi"] = put_oi
+        out["call_vol"] = _vol_sum(calls)
+        out["put_vol"] = _vol_sum(puts)
         out["pcr"] = round(put_oi / call_oi, 2) if call_oi > 0 else None
-        if out["pcr"] is not None:
-            if out["pcr"] >= 1.2:
-                out["bias"] = "BULLISH (high put OI)"
-            elif out["pcr"] <= 0.8:
-                out["bias"] = "BEARISH (high call OI)"
-            else:
-                out["bias"] = "NEUTRAL"
+        out["pcr_volume"] = round(out["put_vol"] / out["call_vol"], 2) if out["call_vol"] > 0 else None
         # near ATM strikes
-        spot = out["spot"] or 0
-        rows = []
+        spot = safe_float(out.get("spot")) or 0.0
+        strike_rows = []
         if calls is not None and not calls.empty and "strike" in calls.columns:
+            put_map = {}
+            if puts is not None and not puts.empty:
+                for _, r in puts.iterrows():
+                    put_map[safe_float(r.get("strike"))] = safe_float(r.get("openInterest") or r.get("oi"))
             for _, r in calls.iterrows():
                 k = safe_float(r.get("strike"))
-                if not k or (spot and abs(k - spot) > spot * 0.04):
+                if not k or (spot and abs(k - spot) > max(spot * 0.04, 200)):
                     continue
-                oi = safe_float(r.get("openInterest") or r.get("oi") or 0)
-                rows.append({"Strike": k, "Call OI": oi, "Put OI": 0})
-        if puts is not None and not puts.empty and "strike" in puts.columns:
-            put_map = {}
-            for _, r in puts.iterrows():
-                k = safe_float(r.get("strike"))
-                oi = safe_float(r.get("openInterest") or r.get("oi") or 0)
-                if k:
-                    put_map[k] = oi
-            if rows:
-                for row in rows:
-                    row["Put OI"] = put_map.get(row["Strike"], 0)
-            else:
-                for k, oi in put_map.items():
-                    if spot and abs(k - spot) > spot * 0.04:
-                        continue
-                    rows.append({"Strike": k, "Call OI": 0, "Put OI": oi})
-        if rows:
-            sdf = pd.DataFrame(rows).sort_values("Strike")
-            sdf["PCR"] = sdf.apply(
-                lambda r: round(r["Put OI"] / r["Call OI"], 2) if r["Call OI"] else None, axis=1
-            )
-            out["strikes"] = sdf.head(16)
+                coi = safe_float(r.get("openInterest") or r.get("oi"))
+                poi = put_map.get(k, 0)
+                strike_rows.append({
+                    "Strike": k, "Call OI": coi, "Put OI": poi,
+                    "PCR": round(poi / coi, 2) if coi > 0 else None,
+                    "CE LTP": safe_float(r.get("lastPrice")),
+                    "PE LTP": None,
+                })
+        if strike_rows:
+            out["strikes"] = pd.DataFrame(strike_rows).sort_values("Strike")
+        out["source"] = "Yahoo"
     except Exception:
-        pass
-    return out
+        out["source"] = out.get("source") or "error"
+    return _finish_bias(out)
 
 
-@st.cache_data(ttl=120, show_spinner=False)
+
 def _pulse_sector_scope(results_hash: str = "") -> pd.DataFrame:
     """
     TradeBrahma-style sector scope:
@@ -8193,8 +8339,20 @@ def show_fo_market_pulse():
         ltp = data.get("index_ltp")
         chg = data.get("index_chg")
         pct = data.get("index_pct")
-        k1.metric(name, f"{ltp:,.2f}" if ltp else "—",
-                  f"{chg:+.2f} ({pct:+.2f}%)" if chg is not None and pct is not None else None)
+        try:
+            _ltp = float(ltp) if ltp is not None and ltp == ltp else None
+        except Exception:
+            _ltp = None
+        try:
+            _chg = float(chg) if chg is not None and chg == chg else None
+            _pct = float(pct) if pct is not None and pct == pct else None
+        except Exception:
+            _chg, _pct = None, None
+        k1.metric(
+            name,
+            f"{_ltp:,.2f}" if _ltp else "—",
+            f"{_chg:+.2f} ({_pct:+.2f}%)" if _chg is not None and _pct is not None else None,
+        )
         k2.metric("Gainers", data.get("gainers", 0))
         k3.metric("Losers", data.get("losers", 0))
         k4.metric("Flat", data.get("flat", 0))
@@ -8253,29 +8411,60 @@ def show_fo_market_pulse():
             st.warning("No mover data — market data feed may be limited on Cloud.")
 
     with t2:
-        und = st.selectbox("Underlying", ["NIFTY", "BANKNIFTY"], key="pulse_pcr_und")
+        st.markdown("#### Live Option PCR")
+        st.caption("NSE option-chain first · Yahoo backup · Index **or** stock F&O")
+        kind = st.radio("Type", ["Index", "Stock"], horizontal=True, key="pulse_pcr_kind")
+        if kind == "Index":
+            und = st.selectbox(
+                "Underlying",
+                ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX"],
+                key="pulse_pcr_und",
+            )
+        else:
+            try:
+                lists = load_index_constituents() or {}
+                stock_opts = list(lists.get("nifty50") or _FALLBACK_NIFTY50)
+                stock_opts = sorted({str(s).upper().replace(".NS", "") for s in stock_opts})
+            except Exception:
+                stock_opts = list(_FALLBACK_NIFTY50)
+            # also allow typed symbol
+            c_s1, c_s2 = st.columns([2, 1])
+            with c_s1:
+                und = st.selectbox("Stock (F&O)", stock_opts, key="pulse_pcr_stock")
+            with c_s2:
+                typed = st.text_input("Or type symbol", value="", key="pulse_pcr_typed")
+                if typed.strip():
+                    und = typed.strip().upper().replace(".NS", "")
         if st.button("Refresh PCR", key="pulse_pcr_btn"):
             try:
                 _pulse_pcr.clear()
             except Exception:
                 pass
-        with st.spinner("Loading option chain PCR…"):
+        with st.spinner(f"Loading PCR for {und}…"):
             p = _pulse_pcr(und)
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Spot", f"{p.get('spot'):,.2f}" if p.get("spot") else "—")
-        c2.metric("PCR (OI)", p.get("pcr") if p.get("pcr") is not None else "—")
-        c3.metric("Put OI", f"{p.get('put_oi', 0):,.0f}")
-        c4.metric("Call OI", f"{p.get('call_oi', 0):,.0f}")
+        spot = safe_float(p.get("spot"))
+        poi = safe_float(p.get("put_oi"))
+        coi = safe_float(p.get("call_oi"))
+        pcr = p.get("pcr")
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Spot", f"{spot:,.2f}" if spot and spot == spot else "—")
+        c2.metric("PCR (OI)", pcr if pcr is not None else "—")
+        c3.metric("Put OI", f"{poi:,.0f}")
+        c4.metric("Call OI", f"{coi:,.0f}")
+        c5.metric("Source", str(p.get("source") or "—"))
+        if p.get("pcr_volume") is not None:
+            st.caption(f"Volume PCR: **{p.get('pcr_volume')}** · Put vol {safe_float(p.get('put_vol')):,.0f} · Call vol {safe_float(p.get('call_vol')):,.0f}")
         bias = p.get("bias") or "NEUTRAL"
+        exp = p.get("expiry") or "—"
+        src = p.get("source") or ""
+        msg = f"**{und}** · lean **{bias}** · Expiry `{exp}` · feed **{src or 'none'}**"
         if "BULL" in bias.upper():
-            st.success(f"Market distribution lean: **{bias}** · Expiry `{p.get('expiry')}`")
+            st.success(msg)
         elif "BEAR" in bias.upper():
-            st.error(f"Market distribution lean: **{bias}** · Expiry `{p.get('expiry')}`")
+            st.error(msg)
         else:
-            st.info(f"Market distribution lean: **{bias}** · Expiry `{p.get('expiry')}`")
-        # PCR gauge-like pie
+            st.info(msg)
         try:
-            poi, coi = float(p.get("put_oi") or 0), float(p.get("call_oi") or 0)
             if poi + coi > 0:
                 import plotly.graph_objects as go
                 fig = go.Figure(data=[go.Pie(
@@ -8290,7 +8479,7 @@ def show_fo_market_pulse():
                     paper_bgcolor="rgba(0,0,0,0)",
                     font_color="#e2e8f0",
                     annotations=[dict(
-                        text=f"<b>PCR</b><br>{p.get('pcr')}",
+                        text=f"<b>PCR</b><br>{pcr if pcr is not None else '—'}",
                         x=0.5, y=0.5, showarrow=False, font=dict(size=18, color="#f8fafc"),
                     )],
                     showlegend=True,
@@ -8300,11 +8489,13 @@ def show_fo_market_pulse():
             pass
         strikes = p.get("strikes")
         if strikes is not None and not getattr(strikes, "empty", True):
-            st.markdown("##### Near-ATM strikes (Put OI vs Call OI)")
+            st.markdown("##### Near-ATM strikes")
             st.dataframe(strikes, use_container_width=True, hide_index=True, height=360)
         else:
-            st.caption("Strike OI not available from Yahoo for this session — PCR totals still shown when possible.")
-        st.caption("PCR = Put OI ÷ Call OI. Educational only — not a standalone signal.")
+            st.caption(
+                "No strike rows this run. If **Source** is empty, NSE/Yahoo blocked this host — try Refresh or local run."
+            )
+        st.caption("PCR = Put OI ÷ Call OI · Educational only.")
 
     with t3:
         st.markdown("#### SECTOR SCOPE · LIVE style")
@@ -8495,7 +8686,7 @@ def show_fo_market_pulse():
             if not spot:
                 continue
             step = 50 if label == "NIFTY" else 100
-            atm = int(round(float(spot) / step) * step)
+            atm = int(round(float(spot) / step) * step) if spot and spot == spot and float(spot) > 0 else 0
             try:
                 df = stock_history(yf_sym, interval="15m", period="5d")
                 if df is None or len(df) < 20:
@@ -26456,7 +26647,7 @@ if st.session_state.page == "Dashboard":
     try:
         show_fo_market_pulse()
     except Exception as _mp_err:
-        st.warning(f"Market Pulse: {_mp_err}")
+        st.caption(f"Market Pulse note: {_mp_err}")
 
     st.divider()
     st.markdown("### Quick actions")
