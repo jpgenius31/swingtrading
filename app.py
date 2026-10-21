@@ -48,6 +48,8 @@ STRATEGY_BT_FILE = APP_DIR / "strategy_backtest_results.csv"
 STRATEGY_LIVE_FILE = APP_DIR / "strategy_live_signals.csv"
 STRATEGY_PREV_FILE = APP_DIR / "strategy_live_signals_prev.csv"
 STRATEGY_META_FILE = APP_DIR / "strategy_live_meta.json"
+STRATEGY_915_PAST_FILE = APP_DIR / "strategy_915_candle_past.csv"
+STRATEGY_915_LIVE_FILE = APP_DIR / "strategy_915_candle_live.csv"
 STRATEGY_ALL_MAP_FILE = APP_DIR / "strategy_all_stocks_map.csv"
 STRATEGY_ALL_SUMMARY_FILE = APP_DIR / "strategy_all_stocks_summary.csv"
 STRATEGY_ALL_META_FILE = APP_DIR / "strategy_all_stocks_meta.json"
@@ -7399,6 +7401,440 @@ def render_strategy_915_930_panel(underlying_label: str, yf_symbol: str, spot: f
         st.caption("Safe default: paper only. Connect Angel on **Broker** page to enable live.")
 
 
+
+# ---------- 9:15 candle · Top 20 Gainer/Loser · 1-min big candle CE/PE ----------
+
+STRATEGY_915_CANDLE_NAME = "9:15–9:30 · Big 1-min candle (Top 20 G/L)"
+
+
+def _candle_body_pct(o, h, l, c) -> float:
+    try:
+        o, h, l, c = float(o), float(h), float(l), float(c)
+        rng = max(h - l, abs(o) * 1e-6)
+        body = abs(c - o)
+        return 100.0 * body / max(rng, 1e-9)
+    except Exception:
+        return 0.0
+
+
+def detect_915_big_candle_1m(df_1m: pd.DataFrame, min_body_pct: float = 55.0, min_range_pct: float = 0.15) -> dict:
+    """
+    On 1-minute bars after open:
+    - Big GREEN candle → BUY CALL at TOP (candle high)
+    - Big RED candle → BUY PUT at BOTTOM (candle low)
+    """
+    out = {
+        "signal": "NONE",
+        "option": None,
+        "entry_price": None,
+        "stop_hint": None,
+        "target_hint": None,
+        "reason": "",
+        "candle_open": None,
+        "candle_high": None,
+        "candle_low": None,
+        "candle_close": None,
+        "body_pct": None,
+        "range_pct": None,
+        "color": None,
+    }
+    if df_1m is None or getattr(df_1m, "empty", True) or len(df_1m) < 1:
+        out["reason"] = "No 1-min bars"
+        return out
+    d = df_1m.copy()
+    for col in ("Open", "High", "Low", "Close"):
+        if col not in d.columns:
+            out["reason"] = "Missing OHLC"
+            return out
+        d[col] = pd.to_numeric(d[col], errors="coerce")
+    # Prefer first session candle; else last completed bar
+    row = d.iloc[0]
+    if len(d) >= 2:
+        # use most recent completed 1m if available after open
+        row = d.iloc[-2] if len(d) > 2 else d.iloc[-1]
+    o, h, l, c = float(row["Open"]), float(row["High"]), float(row["Low"]), float(row["Close"])
+    out.update({"candle_open": o, "candle_high": h, "candle_low": l, "candle_close": c})
+    body = _candle_body_pct(o, h, l, c)
+    range_pct = 100.0 * (h - l) / max(abs(o), 1e-9)
+    out["body_pct"] = round(body, 1)
+    out["range_pct"] = round(range_pct, 3)
+    green = c > o
+    red = c < o
+    out["color"] = "GREEN" if green else ("RED" if red else "DOJI")
+    big = body >= float(min_body_pct) and range_pct >= float(min_range_pct)
+    if not big:
+        out["reason"] = (
+            f"Candle not big enough (body {body:.0f}% of range, range {range_pct:.2f}%). "
+            f"Need body ≥{min_body_pct:.0f}% and range ≥{min_range_pct}%."
+        )
+        return out
+    if green:
+        # CALL at top price (high)
+        entry = h
+        stop = l
+        target = h + (h - l) * 1.0
+        out.update({
+            "signal": "CE",
+            "option": "BUY CALL",
+            "entry_price": round(entry, 2),
+            "stop_hint": round(stop, 2),
+            "target_hint": round(target, 2),
+            "reason": (
+                f"Big **GREEN** 1-min candle · body {body:.0f}% · "
+                f"BUY CALL at **top** ₹{entry:.2f} (high) · SL ₹{stop:.2f} (low) · "
+                f"exit by 9:30 IST"
+            ),
+        })
+    elif red:
+        entry = l  # PUT at bottom
+        stop = h
+        target = l - (h - l) * 1.0
+        out.update({
+            "signal": "PE",
+            "option": "BUY PUT",
+            "entry_price": round(entry, 2),
+            "stop_hint": round(stop, 2),
+            "target_hint": round(target, 2),
+            "reason": (
+                f"Big **RED** 1-min candle · body {body:.0f}% · "
+                f"BUY PUT at **bottom** ₹{entry:.2f} (low) · SL ₹{stop:.2f} (high) · "
+                f"exit by 9:30 IST"
+            ),
+        })
+    else:
+        out["reason"] = "Doji / no colour — skip"
+    return out
+
+
+def scan_915_top20_candle_signals(limit: int = 20, min_body_pct: float = 55.0) -> pd.DataFrame:
+    """Top 20 NSE gainers + losers → 1m big-candle CE/PE signals."""
+    rows = []
+    gainers = losers = pd.DataFrame()
+    try:
+        gainers = fetch_nse_top_gainers(limit=limit)
+    except Exception:
+        pass
+    try:
+        losers = fetch_nse_top_losers(limit=limit)
+    except Exception:
+        pass
+    # fallback movers
+    if (gainers is None or gainers.empty) and (losers is None or losers.empty):
+        try:
+            up, dn = _pulse_gainers_losers(limit)
+            gainers, losers = up, dn
+        except Exception:
+            pass
+
+    def _syms(df, tag):
+        if df is None or getattr(df, "empty", True):
+            return []
+        col = "Symbol" if "Symbol" in df.columns else ("Stock" if "Stock" in df.columns else None)
+        if not col:
+            return []
+        out = []
+        for _, r in df.head(limit).iterrows():
+            out.append((str(r[col]).upper().replace(".NS", ""), tag, r))
+        return out
+
+    universe = _syms(gainers, "GAINER") + _syms(losers, "LOSER")
+    seen = set()
+    for sym, tag, meta in universe:
+        if not sym or sym in seen:
+            continue
+        seen.add(sym)
+        try:
+            df1 = stock_history(clean_symbol(sym), interval="1m", period="1d")
+            if df1 is None or len(df1) < 1:
+                df1 = stock_history(clean_symbol(sym), interval="1m", period="5d")
+            sig = detect_915_big_candle_1m(df1, min_body_pct=min_body_pct)
+            if sig.get("signal") not in ("CE", "PE"):
+                continue
+            move = None
+            try:
+                move = safe_float(meta.get("Move %") or meta.get("Change %") or meta.get("pChange"))
+            except Exception:
+                pass
+            ltp = sig.get("candle_close")
+            try:
+                q = live_quote(clean_symbol(sym))
+                if q and safe_float(q) > 0:
+                    ltp = safe_float(q)
+            except Exception:
+                pass
+            rows.append({
+                "Stock": sym,
+                "List": tag,
+                "Day %": move,
+                "Signal": sig["signal"],
+                "Option": sig["option"],
+                "Entry (candle)": sig["entry_price"],
+                "Stop": sig["stop_hint"],
+                "Target": sig["target_hint"],
+                "LTP": round(safe_float(ltp), 2) if ltp else None,
+                "Candle": sig.get("color"),
+                "Body %": sig.get("body_pct"),
+                "Reason": sig.get("reason"),
+                "Strategy": STRATEGY_915_CANDLE_NAME,
+                "Call Source": "INTRADAY_915_CANDLE",
+                "Prediction Date": india_now().strftime("%Y-%m-%d %H:%M"),
+                "Result": "PENDING",
+                "Fail Reason": "",
+            })
+        except Exception:
+            continue
+    return pd.DataFrame(rows)
+
+
+def load_915_past() -> pd.DataFrame:
+    try:
+        if STRATEGY_915_PAST_FILE.exists():
+            return pd.read_csv(STRATEGY_915_PAST_FILE)
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
+def save_915_past(df: pd.DataFrame) -> None:
+    try:
+        df.to_csv(STRATEGY_915_PAST_FILE, index=False)
+    except Exception:
+        pass
+
+
+def append_915_calls_to_past(live: pd.DataFrame) -> int:
+    """Save today's signals into strategy past + main history (like Past Predictions)."""
+    if live is None or live.empty:
+        return 0
+    past = load_915_past()
+    today = india_now().strftime("%Y-%m-%d")
+    added = 0
+    special = []
+    for _, r in live.iterrows():
+        stock = str(r.get("Stock", "")).upper()
+        # skip duplicate same day same stock same signal
+        if not past.empty and "Stock" in past.columns:
+            mask = (
+                past["Stock"].astype(str).str.upper() == stock
+            )
+            if "Prediction Date" in past.columns:
+                mask = mask & past["Prediction Date"].astype(str).str.startswith(today)
+            if "Signal" in past.columns:
+                mask = mask & (past["Signal"].astype(str) == str(r.get("Signal")))
+            if mask.any():
+                continue
+        row = r.to_dict()
+        past = pd.concat([past, pd.DataFrame([row])], ignore_index=True)
+        added += 1
+        special.append({
+            "Stock": stock,
+            "Call": "BUY",
+            "Call Source": "INTRADAY_915_CANDLE",
+            "Strategy": STRATEGY_915_CANDLE_NAME,
+            "Entry": r.get("Entry (candle)"),
+            "Target": r.get("Target"),
+            "Stop Loss": r.get("Stop"),
+            "Hold Days": 0,  # same-session
+            "Prediction": 70,
+            "Side": r.get("Signal"),
+        })
+    if added:
+        save_915_past(past)
+        try:
+            save_special_calls(special)
+        except Exception:
+            pass
+        try:
+            live.to_csv(STRATEGY_915_LIVE_FILE, index=False)
+        except Exception:
+            pass
+    return added
+
+
+def evaluate_915_past_outcomes(max_rows: int = 80) -> pd.DataFrame:
+    """
+    Update PENDING 915 candle calls: target / stop / 9:30 exit.
+    Fail reasons logged like Past Predictions.
+    """
+    past = load_915_past()
+    if past is None or past.empty:
+        return past
+    if "Result" not in past.columns:
+        past["Result"] = "PENDING"
+    if "Fail Reason" not in past.columns:
+        past["Fail Reason"] = ""
+    updated = past.copy()
+    n = 0
+    for idx in list(updated.index)[:max_rows]:
+        res = str(updated.at[idx, "Result"] if "Result" in updated.columns else "PENDING").upper()
+        if res and res not in ("PENDING", "OPEN", "NAN", ""):
+            continue
+        stock = str(updated.at[idx, "Stock"]).upper()
+        entry = safe_float(updated.at[idx, "Entry (candle)"] if "Entry (candle)" in updated.columns else updated.at[idx].get("Entry"))
+        target = safe_float(updated.at[idx, "Target"])
+        stop = safe_float(updated.at[idx, "Stop"])
+        side = str(updated.at[idx, "Signal"] if "Signal" in updated.columns else "CE").upper()
+        if not entry:
+            continue
+        try:
+            df = stock_history(clean_symbol(stock), interval="1m", period="1d")
+            if df is None or len(df) < 2:
+                df = stock_history(clean_symbol(stock), interval="5m", period="5d")
+            if df is None or len(df) < 2:
+                continue
+            hi = float(pd.to_numeric(df["High"], errors="coerce").max())
+            lo = float(pd.to_numeric(df["Low"], errors="coerce").min())
+            last = float(pd.to_numeric(df["Close"], errors="coerce").iloc[-1])
+            hit_t = hit_s = False
+            if side == "CE":
+                hit_t = target > 0 and hi >= target
+                hit_s = stop > 0 and lo <= stop
+            else:  # PE — underlying down helps put; use underlying path
+                hit_t = target > 0 and lo <= target
+                hit_s = stop > 0 and hi >= stop
+            # Time exit after 9:30
+            now_t = _ist_now().time() if hasattr(_ist_now(), "time") else datetime.now().time()
+            from datetime import time as _time
+            past_930 = now_t >= _time(9, 30)
+            if hit_t and not hit_s:
+                updated.at[idx, "Result"] = "🎯 TARGET ACHIEVED"
+                updated.at[idx, "Fail Reason"] = ""
+                pnl = ((target / entry) - 1) * 100 if side == "CE" else ((entry / target) - 1) * 100 if target else 0
+                updated.at[idx, "PnL %"] = round(pnl, 2)
+                n += 1
+            elif hit_s:
+                updated.at[idx, "Result"] = "🔴 STOP LOSS HIT"
+                updated.at[idx, "Fail Reason"] = (
+                    f"Stop ₹{stop} hit before target ₹{target}. "
+                    f"Possible: weak follow-through after big open candle / opposite institutional flow."
+                )
+                pnl = ((stop / entry) - 1) * 100 if side == "CE" else ((entry / stop) - 1) * 100 if stop else 0
+                updated.at[idx, "PnL %"] = round(pnl, 2)
+                n += 1
+            elif past_930:
+                updated.at[idx, "Result"] = "⏰ 9:30 EXIT"
+                pnl = ((last / entry) - 1) * 100 if side == "CE" else ((entry / last) - 1) * 100 if last else 0
+                updated.at[idx, "PnL %"] = round(pnl, 2)
+                if pnl < 0:
+                    updated.at[idx, "Fail Reason"] = (
+                        f"Flat by 9:30 without target. Exit LTP path ≈ ₹{last:.2f} vs entry ₹{entry:.2f}. "
+                        f"Momentum faded after open candle."
+                    )
+                else:
+                    updated.at[idx, "Fail Reason"] = ""
+                n += 1
+        except Exception:
+            continue
+    if n:
+        save_915_past(updated)
+    return updated
+
+
+def render_915_candle_top20_page():
+    """Full desk: Top 20 G/L · big 1m candle · CE/PE · past success %."""
+    st.markdown(f"### 🕯️ {STRATEGY_915_CANDLE_NAME}")
+    st.caption(
+        "Universe = **Top 20 gainers + Top 20 losers** · Timeframe **1 minute** · "
+        "**Big green → CALL at high (top)** · **Big red → PUT at low (bottom)** · Flat by **9:30 IST**"
+    )
+    with st.expander("Rules (this variant)", expanded=True):
+        st.markdown(
+            """
+1. Pull **NSE top 20 gainers** and **top 20 losers**.  
+2. On **1-minute** chart, read a **big** candle (large body vs range).  
+3. **Green big candle** → **BUY CALL** using **top price = candle High**.  
+4. **Red big candle** → **BUY PUT** using **bottom price = candle Low**.  
+5. Stop = opposite end of the candle; target ≈ 1× candle range; **exit all by 9:30**.  
+6. Results are stored like **Past Predictions** on this page (success % + fail reasons).
+            """
+        )
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        body_min = st.slider("Min body % of range (big candle)", 40, 85, 55, key="c915_body")
+    with c2:
+        limit = st.slider("Top N gainers / losers", 10, 30, 20, key="c915_n")
+    with c3:
+        if st.button("🔄 Scan top 20 now", type="primary", key="c915_scan"):
+            st.session_state["_force_915_scan"] = True
+
+    force = bool(st.session_state.pop("_force_915_scan", False))
+    live = None
+    if force or st.session_state.get("c915_live") is None:
+        with st.spinner("Scanning top gainers/losers · 1-min candles…"):
+            live = scan_915_top20_candle_signals(limit=limit, min_body_pct=float(body_min))
+            st.session_state["c915_live"] = live
+            if live is not None and not live.empty:
+                n = append_915_calls_to_past(live)
+                st.success(f"**{len(live)}** signals · **{n}** new rows saved to 915 past book")
+    else:
+        live = st.session_state.get("c915_live")
+
+    if live is not None and not getattr(live, "empty", True):
+        st.markdown("#### Live signals (this run)")
+        show = live.copy()
+        cols = [c for c in [
+            "Stock", "List", "Day %", "Signal", "Option", "Entry (candle)", "Stop", "Target",
+            "LTP", "Candle", "Body %", "Reason",
+        ] if c in show.columns]
+        try:
+            render_clickable_stock_table(show[cols], stock_col="Stock", height=380)
+        except Exception:
+            st.dataframe(show[cols], use_container_width=True, hide_index=True)
+    else:
+        st.info("No big-candle signals right now — try during 9:15–9:30 or lower Min body %.")
+
+    # Evaluate + past book
+    st.markdown("#### Past predictions · this strategy only")
+    if st.button("Update results (target / stop / 9:30)", key="c915_eval"):
+        with st.spinner("Checking outcomes…"):
+            evaluate_915_past_outcomes()
+        st.success("Outcomes updated")
+
+    past = load_915_past()
+    if past is None or past.empty:
+        st.caption("No past 915 candle rows yet — run a scan during market open.")
+        return
+
+    # Success stats
+    ru = past["Result"].astype(str).str.upper() if "Result" in past.columns else pd.Series(dtype=str)
+    n_t = int(ru.str.contains("TARGET", na=False).sum())
+    n_s = int(ru.str.contains("STOP", na=False).sum())
+    n_e = int(ru.str.contains("9:30|EXIT|HOLDING", na=False).sum())
+    n_p = int((~ru.str.contains("TARGET|STOP|9:30|EXIT|HOLDING", na=False)).sum()) if len(ru) else 0
+    decided = n_t + n_s
+    wr = round(100.0 * n_t / decided, 1) if decided else 0.0
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("Calls logged", len(past))
+    k2.metric("Targets", n_t)
+    k3.metric("Stops", n_s)
+    k4.metric("9:30 exits", n_e)
+    k5.metric("Success % (T vs SL)", f"{wr}%")
+    if decided:
+        st.progress(min(1.0, n_t / decided))
+        st.caption(f"Hit rate on decided trades (target vs stop only): **{wr}%** · pending **{n_p}**")
+
+    # Fail reasons
+    fails = past[ru.str.contains("STOP|9:30", na=False)].copy() if len(ru) else pd.DataFrame()
+    if not fails.empty and "Fail Reason" in fails.columns:
+        with st.expander("Failure reasons (when strategy did not hit target)", expanded=True):
+            show_f = fails[[c for c in ["Stock", "Signal", "Entry (candle)", "Result", "PnL %", "Fail Reason", "Prediction Date"] if c in fails.columns]]
+            st.dataframe(show_f.tail(40), use_container_width=True, hide_index=True)
+
+    st.markdown("##### Full past book")
+    st.dataframe(past.tail(100), use_container_width=True, hide_index=True, height=360)
+    try:
+        st.download_button(
+            "Download 915 candle past CSV",
+            past.to_csv(index=False).encode("utf-8"),
+            file_name="strategy_915_candle_past.csv",
+            mime="text/csv",
+            key="dl_915_past",
+        )
+    except Exception:
+        pass
+
+
+
 def _place_915_paper(underlying_label, sig, spot, qty, auto=False) -> bool:
     try:
         tag = "STRAT_915_930_AUTO" if auto else "STRAT_915_930"
@@ -9046,12 +9482,19 @@ def show_intraday_fo_desk():
         spot_l = _spot_price(yf_l) or 0
         st.metric(f"{und_l} live spot", f"₹{spot_l:,.2f}" if spot_l else "—")
 
-        # Featured: 9:15–9:30 15-min strategy
+        # Featured: 9:15–9:30 15-min strategy (open-break)
         try:
             render_strategy_915_930_panel(und_l, yf_l, float(spot_l or 0))
             st.divider()
         except Exception as _915e:
             st.caption(f"9:15–9:30 panel: {_915e}")
+
+        # Top 20 G/L · big 1-min candle · CALL top / PUT bottom · past book
+        try:
+            render_915_candle_top20_page()
+            st.divider()
+        except Exception as _915c:
+            st.caption(f"9:15 candle top20: {_915c}")
 
         df_l = None
         try:
