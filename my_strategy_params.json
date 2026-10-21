@@ -1,0 +1,17 @@
+{
+  "lookback": 60,
+  "swing_left": 3,
+  "swing_right": 3,
+  "rsi_min": 25,
+  "rsi_max": 58,
+  "min_rsi_slope": 0.0,
+  "rsi_line_break_tol": 0.5,
+  "early_signal": true,
+  "require_ema200": false,
+  "min_adx": 0,
+  "atr_target_mult": 1.8,
+  "atr_stop_mult": 2.2,
+  "hold_bars": 15,
+  "timeframe": "1d",
+  "notes": "Price lower-lows. RSI higher-lows unbroken. Reject both falling."
+}
