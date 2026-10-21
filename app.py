@@ -7506,23 +7506,42 @@ def detect_915_big_candle_1m(df_1m: pd.DataFrame, min_body_pct: float = 55.0, mi
     return out
 
 
-def scan_915_top20_candle_signals(limit: int = 20, min_body_pct: float = 55.0) -> pd.DataFrame:
-    """Top 20 NSE gainers + losers → 1m big-candle CE/PE signals."""
+def scan_915_top20_candle_signals(
+    limit: int = 20,
+    min_body_pct: float = 55.0,
+    list_mode: str = "Top Gainer",
+) -> pd.DataFrame:
+    """
+    Top 20 NSE gainers OR losers (dropdown) → 1m big-candle CE/PE only.
+    list_mode: "Top Gainer" | "Top Loser"
+    """
     rows = []
     gainers = losers = pd.DataFrame()
-    try:
-        gainers = fetch_nse_top_gainers(limit=limit)
-    except Exception:
-        pass
-    try:
-        losers = fetch_nse_top_losers(limit=limit)
-    except Exception:
-        pass
+    mode = str(list_mode or "Top Gainer").strip().upper()
+    want_gainer = "GAINER" in mode or mode.startswith("TOP G")
+    want_loser = "LOSER" in mode or "LOSER" in mode or mode.startswith("TOP L")
+
+    if want_gainer or (not want_loser and not want_gainer):
+        try:
+            gainers = fetch_nse_top_gainers(limit=limit)
+        except Exception:
+            pass
+    if want_loser:
+        try:
+            losers = fetch_nse_top_losers(limit=limit)
+        except Exception:
+            pass
     # fallback movers
-    if (gainers is None or gainers.empty) and (losers is None or losers.empty):
+    need_fb = (want_gainer and (gainers is None or getattr(gainers, "empty", True))) or (
+        want_loser and (losers is None or getattr(losers, "empty", True))
+    )
+    if need_fb:
         try:
             up, dn = _pulse_gainers_losers(limit)
-            gainers, losers = up, dn
+            if want_gainer and (gainers is None or getattr(gainers, "empty", True)):
+                gainers = up
+            if want_loser and (losers is None or getattr(losers, "empty", True)):
+                losers = dn
         except Exception:
             pass
 
@@ -7537,7 +7556,13 @@ def scan_915_top20_candle_signals(limit: int = 20, min_body_pct: float = 55.0) -
             out.append((str(r[col]).upper().replace(".NS", ""), tag, r))
         return out
 
-    universe = _syms(gainers, "GAINER") + _syms(losers, "LOSER")
+    universe = []
+    if want_gainer and not want_loser:
+        universe = _syms(gainers, "GAINER")
+    elif want_loser and not want_gainer:
+        universe = _syms(losers, "LOSER")
+    else:
+        universe = _syms(gainers, "GAINER") + _syms(losers, "LOSER")
     seen = set()
     for sym, tag, meta in universe:
         if not sym or sym in seen:
@@ -7734,40 +7759,58 @@ def render_915_candle_top20_page():
     """Full desk: Top 20 G/L · big 1m candle · CE/PE · past success %."""
     st.markdown(f"### 🕯️ {STRATEGY_915_CANDLE_NAME}")
     st.caption(
-        "Universe = **Top 20 gainers + Top 20 losers** · Timeframe **1 minute** · "
-        "**Big green → CALL at high (top)** · **Big red → PUT at low (bottom)** · Flat by **9:30 IST**"
+        "Choose **Top Gainer** or **Top Loser** · only that list is scanned · "
+        "**1-minute** · **Big green → CALL (top/high)** · **Big red → PUT (bottom/low)** · Flat by **9:30 IST**"
     )
     with st.expander("Rules (this variant)", expanded=True):
         st.markdown(
             """
-1. Pull **NSE top 20 gainers** and **top 20 losers**.  
-2. On **1-minute** chart, read a **big** candle (large body vs range).  
-3. **Green big candle** → **BUY CALL** using **top price = candle High**.  
-4. **Red big candle** → **BUY PUT** using **bottom price = candle Low**.  
-5. Stop = opposite end of the candle; target ≈ 1× candle range; **exit all by 9:30**.  
-6. Results are stored like **Past Predictions** on this page (success % + fail reasons).
+1. Use the dropdown: **Top Gainer** **or** **Top Loser** (not both at once).  
+2. Only that list (top N) is used for CALL / PUT.  
+3. On **1-minute** chart, read a **big** candle.  
+4. **Green big candle** → **BUY CALL** at **top = High**.  
+5. **Red big candle** → **BUY PUT** at **bottom = Low**.  
+6. Stop = opposite end of candle; target ≈ 1× range; **exit by 9:30**.  
+7. Past book on this page tracks success % and fail reasons.
             """
         )
+    list_mode = st.selectbox(
+        "List (only this universe gets CALL / PUT)",
+        ["Top Gainer", "Top Loser"],
+        key="c915_list_mode",
+        help="Top Gainer → scan gainers only · Top Loser → scan losers only",
+    )
     c1, c2, c3 = st.columns(3)
     with c1:
         body_min = st.slider("Min body % of range (big candle)", 40, 85, 55, key="c915_body")
     with c2:
-        limit = st.slider("Top N gainers / losers", 10, 30, 20, key="c915_n")
+        limit = st.slider("Top N in selected list", 10, 30, 20, key="c915_n")
     with c3:
-        if st.button("🔄 Scan top 20 now", type="primary", key="c915_scan"):
+        if st.button(f"🔄 Scan {list_mode} now", type="primary", key="c915_scan"):
             st.session_state["_force_915_scan"] = True
+            st.session_state.pop("c915_live", None)
 
     force = bool(st.session_state.pop("_force_915_scan", False))
     live = None
-    if force or st.session_state.get("c915_live") is None:
-        with st.spinner("Scanning top gainers/losers · 1-min candles…"):
-            live = scan_915_top20_candle_signals(limit=limit, min_body_pct=float(body_min))
+    cache_key = f"c915_live_{list_mode}_{limit}_{body_min}"
+    if force or st.session_state.get(cache_key) is None:
+        with st.spinner(f"Scanning **{list_mode}** (top {limit}) · 1-min candles…"):
+            live = scan_915_top20_candle_signals(
+                limit=limit,
+                min_body_pct=float(body_min),
+                list_mode=list_mode,
+            )
+            st.session_state[cache_key] = live
             st.session_state["c915_live"] = live
             if live is not None and not live.empty:
                 n = append_915_calls_to_past(live)
-                st.success(f"**{len(live)}** signals · **{n}** new rows saved to 915 past book")
+                st.success(
+                    f"**{list_mode}** · **{len(live)}** CALL/PUT signals · **{n}** new rows in past book"
+                )
+            else:
+                st.warning(f"No big-candle CALL/PUT on **{list_mode}** this run.")
     else:
-        live = st.session_state.get("c915_live")
+        live = st.session_state.get(cache_key) or st.session_state.get("c915_live")
 
     if live is not None and not getattr(live, "empty", True):
         st.markdown("#### Live signals (this run)")
