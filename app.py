@@ -25354,6 +25354,20 @@ def pull_scan_from_github(force: bool = False) -> int:
                         SCAN_META_FILE.write_text(rm.text, encoding="utf-8")
                 except Exception:
                     pass
+            # companion files from same folder
+            for fname, dest in (
+                ("strategy_live_signals.csv", STRATEGY_LIVE_FILE),
+                ("strategy_live_meta.json", STRATEGY_META_FILE),
+                ("index_market_snap.json", APP_DIR / "index_market_snap.json"),
+                ("realtime_sync_version.json", SYNC_VERSION_FILE),
+            ):
+                try:
+                    cu = url.rsplit("/", 1)[0] + "/" + fname
+                    rc = requests.get(cu, timeout=25)
+                    if rc.status_code == 200 and len(rc.content) > 10:
+                        Path(dest).write_bytes(rc.content)
+                except Exception:
+                    pass
             try:
                 bump_sync_version("github_scan_pull")
             except Exception:
@@ -25367,6 +25381,132 @@ def pull_scan_from_github(force: bool = False) -> int:
         except Exception:
             continue
     return 0
+
+
+
+def refresh_index_market_once(force: bool = False) -> dict:
+    """
+    One-shot Nifty / Bank Nifty / Sensex refresh after auto scan.
+    Cached ~3 min unless force.
+    """
+    try:
+        now = time.time()
+        last = float(st.session_state.get("_index_market_snap_ts") or 0)
+        if not force and (now - last) < 180 and st.session_state.get("_index_market_snap"):
+            return st.session_state.get("_index_market_snap") or {}
+    except Exception:
+        pass
+    snap = {}
+    for name, sym in (
+        ("NIFTY", "^NSEI"),
+        ("BANKNIFTY", "^NSEBANK"),
+        ("SENSEX", "^BSESN"),
+    ):
+        try:
+            q = best_live_quote(sym) or {}
+            px = safe_float(q.get("price"))
+            if not px:
+                try:
+                    px = safe_float(live_quote(sym))
+                except Exception:
+                    px = 0
+            if px and px == px and px > 0:
+                snap[name] = {
+                    "price": px,
+                    "pct": safe_float(q.get("pct")),
+                    "change": safe_float(q.get("change")),
+                    "source": q.get("source") or "feed",
+                }
+        except Exception:
+            continue
+    try:
+        st.session_state["_index_market_snap"] = snap
+        st.session_state["_index_market_snap_ts"] = time.time()
+    except Exception:
+        pass
+    return snap
+
+
+def rebuild_strategies_after_scan(results: pd.DataFrame = None, max_per_strategy: int = 35) -> int:
+    """
+    After a new full/market scan lands (GitHub or Reload), rebuild live strategy list
+    and persist strategy_live_signals.csv so Strategy Lab / devices see it automatically.
+    """
+    try:
+        if results is None:
+            results = st.session_state.get("results")
+    except Exception:
+        results = None
+    if results is None or getattr(results, "empty", True):
+        return 0
+
+    # Skip rebuild if strategy file is already newer/same age as scan (unless forced)
+    try:
+        if RESULT_FILE.exists() and STRATEGY_LIVE_FILE.exists():
+            if STRATEGY_LIVE_FILE.stat().st_mtime >= RESULT_FILE.stat().st_mtime - 5:
+                # still load into session
+                try:
+                    load_strategy_snapshot(force=True)
+                except Exception:
+                    pass
+                if not st.session_state.get("_force_strategy_rebuild"):
+                    return 0
+        st.session_state.pop("_force_strategy_rebuild", None)
+    except Exception:
+        pass
+
+    frames = []
+    try:
+        sids = list(SWING_STRATEGIES.keys()) if SWING_STRATEGIES else []
+    except Exception:
+        sids = []
+    # Cap strategies for Cloud speed; still covers main swing set
+    for sid in sids[:12]:
+        try:
+            sdf = live_strategy_signals(results, sid, max_check=int(max_per_strategy))
+            if sdf is not None and not getattr(sdf, "empty", True):
+                frames.append(sdf)
+        except Exception:
+            continue
+    if not frames:
+        # Fallback: high-conviction BUY rows from scan as STRATEGY book
+        try:
+            x = results.copy()
+            if "Call" in x.columns:
+                x = x[x["Call"].astype(str).str.upper() == "BUY"]
+            if "Prediction" in x.columns:
+                x["Prediction"] = pd.to_numeric(x["Prediction"], errors="coerce")
+                x = x[x["Prediction"] >= 65].sort_values("Prediction", ascending=False).head(40)
+            rows = []
+            for _, r in x.iterrows():
+                rows.append({
+                    "Stock": display_symbol(r.get("Stock") or r.get("Symbol")),
+                    "Strategy": "Scan BUY (auto)",
+                    "Side": "BUY",
+                    "Price": safe_float(r.get("Price") or r.get("Current Price")),
+                    "Entry": safe_float(r.get("Price") or r.get("Current Price")),
+                    "Target": safe_float(r.get("Target")),
+                    "Stop Loss": safe_float(r.get("Stop Loss")),
+                    "Hold Days": safe_int(r.get("Hold Days"), DEFAULT_HOLD_DAYS),
+                    "Status": "AUTO_FROM_SCAN",
+                })
+            if rows:
+                frames = [pd.DataFrame(rows)]
+        except Exception:
+            frames = []
+    if not frames:
+        return 0
+    try:
+        big = pd.concat(frames, ignore_index=True)
+        # de-dupe stock+strategy
+        if "Stock" in big.columns and "Strategy" in big.columns:
+            big = big.drop_duplicates(subset=["Stock", "Strategy"], keep="first")
+        save_strategy_snapshot(big)
+        st.session_state["live_strat_df"] = big
+        st.session_state["_strategies_auto_built"] = len(big)
+        return len(big)
+    except Exception:
+        return 0
 
 
 def auto_load_latest_scan(silent: bool = True) -> int:
@@ -25421,13 +25561,67 @@ def auto_load_latest_scan(silent: bool = True) -> int:
         n = int(load_scan_from_disk(force=force) or 0)
     except Exception:
         n = 0
+
+    # When a NEW scan landed: refresh index once + rebuild strategies automatically
+    n_strat = 0
+    if force and n > 0:
+        # Prefer GitHub-written index snap if present, else live fetch once
+        try:
+            idx_p = APP_DIR / "index_market_snap.json"
+            if idx_p.exists():
+                snap = json.loads(idx_p.read_text(encoding="utf-8"))
+                if isinstance(snap, dict) and snap:
+                    st.session_state["_index_market_snap"] = snap
+                    st.session_state["_index_market_snap_ts"] = time.time()
+                else:
+                    refresh_index_market_once(force=True)
+            else:
+                refresh_index_market_once(force=True)
+        except Exception:
+            try:
+                refresh_index_market_once(force=True)
+            except Exception:
+                pass
+        try:
+            # Prefer session results just loaded
+            res = st.session_state.get("results")
+            n_strat = int(rebuild_strategies_after_scan(res, max_per_strategy=35) or 0)
+        except Exception:
+            n_strat = 0
+        try:
+            load_strategy_snapshot(force=True)
+        except Exception:
+            pass
+        try:
+            bump_sync_version("auto_scan_index_strategies")
+        except Exception:
+            pass
+    else:
+        # Still ensure strategy snapshot is in session if file exists
+        try:
+            load_strategy_snapshot(force=False)
+        except Exception:
+            pass
+
     if n and not silent:
         try:
             meta = st.session_state.get("_scan_meta") or {}
             when = meta.get("saved_at_ist") or meta.get("saved_at") or ""
+            extra = f" · strategies **{n_strat}**" if n_strat else ""
             st.session_state["_scan_auto_banner"] = (
                 f"Auto-loaded **{n}** stocks from scan file"
                 + (f" · {when}" if when else "")
+                + extra
+                + " · index refreshed"
+            )
+        except Exception:
+            pass
+    elif n and silent and (force or n_strat):
+        try:
+            st.session_state["_scan_auto_banner"] = (
+                f"Auto-loaded **{n}** scan rows"
+                + (f" · **{n_strat}** strategy signals" if n_strat else "")
+                + " · index market refreshed once"
             )
         except Exception:
             pass
@@ -25542,6 +25736,15 @@ def ensure_scan_on_reload() -> int:
     except Exception:
         n = 0
     if n > 0:
+        try:
+            refresh_index_market_once(force=True)
+        except Exception:
+            pass
+        try:
+            st.session_state["_force_strategy_rebuild"] = True
+            rebuild_strategies_after_scan(st.session_state.get("results"), max_per_strategy=40)
+        except Exception:
+            pass
         return n
 
     # Light scan so Reload is never a dead button when network works

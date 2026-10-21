@@ -1,0 +1,59 @@
+name: Market Scan
+
+# Times are UTC. IST = UTC+5:30
+# 09:20 IST → 03:50 UTC
+# 12:30 IST → 07:00 UTC
+# 15:00 IST → 09:30 UTC
+# Weekdays only (Mon–Fri) — Indian market days
+on:
+  schedule:
+    - cron: "50 3 * * 1-5"   # 09:20 IST
+    - cron: "0 7 * * 1-5"    # 12:30 IST
+    - cron: "30 9 * * 1-5"   # 15:00 IST
+  workflow_dispatch:          # Manual "Run workflow" anytime
+
+permissions:
+  contents: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          pip install --upgrade pip
+          pip install pandas numpy yfinance requests
+
+      - name: Check scan_job.py exists
+        run: |
+          ls -la
+          test -f scan_job.py || (echo "ERROR: scan_job.py missing in repo root" && exit 1)
+
+      - name: Run headless scan
+        run: python scan_job.py --limit 150
+
+      - name: Show result files
+        run: |
+          ls -la latest_results.csv latest_results_meta.json strategy_live_signals.csv index_market_snap.json 2>/dev/null || true
+          head -3 latest_results.csv || true
+
+      - name: Commit and push results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add latest_results.csv latest_results_meta.json realtime_sync_version.json strategy_live_signals.csv strategy_live_meta.json index_market_snap.json || true
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "chore: market scan $(date -u +%Y-%m-%dT%H:%MZ) IST-schedule"
+          git push

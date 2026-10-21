@@ -73,7 +73,7 @@ def atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
 
 
 def analyse_one(symbol: str, df: pd.DataFrame) -> dict | None:
-    if df is None or df.empty or len(df) < 60:
+    if df is None or df.empty or len(df) < 40:
         return None
     d = df.copy()
     for col in ("Open", "High", "Low", "Close"):
@@ -81,7 +81,7 @@ def analyse_one(symbol: str, df: pd.DataFrame) -> dict | None:
             return None
         d[col] = pd.to_numeric(d[col], errors="coerce")
     d = d.dropna(subset=["Close"])
-    if len(d) < 60:
+    if len(d) < 40:
         return None
 
     c = d["Close"]
@@ -189,7 +189,7 @@ def fetch_history(symbol: str) -> pd.DataFrame:
                 # flatten multiindex if any
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
-                if "Close" in df.columns and len(df) >= 60:
+                if "Close" in df.columns and len(df) >= 40:
                     return df
         except Exception:
             time.sleep(0.3)
@@ -219,6 +219,91 @@ def run(limit: int = 120, full: bool = False) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+
+def _write_strategy_and_index(df: pd.DataFrame):
+    """Auto strategy book + index snapshot for Streamlit (no manual Strategy Lab run)."""
+    try:
+        buys = df.copy()
+        if "Call" in buys.columns:
+            buys = buys[buys["Call"].astype(str).str.upper() == "BUY"]
+        if "Prediction" in buys.columns:
+            buys["Prediction"] = pd.to_numeric(buys["Prediction"], errors="coerce")
+            buys = buys.sort_values("Prediction", ascending=False)
+        rows = []
+        for _, r in buys.head(60).iterrows():
+            rows.append({
+                "Stock": str(r.get("Stock") or r.get("Symbol") or "").upper().replace(".NS", ""),
+                "Strategy": "GitHub Scan BUY",
+                "Side": "BUY",
+                "Price": float(r.get("Price") or 0) or None,
+                "Entry": float(r.get("Price") or 0) or None,
+                "Target": float(r.get("Target") or 0) or None,
+                "Stop Loss": float(r.get("Stop Loss") or 0) or None,
+                "Hold Days": int(float(r.get("Hold Days") or 15)),
+                "Status": "AUTO_GITHUB",
+                "Prediction": float(r.get("Prediction") or 0) if r.get("Prediction") == r.get("Prediction") else None,
+            })
+        if rows:
+            sdf = pd.DataFrame(rows)
+            sdf.to_csv(ROOT / "strategy_live_signals.csv", index=False)
+            (ROOT / "strategy_live_meta.json").write_text(
+                json.dumps({"n": len(sdf), "source": "scan_job", "saved_at": datetime.utcnow().isoformat() + "Z"}, indent=2),
+                encoding="utf-8",
+            )
+            print(f"OK strategy_live_signals.csv · {len(sdf)} rows")
+    except Exception as e:
+        print(f"strategy write skip: {e}")
+    # Index levels via yfinance
+    try:
+        import yfinance as yf
+        idx = {}
+        for name, sym in (("NIFTY", "^NSEI"), ("BANKNIFTY", "^NSEBANK"), ("SENSEX", "^BSESN")):
+            try:
+                h = yf.Ticker(sym).history(period="5d")
+                if h is not None and len(h) >= 1:
+                    last = float(h["Close"].iloc[-1])
+                    prev = float(h["Close"].iloc[-2]) if len(h) >= 2 else last
+                    idx[name] = {
+                        "price": round(last, 2),
+                        "pct": round((last / prev - 1) * 100, 2) if prev else 0,
+                    }
+            except Exception:
+                continue
+        (ROOT / "index_market_snap.json").write_text(json.dumps(idx, indent=2), encoding="utf-8")
+        print(f"OK index_market_snap.json · {list(idx.keys())}")
+    except Exception as e:
+        print(f"index snap skip: {e}")
+
+def _write_sync_and_meta(n_rows: int):
+    """So Streamlit app auto-picks new scan without manual Reload."""
+    from datetime import datetime, timezone, timedelta
+    ist = timezone(timedelta(hours=5, minutes=30))
+    now = datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S IST")
+    meta = {
+        "rows": n_rows,
+        "saved_at_ist": now,
+        "source": "scan_job.py / GitHub Actions",
+        "note": "App auto-loads this file; set Streamlit secret GITHUB_RESULTS_RAW to raw.githubusercontent.com/.../latest_results.csv for live pull without redeploy",
+    }
+    try:
+        OUT_META.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+    try:
+        sync_p = ROOT / "realtime_sync_version.json"
+        ver = 1
+        if sync_p.exists():
+            try:
+                ver = int(json.loads(sync_p.read_text()).get("version") or 0) + 1
+            except Exception:
+                ver = 1
+        sync_p.write_text(
+            json.dumps({"version": ver, "reason": "github_scan", "at_ist": now}, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=120)
@@ -242,6 +327,11 @@ def main():
     }
     OUT_META.write_text(json.dumps(meta, indent=2), encoding="utf-8")
     print(f"OK wrote {len(df)} rows → {OUT_CSV}")
+    _write_strategy_and_index(df)
+    try:
+        _write_sync_and_meta(int(len(df)))
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
