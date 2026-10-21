@@ -6100,9 +6100,19 @@ _FALLBACK_NIFTY50 = [
     "TATACONSUM", "BAJAJ-AUTO", "HINDUNILVR", "SBILIFE", "HDFCLIFE", "BEL", "TRENT",
 ]
 
+# Full Nifty Bank set (12) — used when NSE CSV blocked
 _FALLBACK_BANKNIFTY = [
-    "HDFCBANK", "ICICIBANK", "SBIN", "KOTAKBANK", "AXISBANK", "BAJFINANCE",
-    "BAJAJFINSV", "INDUSINDBK", "FEDERALBNK", "IDFCFIRSTB", "PNB", "BANKBARODA",
+    "HDFCBANK", "ICICIBANK", "SBIN", "KOTAKBANK", "AXISBANK",
+    "INDUSINDBK", "BAJFINANCE", "BAJAJFINSV", "FEDERALBNK", "IDFCFIRSTB",
+    "PNB", "BANKBARODA", "AUBANK", "CANBK",
+]
+# Sensex 30 (BSE) — for home list / Index Mover
+_FALLBACK_SENSEX = [
+    "RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY", "ITC", "SBIN", "BHARTIARTL",
+    "LT", "AXISBANK", "KOTAKBANK", "BAJFINANCE", "ASIANPAINT", "HCLTECH", "MARUTI",
+    "SUNPHARMA", "TITAN", "NTPC", "TATAMOTORS", "POWERGRID", "ULTRACEMCO", "M&M",
+    "NESTLEIND", "TECHM", "INDUSINDBK", "TATASTEEL", "BAJAJFINSV", "WIPRO",
+    "HINDUNILVR", "JSWSTEEL",
 ]
 
 _FALLBACK_NIFTY200_EXTRA = [
@@ -6169,10 +6179,17 @@ def load_index_constituents() -> dict:
         # Nifty 200 ≈ Nifty 50 + liquid midcaps fallback
         nifty200 = sorted(set(list(nifty50) + list(_FALLBACK_NIFTY200_EXTRA) + list(bank)))
 
+    sensex = list(cache.get("sensex") or []) or list(_FALLBACK_SENSEX)
+    # Prefer overlap of Nifty50 heavyweights already fetched + full sensex fallback
+    if nifty50:
+        sensex = sorted(set(list(_FALLBACK_SENSEX) + [s for s in nifty50 if s in set(_FALLBACK_SENSEX) or True]))
+        # Keep true Sensex membership from fallback (30 names), not entire nifty50
+        sensex = [s for s in _FALLBACK_SENSEX]
     out = {
         "nifty50": sorted(set(nifty50)),
         "nifty200": sorted(set(nifty200)),
         "banknifty": sorted(set(bank)),
+        "sensex": sorted(set(sensex)),
     }
     try:
         INDEX_LIST_CACHE.write_text(json.dumps(out, indent=2), encoding="utf-8")
@@ -6240,7 +6257,7 @@ def render_index_lists_home():
         st.metric("SENSEX", f"₹{s_px:,.2f}" if s_px else "—")
 
     lists = load_index_constituents()
-    t50, t200, tbn = st.tabs(["Nifty 50", "Nifty 200", "Bank Nifty stocks"])
+    t50, t200, tbn, tsx = st.tabs(["Nifty 50", "Nifty 200", "Bank Nifty (full)", "Sensex 30"])
 
     def _list_tab(label, symbols, key_prefix):
         st.caption(f"**{len(symbols)}** names · type in the box to search")
@@ -6282,7 +6299,13 @@ def render_index_lists_home():
     with t200:
         _list_tab("Nifty 200", lists.get("nifty200") or sorted(set(_FALLBACK_NIFTY50 + _FALLBACK_NIFTY200_EXTRA)), "n200")
     with tbn:
-        _list_tab("Bank Nifty", lists.get("banknifty") or _FALLBACK_BANKNIFTY, "bnk")
+        bn = lists.get("banknifty") or _FALLBACK_BANKNIFTY
+        st.caption(f"Bank Nifty universe: **{len(bn)}** stocks")
+        _list_tab("Bank Nifty", bn, "bnk")
+    with tsx:
+        sx = lists.get("sensex") or _FALLBACK_SENSEX
+        st.caption(f"Sensex 30: **{len(sx)}** stocks")
+        _list_tab("Sensex", sx, "sx")
 
 
 def show_watchlist_page():
@@ -7800,8 +7823,7 @@ def _pulse_index_movers(index_key: str = "NIFTY50") -> dict:
         syms = [str(s).upper().replace(".NS", "") for s in (lists.get("banknifty") or _FALLBACK_BANKNIFTY)]
         idx_yf, idx_name = "^NSEBANK", "BANK NIFTY"
     elif index_key == "SENSEX":
-        # approximate with Nifty50 heavyweights if no sensex list
-        syms = [str(s).upper().replace(".NS", "") for s in (lists.get("nifty50") or _FALLBACK_NIFTY50)][:30]
+        syms = [str(s).upper().replace(".NS", "") for s in (lists.get("sensex") or _FALLBACK_SENSEX)]
         idx_yf, idx_name = "^BSESN", "SENSEX"
     else:
         syms = [str(s).upper().replace(".NS", "") for s in (lists.get("nifty50") or _FALLBACK_NIFTY50)]
@@ -10607,15 +10629,15 @@ SWING_STRATEGIES = {
 def load_my_strategy_params() -> dict:
     default = {
         "lookback": 130,              # ~6 months trading days on 1D
-        "min_price_swing_pct": 2.0,   # meaningful lower-low depth
+        "min_price_swing_pct": 2.5,   # meaningful lower-low depth
         "rsi_period": 14,
         "require_confirmation": True,
         "max_days_after_setup": 2,    # next day or next-to-next only
-        "pivot_order": 4,            # stricter swings (less noise)
-        "line_break_tol_pct": 0.25,  # tighter unbroken-line rule
-        "min_rsi_lift": 3.0,         # RSI must rise clearly
-        "min_bars_between": 12,      # not adjacent noise lows
-        "max_rally_after_pct": 4.0,  # if already ran hard, not a fresh call
+        "pivot_order": 5,            # stricter swings (less noise)
+        "line_break_tol_pct": 0.15,  # tighter unbroken-line rule
+        "min_rsi_lift": 4.0,         # RSI must rise clearly
+        "min_bars_between": 15,      # not adjacent noise lows
+        "max_rally_after_pct": 3.5,  # if already ran hard, not a fresh call
     }
     try:
         if MY_STRATEGY_PARAMS_FILE.exists():
@@ -10786,15 +10808,13 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
             # Price down, RSI up — core rule
             if not (p2 < p1 and r2 > r1):
                 continue
-            # Pattern frame: on 2nd low day, price must be lower than previous day
+            # Pattern frame: on 2nd low day, price MUST fall vs previous day (user rule)
             if i2 >= 1:
                 prev_close = float(close.iloc[i2 - 1])
                 day_close = float(close.iloc[i2])
-                prev_low = float(lows.iloc[i2 - 1])
                 if np.isnan(prev_close) or np.isnan(day_close):
                     continue
-                # must fall vs previous day (close lower OR low lower than prior low)
-                if not (day_close < prev_close or p2 < prev_low):
+                if not (day_close < prev_close):
                     continue
             depth = (p1 - p2) / max(abs(p1), 1e-9) * 100
             if depth < min_swing:
@@ -10805,10 +10825,17 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
                 continue
             if not _line_unbroken_rsi(i1, i2, r1, r2):
                 continue
-            # 2nd low should be near the lowest low of a local window (context)
+            # 2nd low must be the structure low (local) AND near recent major low (context)
             win = lows.iloc[max(0, i2 - 8) : min(n, i2 + 3)]
-            if float(win.min()) < p2 * 0.992:
-                continue  # a clearly lower low nearby → this pivot is not the structure low
+            if float(win.min()) < p2 * 0.995:
+                continue  # lower low nearby → out of context
+            # Reject if 2nd low is far above the 60-bar low (not a real accumulation low)
+            major = lows.iloc[max(0, i2 - 60) : i2 + 1]
+            if len(major) >= 20 and p2 > float(major.min()) * 1.06:
+                continue  # not near major low → false / out-of-context (e.g. mid-range noise)
+            # RSI at lows should not be overbought (classic bullish div forms from weak RSI)
+            if r1 > 55 or r2 > 58:
+                continue
             days_since = int(n - 1 - i2)
             candidates.append({
                 "i1": i1, "i2": i2, "p1": p1, "p2": p2, "r1": r1, "r2": r2,
@@ -10944,10 +10971,10 @@ def _row_matches_strategy(df: pd.DataFrame, sid: str) -> bool:
             vol_r = float(v.iloc[-1] / max(base, 1))
 
         if sid == "my_strategy":
-            # Show ACTIVE_FRESH and TOO_LATE (late still listed with remark elsewhere)
             info = detect_my_strategy_divergence(d)
             stt = str(info.get("status") or "")
-            return stt in ("ACTIVE_FRESH", "TOO_LATE")
+            # Match only true fresh pattern for "under strategy" maps
+            return stt == "ACTIVE_FRESH"
         if sid == "trend_pullback":
             return price > ema20 and ema20 >= ema50 * 0.995 and 42 <= rsi <= 68
         if sid == "breakout_vol":
@@ -11040,18 +11067,16 @@ def live_strategy_signals(base: pd.DataFrame, sid: str, max_check: int = 35) -> 
             if sid == "my_strategy":
                 info = detect_my_strategy_divergence(df)
                 status = str(info.get("status") or "WAIT")
-                if status not in ("ACTIVE_FRESH", "TOO_LATE"):
-                    continue  # WAIT / RSI_FAILED / invalid pattern — do not list
+                # BUY list: only ACTIVE_FRESH (day 0–2 after 2nd low). LATE shown only as WATCH.
                 if status == "ACTIVE_FRESH":
                     remark = "Fresh — pattern just formed (next / next-to-next day window)"
                 elif status == "TOO_LATE":
                     days = info.get("days_since_setup")
                     remark = (
-                        f"LATE — structure may be valid but 2nd low was {days} day(s) ago "
-                        f"(prefer act on day 1–2 only). Not a priority buy."
+                        f"LATE — 2nd low was {days} day(s) ago — not a priority buy"
                     )
                 else:
-                    remark = str(info.get("reason") or "")
+                    continue  # WAIT / RSI_FAILED / out-of-context — do not list
             elif not _row_matches_strategy(df, sid):
                 continue
             price = float(df["Close"].astype(float).iloc[-1])
@@ -11781,8 +11806,38 @@ My Strategy is **price vs RSI divergence** — it also applies to **index future
                     help="Only when you want a fresh scan",
                 )
 
+            # Prefer GitHub / disk strategy map — never re-scan on "Show saved map"
+            # Also try strategy_live_signals.csv from GitHub Actions
+            if not has_cache:
+                try:
+                    if STRATEGY_LIVE_FILE.exists():
+                        live = pd.read_csv(STRATEGY_LIVE_FILE)
+                        if live is not None and not live.empty:
+                            st.session_state["stocks_under_all_df"] = live
+                            if "Strategy" in live.columns:
+                                st.session_state["stocks_under_all_summary"] = (
+                                    live.groupby(live["Strategy"].fillna("Scan").astype(str))
+                                    .size().reset_index(name="Matches")
+                                )
+                            else:
+                                st.session_state["stocks_under_all_summary"] = pd.DataFrame()
+                            st.session_state["stocks_under_all_meta"] = {
+                                "rows": len(live),
+                                "source": "strategy_live_signals.csv (GitHub/auto)",
+                                "saved_at_ist": india_now().strftime("%Y-%m-%d %H:%M:%S IST"),
+                            }
+                            cached_big = live
+                            has_cache = True
+                            st.success(f"Loaded **{len(live)}** strategy rows from GitHub/disk — no scan needed")
+                except Exception:
+                    pass
+
             # Show-only: if cache exists and user clicked primary, just stay on cache
-            do_scan = force_rescan or (run_all and not has_cache)
+            do_scan = force_rescan  # ONLY explicit Refresh re-runs scan
+            if run_all and not has_cache:
+                do_scan = True  # first time only
+            if run_all and has_cache and not force_rescan:
+                st.info("Showing **saved** map (GitHub / last run). Use **Refresh scan** only if you need a new live check.")
 
             if do_scan:
                 all_rows = []
