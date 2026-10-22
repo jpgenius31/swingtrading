@@ -304,11 +304,214 @@ def _write_sync_and_meta(n_rows: int):
     except Exception:
         pass
 
+
+
+def _big_candle_signal(o, h, l, c, min_body_pct=55.0, min_range_pct=0.15):
+    """Big green → CALL at high; big red → PUT at low."""
+    try:
+        o, h, l, c = float(o), float(h), float(l), float(c)
+    except Exception:
+        return None
+    rng = max(h - l, abs(o) * 1e-6)
+    body = abs(c - o)
+    body_pct = 100.0 * body / rng
+    range_pct = 100.0 * (h - l) / max(abs(o), 1e-9)
+    if body_pct < min_body_pct or range_pct < min_range_pct:
+        return None
+    if c > o:
+        return {
+            "Signal": "CE",
+            "Option": "BUY CALL",
+            "Entry (candle)": round(h, 2),
+            "Stop": round(l, 2),
+            "Target": round(h + (h - l), 2),
+            "Candle": "GREEN",
+            "Body %": round(body_pct, 1),
+            "Reason": f"Big GREEN 1m · CALL at top ₹{h:.2f}",
+        }
+    if c < o:
+        return {
+            "Signal": "PE",
+            "Option": "BUY PUT",
+            "Entry (candle)": round(l, 2),
+            "Stop": round(h, 2),
+            "Target": round(l - (h - l), 2),
+            "Candle": "RED",
+            "Body %": round(body_pct, 1),
+            "Reason": f"Big RED 1m · PUT at bottom ₹{l:.2f}",
+        }
+    return None
+
+
+def run_915_open_strategy(limit: int = 20, list_mode: str = "both") -> pd.DataFrame:
+    """
+    9:15 open job: top gainers/losers + 1m big candle CE/PE.
+    Runs on GitHub at ~09:15 IST so the app loads signals without manual scan.
+    """
+    import yfinance as yf
+    from datetime import datetime, timezone, timedelta
+
+    ist = timezone(timedelta(hours=5, minutes=30))
+    now = datetime.now(ist)
+    print(f"9:15 strategy run · {now.strftime('%Y-%m-%d %H:%M:%S IST')} · mode={list_mode}")
+
+    # Build liquid universe (Nifty50-like) as proxy if we cannot hit NSE gainers API
+    syms_g, syms_l = [], []
+    mode = str(list_mode).lower()
+    try:
+        # Yahoo day change on Nifty50+bank as free gainer/loser proxy
+        base = NIFTY50 + EXTRA[:30]
+        rows = []
+        for s in base:
+            try:
+                h = yf.Ticker(yf_sym(s)).history(period="5d", interval="1d")
+                if h is None or len(h) < 2:
+                    continue
+                last = float(h["Close"].iloc[-1])
+                prev = float(h["Close"].iloc[-2])
+                pct = (last / prev - 1) * 100 if prev else 0
+                rows.append({"Stock": s, "LTP": last, "Move %": pct})
+            except Exception:
+                continue
+            time.sleep(0.05)
+        if rows:
+            dfm = pd.DataFrame(rows)
+            syms_g = dfm.sort_values("Move %", ascending=False).head(limit)["Stock"].tolist()
+            syms_l = dfm.sort_values("Move %", ascending=True).head(limit)["Stock"].tolist()
+    except Exception as e:
+        print(f"mover list: {e}")
+        syms_g = NIFTY50[:limit]
+        syms_l = list(reversed(NIFTY50))[:limit]
+
+    universe = []
+    if mode in ("gainer", "top gainer", "gainers"):
+        universe = [(s, "GAINER") for s in syms_g]
+    elif mode in ("loser", "top loser", "losers"):
+        universe = [(s, "LOSER") for s in syms_l]
+    else:
+        universe = [(s, "GAINER") for s in syms_g] + [(s, "LOSER") for s in syms_l]
+
+    out_rows = []
+    seen = set()
+    for sym, tag in universe:
+        if sym in seen:
+            continue
+        seen.add(sym)
+        try:
+            # 1-minute bars — critical for 9:15 candle
+            h = yf.Ticker(yf_sym(sym)).history(period="1d", interval="1m")
+            if h is None or len(h) < 1:
+                h = yf.Ticker(yf_sym(sym)).history(period="5d", interval="1m")
+            if h is None or len(h) < 1:
+                continue
+            # Prefer first bars of session / recent completed bar
+            row = h.iloc[0] if len(h) == 1 else h.iloc[min(2, len(h) - 1)]
+            if len(h) >= 3:
+                row = h.iloc[-2]  # last completed
+            sig = _big_candle_signal(row["Open"], row["High"], row["Low"], row["Close"])
+            if not sig:
+                continue
+            out_rows.append({
+                "Stock": sym,
+                "List": tag,
+                "Day %": None,
+                **sig,
+                "LTP": round(float(h["Close"].iloc[-1]), 2),
+                "Strategy": "9:15–9:30 · Big 1-min candle (Top 20 G/L)",
+                "Call Source": "INTRADAY_915_CANDLE",
+                "Prediction Date": now.strftime("%Y-%m-%d %H:%M"),
+                "Result": "PENDING",
+                "Fail Reason": "",
+            })
+        except Exception as e:
+            print(f"  skip {sym}: {e}")
+            continue
+        time.sleep(0.08)
+
+    df = pd.DataFrame(out_rows)
+    live_path = ROOT / "strategy_915_candle_live.csv"
+    past_path = ROOT / "strategy_915_candle_past.csv"
+    meta_path = ROOT / "strategy_915_candle_meta.json"
+    if not df.empty:
+        df.to_csv(live_path, index=False)
+        # append to past (dedupe same day stock+signal)
+        try:
+            if past_path.exists():
+                past = pd.read_csv(past_path)
+            else:
+                past = pd.DataFrame()
+            today = now.strftime("%Y-%m-%d")
+            for _, r in df.iterrows():
+                if not past.empty and "Stock" in past.columns and "Prediction Date" in past.columns:
+                    m = (
+                        (past["Stock"].astype(str).str.upper() == str(r["Stock"]).upper())
+                        & past["Prediction Date"].astype(str).str.startswith(today)
+                    )
+                    if "Signal" in past.columns:
+                        m = m & (past["Signal"].astype(str) == str(r.get("Signal")))
+                    if m.any():
+                        continue
+                past = pd.concat([past, pd.DataFrame([r.to_dict()])], ignore_index=True)
+            past.to_csv(past_path, index=False)
+        except Exception as e:
+            print(f"past append: {e}")
+        meta_path.write_text(
+            json.dumps({
+                "rows": len(df),
+                "saved_at_ist": now.strftime("%Y-%m-%d %H:%M:%S IST"),
+                "source": "scan_job.py --915",
+                "list_mode": list_mode,
+            }, indent=2),
+            encoding="utf-8",
+        )
+        print(f"OK 9:15 candle · {len(df)} signals → {live_path.name}")
+    else:
+        print("WARN: no 9:15 big-candle signals this run")
+        live_path.write_text("Stock,List,Signal,Option,Result\n", encoding="utf-8")
+    try:
+        _write_sync_and_meta(len(df))
+    except Exception:
+        pass
+    # index snap still useful at open
+    try:
+        _write_strategy_and_index(pd.DataFrame())  # may no-op on empty buys
+    except Exception:
+        pass
+    try:
+        import yfinance as yf
+        idx = {}
+        for name, sym in (("NIFTY", "^NSEI"), ("BANKNIFTY", "^NSEBANK"), ("SENSEX", "^BSESN")):
+            try:
+                hh = yf.Ticker(sym).history(period="5d")
+                if hh is not None and len(hh) >= 1:
+                    last = float(hh["Close"].iloc[-1])
+                    prev = float(hh["Close"].iloc[-2]) if len(hh) >= 2 else last
+                    idx[name] = {"price": round(last, 2), "pct": round((last / prev - 1) * 100, 2) if prev else 0}
+            except Exception:
+                continue
+        (ROOT / "index_market_snap.json").write_text(json.dumps(idx, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+    return df
+
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=120)
     ap.add_argument("--full", action="store_true")
+    ap.add_argument("--915", dest="mode_915", action="store_true", help="9:15 open big-candle CE/PE on top movers")
+    ap.add_argument("--915-list", dest="list_915", default="both", choices=["both", "gainer", "loser"],
+                    help="Top gainer, top loser, or both")
     args = ap.parse_args()
+    if args.mode_915:
+        print("Starting 9:15–9:30 open strategy job…")
+        df915 = run_915_open_strategy(limit=min(args.limit, 25), list_mode=args.list_915)
+        if df915 is None or df915.empty:
+            print("9:15 job finished with 0 signals (market may not be open yet on data feed)")
+            # do not fail CI — still useful for schedule
+            raise SystemExit(0)
+        raise SystemExit(0)
     print("Starting headless scan…")
     df = run(limit=args.limit, full=args.full)
     if df is None or df.empty:

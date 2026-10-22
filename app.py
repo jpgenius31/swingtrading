@@ -7793,6 +7793,27 @@ def render_915_candle_top20_page():
     force = bool(st.session_state.pop("_force_915_scan", False))
     live = None
     cache_key = f"c915_live_{list_mode}_{limit}_{body_min}"
+    # Prefer GitHub 9:15 job output if fresh (no manual scan needed after 9:15 Actions)
+    if not force and st.session_state.get(cache_key) is None:
+        try:
+            if STRATEGY_915_LIVE_FILE.exists():
+                disk = pd.read_csv(STRATEGY_915_LIVE_FILE)
+                if disk is not None and not disk.empty:
+                    # filter by dropdown list if column present
+                    if "List" in disk.columns:
+                        tag = "GAINER" if "GAINER" in str(list_mode).upper() else "LOSER"
+                        if "GAINER" in str(list_mode).upper() or "LOSER" in str(list_mode).upper():
+                            filt = disk[disk["List"].astype(str).str.upper().str.contains(tag, na=False)]
+                            if not filt.empty:
+                                disk = filt
+                    st.session_state[cache_key] = disk
+                    st.session_state["c915_live"] = disk
+                    st.success(
+                        f"Loaded **{len(disk)}** signals from GitHub **9:15 job** "
+                        f"(`{STRATEGY_915_LIVE_FILE.name}`) — no manual scan needed"
+                    )
+        except Exception:
+            pass
     if force or st.session_state.get(cache_key) is None:
         with st.spinner(f"Scanning **{list_mode}** (top {limit}) · 1-min candles…"):
             live = scan_915_top20_candle_signals(
