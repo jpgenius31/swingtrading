@@ -2068,7 +2068,7 @@ def render_unique_strategy_stock_cards(df: pd.DataFrame, max_cards: int = 12, ke
                         show_rsi=True,
                     )
                     if fig is not None:
-                        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_DRAW_CONFIG)
                     else:
                         st.caption("Chart could not be built — try Analyse page.")
             except Exception as e:
@@ -3718,7 +3718,7 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
           <div style="color:#94a3b8;font-size:0.8rem;font-weight:600;letter-spacing:0.05em;">PATTERN SCREENER</div>
           <div style="font-size:1.55rem;font-weight:800;color:#f8fafc;">Chart Pattern Screener for NSE Stocks</div>
           <div style="color:#94a3b8;margin-top:6px;line-height:1.4;">
-            Pick one pattern — check every stock — newest completed shapes first.
+            Pick a pattern — results appear <b>instantly</b> from the pre-scanned library (no live wait).
             Each hit is drawn with points marked, fit score, and <b>which timeframe</b> it formed on.
           </div>
         </div>
@@ -3801,15 +3801,36 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
         st.markdown(f"**{pattern}** — {meta['rules']}")
         st.caption("Rules summarized from standard technical analysis (measured moves, Fib ratios for ABCD).")
 
-    b1, b2 = st.columns([1, 1])
-    run = b1.button("Screen the market", type="primary", use_container_width=True, key="cps_run")
-    if b2.button("Start over / clear", use_container_width=True, key="cps_clear"):
-        st.session_state.pop("cps_hits", None)
-        st.rerun()
+    # --- Instant mode: no live market screening ---
+    # Always keep full auto library in session; filter by selected PATTERN immediately.
+    if "cps_library" not in st.session_state or not st.session_state.get("cps_library"):
+        disk_hits = load_pattern_scan_hits()
+        if disk_hits:
+            st.session_state["cps_library"] = disk_hits
+            st.session_state["cps_from_auto"] = True
 
-    if run:
+    b1, b2, b3 = st.columns([1, 1, 1])
+    with b1:
+        if st.button("⚡ Load / refresh auto patterns", type="primary", use_container_width=True, key="cps_show_auto"):
+            disk_hits = load_pattern_scan_hits()
+            if disk_hits:
+                st.session_state["cps_library"] = disk_hits
+                st.session_state["cps_from_auto"] = True
+                st.success(f"Loaded **{len(disk_hits)}** pre-scanned hits — pick a pattern above.")
+                st.rerun()
+            else:
+                st.warning("No auto file yet. Use optional deep scan below once, or wait for 9:15 GitHub job.")
+    with b2:
+        if st.button("Start over / clear", use_container_width=True, key="cps_clear"):
+            for k in ("cps_hits", "cps_library", "cps_from_auto"):
+                st.session_state.pop(k, None)
+            st.rerun()
+    with b3:
+        deep = st.button("Optional deep rescan (slow)", use_container_width=True, key="cps_deep",
+                         help="Only if auto library is empty — scans market live (can take minutes).")
+
+    if deep:
         tf_label, tf_code = timeframe[0], timeframe[1]
-        # Map label for single TF
         _label_map = {
             "1d": "Daily", "1wk": "Weekly", "1h": "Hourly",
             "30m": "30 min", "15m": "15 min", "5m": "5 min",
@@ -3823,81 +3844,75 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
             ]
         else:
             tf_jobs = [(_label_map.get(tf_code, tf_label), tf_code, int(hist_bars))]
-
         all_hits = []
-        with st.spinner(f"Screening {min(max_chk, len(universe))} stocks · {tf_label}…"):
-            for lbl, iv, bars in tf_jobs:
-                part = scan_chart_patterns(
-                    universe,
-                    pattern,
-                    max_stocks=max_chk,
-                    history_bars=bars,
-                    swing_order=int(swing),
-                    min_fit=float(min_fit),
-                    completed_within=int(within[1]),
-                    interval=iv,
-                    timeframe_label=lbl,
-                )
-                all_hits.extend(part)
-            # Prefer higher fit; keep multi-TF tags
+        # Scan several popular patterns so library covers exploration in <5 min next time
+        pat_list = [pattern]
+        for extra in ("Double Top", "Double Bottom", "Head and Shoulders", "Inverse Head and Shoulders",
+                      "Ascending Triangle", "Descending Triangle", "Bull Flag", "Bear Flag"):
+            if extra in CHART_STRUCTURE_PATTERNS and extra not in pat_list:
+                pat_list.append(extra)
+        with st.spinner(f"Deep scan {min(max_chk, len(universe))} stocks × {len(pat_list)} patterns…"):
+            for pn in pat_list:
+                for lbl, iv, bars in tf_jobs:
+                    part = scan_chart_patterns(
+                        universe, pn, max_stocks=max_chk, history_bars=bars,
+                        swing_order=int(swing), min_fit=float(min_fit),
+                        completed_within=int(within[1]), interval=iv, timeframe_label=lbl,
+                    )
+                    all_hits.extend(part)
             all_hits.sort(key=lambda x: (x.get("sessions_ago", 99), -x.get("fit", 0)))
-            st.session_state["cps_hits"] = all_hits
-            st.session_state["cps_hits_pattern"] = pattern
-            st.session_state["cps_hits_tf"] = tf_label
+            st.session_state["cps_library"] = all_hits
             try:
-                save_pattern_scan_hits(all_hits, pattern=pattern, tf=tf_label)
+                save_pattern_scan_hits(all_hits, pattern="MULTI", tf=tf_label)
             except Exception:
                 pass
+        st.success(f"Library updated · **{len(all_hits)}** hits across patterns — switch PATTERN for instant view.")
+        st.rerun()
 
-    # Instant load from 9:15 / last auto scan (no wait)
-    if not st.session_state.get("cps_hits"):
-        disk_hits = load_pattern_scan_hits()
-        if disk_hits:
-            meta = {}
-            try:
-                if PATTERN_SCAN_META.exists():
-                    meta = json.loads(PATTERN_SCAN_META.read_text(encoding="utf-8"))
-            except Exception:
-                meta = {}
-            st.session_state["cps_hits"] = disk_hits
-            st.session_state["cps_hits_pattern"] = meta.get("pattern") or (disk_hits[0].get("pattern") if disk_hits else "")
-            st.session_state["cps_hits_tf"] = meta.get("timeframe") or "Daily"
-            st.session_state["cps_from_auto"] = True
+    library = st.session_state.get("cps_library") or []
+    # Instant filter by selected pattern (and optional TF)
+    tf_label_sel = timeframe[0] if isinstance(timeframe, (list, tuple)) else str(timeframe)
+    hits = []
+    for h in library:
+        hp = str(h.get("pattern") or "")
+        if hp != pattern and pattern not in hp:
+            continue
+        # TF filter if not ALL
+        if isinstance(timeframe, (list, tuple)) and timeframe[1] != "ALL":
+            hiv = str(h.get("interval") or "1d")
+            if timeframe[1] not in (hiv, str(h.get("timeframe") or "")):
+                # allow label match
+                if timeframe[0].split()[0].lower() not in str(h.get("timeframe") or "").lower():
+                    if timeframe[1] != hiv:
+                        continue
+        try:
+            if float(h.get("fit") or 0) < float(min_fit):
+                continue
+        except Exception:
+            pass
+        hits.append(h)
 
-    hits = st.session_state.get("cps_hits") or []
-
-    c_auto1, c_auto2 = st.columns([2, 1])
-    with c_auto1:
-        if st.session_state.get("cps_from_auto") and hits:
-            try:
-                meta = json.loads(PATTERN_SCAN_META.read_text(encoding="utf-8")) if PATTERN_SCAN_META.exists() else {}
-            except Exception:
-                meta = {}
-            st.success(
-                f"Loaded **{len(hits)}** patterns from last auto/9:15 scan "
-                f"({meta.get('saved_at_ist', 'saved')}) — charts hydrate on expand."
-            )
-    with c_auto2:
-        if st.button("⚡ Show auto patterns now", type="primary", key="cps_show_auto"):
-            disk_hits = load_pattern_scan_hits()
-            if disk_hits:
-                st.session_state["cps_hits"] = disk_hits
-                st.session_state["cps_from_auto"] = True
-                try:
-                    meta = json.loads(PATTERN_SCAN_META.read_text(encoding="utf-8")) if PATTERN_SCAN_META.exists() else {}
-                    st.session_state["cps_hits_pattern"] = meta.get("pattern") or ""
-                    st.session_state["cps_hits_tf"] = meta.get("timeframe") or "Daily"
-                except Exception:
-                    pass
-                st.rerun()
-            else:
-                st.warning("No auto pattern file yet — wait for 9:15 GitHub job or Screen once.")
-
-    if not hits:
-        st.info("Pick a pattern, then **Screen the market** — or wait for **9:15 auto pattern scan** then press **Show auto patterns now**.")
+    if library:
+        st.caption(
+            f"Library **{len(library)}** pre-scanned hits · showing **{len(hits)}** for **{pattern}** "
+            f"(instant — no live screening). Change PATTERN to explore others."
+        )
+    else:
+        st.info(
+            "No pre-scanned library yet. Press **Load / refresh auto patterns** after the 9:15 GitHub job, "
+            "or run **Optional deep rescan** once to build a multi-pattern library."
+        )
         return
 
-    # Hydrate charts for visible hits (full TV chart needs OHLC)
+    if not hits:
+        st.warning(f"No **{pattern}** hits in the library yet — try another pattern or deep rescan once.")
+        # still list available patterns in library
+        avail = sorted({str(h.get("pattern")) for h in library if h.get("pattern")})
+        if avail:
+            st.caption("Patterns available in library: " + ", ".join(avail[:20]))
+        return
+
+    # Hydrate only visible cards (fast)
     hydrated = []
     for h in hits[:12]:
         if h.get("df_full") is None and h.get("df_tail") is None:
@@ -3906,7 +3921,7 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
             hydrated.append(h)
     hits = hydrated
 
-    st.markdown(f"##### Most recently completed — **{len(hits)}** hits · {st.session_state.get('cps_hits_pattern', pattern)}")
+    st.markdown(f"##### **{pattern}** — **{len(hits)}** hits (instant)")
     # Show top 12 cards in 2–4 columns
     n_show = min(12, len(hits))
     for row_start in range(0, n_show, 2):
@@ -3988,9 +4003,35 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
                     full_hit = dict(hit)
                     if hit.get("points_abs"):
                         full_hit["points"] = hit.get("points_abs")
+                    st.caption(
+                        "Draw tools in chart toolbar: **line · freehand · circle · rectangle · erase** · scroll zoom. "
+                        "Change **chart timeframe** to reload OHLC."
+                    )
+                    _tf_choice = st.selectbox(
+                        "Chart timeframe",
+                        ["1d", "1wk", "1h", "30m", "15m", "5m"],
+                        index=0,
+                        key=f"cps_chart_tf_{hit.get('stock')}_{idx}",
+                    )
+                    if _tf_choice and _tf_choice != (hit.get("interval") or "1d"):
+                        try:
+                            _ndf = stock_history(clean_symbol(hit.get("stock")), interval=_tf_choice)
+                            if _ndf is not None and not _ndf.empty:
+                                full_df = _ndf.tail(200) if len(_ndf) > 200 else _ndf
+                                full_hit = dict(hit)
+                                full_hit["interval"] = _tf_choice
+                                full_hit["timeframe"] = _tf_choice
+                                full_hit["points"] = []
+                                full_hit["points_abs"] = []
+                        except Exception:
+                            pass
                     full_fig = _pattern_mini_chart(full_df, full_hit, height=620, full=True)
                     if full_fig is not None:
-                        st.plotly_chart(full_fig, use_container_width=True, config={"displayModeBar": True})
+                        try:
+                            full_fig.update_layout(dragmode="drawline")
+                        except Exception:
+                            pass
+                        st.plotly_chart(full_fig, use_container_width=True, config=PLOTLY_DRAW_CONFIG)
                     else:
                         st.warning("Chart data missing for this hit.")
                     pts = hit.get("points_abs") or hit.get("points") or []
@@ -4965,7 +5006,7 @@ def show_fii_dii_page():
                     font=dict(color="#e2e8f0", size=11), legend=dict(orientation="h"),
                     yaxis_title="Net ₹ Crore", title="FII / DII net flow",
                 )
-                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                st.plotly_chart(fig, use_container_width=True, config=PLOTLY_DRAW_CONFIG)
             except Exception as e:
                 st.caption(f"Chart unavailable: {e}")
                 if show_cols:
@@ -5613,7 +5654,7 @@ def show_ai_command_dashboard():
                              color_discrete_sequence=["#22c55e", "#ef4444", "#f59e0b", "#64748b"])
                 fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=280,
                                   paper_bgcolor="rgba(0,0,0,0)", font_color="#e2e8f0")
-                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                st.plotly_chart(fig, use_container_width=True, config=PLOTLY_DRAW_CONFIG)
             except Exception:
                 st.write(mix)
         else:
@@ -6740,7 +6781,7 @@ def show_watchlist_page():
                         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(15,23,42,0.9)",
                         font=dict(color="#e2e8f0", size=10),
                     )
-                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_DRAW_CONFIG)
             except Exception:
                 pass
 
@@ -7651,7 +7692,7 @@ def render_strategy_915_930_panel(underlying_label: str, yf_symbol: str, spot: f
                 yaxis=dict(gridcolor="#1e293b"),
                 xaxis=dict(gridcolor="#1e293b", showticklabels=False),
             )
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig, use_container_width=True, config=PLOTLY_DRAW_CONFIG)
         except Exception as ce:
             st.caption(f"Chart: {ce}")
     else:
@@ -8025,24 +8066,22 @@ def auto_paper_915_min_capital(live: pd.DataFrame, capital_per_trade: float = 50
 
 
 def summarize_915_money(past: pd.DataFrame) -> dict:
-    """How many 915 trades making money vs losing (from past book)."""
+    """Only TARGET ACHIEVED vs STOP LOSS HIT (pending excluded)."""
     out = {"total": 0, "wins": 0, "losses": 0, "pending": 0, "win_rate": 0.0, "sum_pnl": 0.0}
     if past is None or past.empty:
         return out
-    out["total"] = len(past)
     ru = past["Result"].astype(str).str.upper() if "Result" in past.columns else pd.Series([""] * len(past))
-    wins = ru.str.contains("TARGET", na=False)
-    losses = ru.str.contains("STOP", na=False) | (
-        ru.str.contains("9:30|EXIT", na=False)
-        & (pd.to_numeric(past["PnL %"], errors="coerce").fillna(0) < 0 if "PnL %" in past.columns else False)
-    )
-    out["wins"] = int(wins.sum())
-    out["losses"] = int(losses.sum())
-    out["pending"] = int((~wins & ~losses).sum())
-    decided = out["wins"] + out["losses"]
-    out["win_rate"] = round(100.0 * out["wins"] / decided, 1) if decided else 0.0
-    if "PnL %" in past.columns:
-        out["sum_pnl"] = round(float(pd.to_numeric(past["PnL %"], errors="coerce").fillna(0).sum()), 2)
+    closed = past[ru.str.contains("TARGET", na=False) | ru.str.contains("STOP", na=False)].copy()
+    if closed.empty:
+        return out
+    cru = closed["Result"].astype(str).str.upper()
+    out["wins"] = int(cru.str.contains("TARGET", na=False).sum())
+    out["losses"] = int(cru.str.contains("STOP", na=False).sum())
+    out["total"] = out["wins"] + out["losses"]
+    out["pending"] = 0
+    out["win_rate"] = round(100.0 * out["wins"] / out["total"], 1) if out["total"] else 0.0
+    if "PnL %" in closed.columns:
+        out["sum_pnl"] = round(float(pd.to_numeric(closed["PnL %"], errors="coerce").fillna(0).sum()), 2)
     return out
 
 
@@ -8112,10 +8151,11 @@ def append_915_calls_to_past(live: pd.DataFrame) -> int:
     return added
 
 
-def evaluate_915_past_outcomes(max_rows: int = 80) -> pd.DataFrame:
+def evaluate_915_past_outcomes(max_rows: int = 200) -> pd.DataFrame:
     """
-    Update PENDING 915 candle calls: target / stop / 9:30 exit.
-    Fail reasons logged like Past Predictions.
+    Resolve every 9:15 call to only:
+      🎯 TARGET ACHIEVED  or  🔴 STOP LOSS HIT
+    No PENDING left after evaluation (after 9:30 or when path is known).
     """
     past = load_915_past()
     if past is None or past.empty:
@@ -8124,71 +8164,135 @@ def evaluate_915_past_outcomes(max_rows: int = 80) -> pd.DataFrame:
         past["Result"] = "PENDING"
     if "Fail Reason" not in past.columns:
         past["Fail Reason"] = ""
+    if "PnL %" not in past.columns:
+        past["PnL %"] = None
     updated = past.copy()
     n = 0
+    from datetime import time as _time
+    try:
+        now_t = _ist_now().time() if hasattr(_ist_now(), "time") else datetime.now().time()
+    except Exception:
+        now_t = datetime.now().time()
+    force_close = now_t >= _time(9, 30)
+
     for idx in list(updated.index)[:max_rows]:
         res = str(updated.at[idx, "Result"] if "Result" in updated.columns else "PENDING").upper()
-        if res and res not in ("PENDING", "OPEN", "NAN", ""):
+        # Already final?
+        if "TARGET" in res or "STOP" in res:
+            # normalize labels
+            if "TARGET" in res:
+                updated.at[idx, "Result"] = "🎯 TARGET ACHIEVED"
+            else:
+                updated.at[idx, "Result"] = "🔴 STOP LOSS HIT"
             continue
         stock = str(updated.at[idx, "Stock"]).upper()
-        entry = safe_float(updated.at[idx, "Entry (candle)"] if "Entry (candle)" in updated.columns else updated.at[idx].get("Entry"))
-        target = safe_float(updated.at[idx, "Target"])
-        stop = safe_float(updated.at[idx, "Stop"])
+        entry = safe_float(
+            updated.at[idx, "Entry (candle)"]
+            if "Entry (candle)" in updated.columns
+            else (updated.at[idx, "Entry"] if "Entry" in updated.columns else None)
+        )
+        target = safe_float(updated.at[idx, "Target"]) if "Target" in updated.columns else 0
+        stop = safe_float(updated.at[idx, "Stop"]) if "Stop" in updated.columns else 0
         side = str(updated.at[idx, "Signal"] if "Signal" in updated.columns else "CE").upper()
         if not entry:
+            # cannot resolve — mark as stop (failed data) only after 9:30
+            if force_close:
+                updated.at[idx, "Result"] = "🔴 STOP LOSS HIT"
+                updated.at[idx, "Fail Reason"] = "No entry price to evaluate"
+                updated.at[idx, "PnL %"] = 0.0
+                n += 1
             continue
         try:
             df = stock_history(clean_symbol(stock), interval="1m", period="1d")
             if df is None or len(df) < 2:
                 df = stock_history(clean_symbol(stock), interval="5m", period="5d")
             if df is None or len(df) < 2:
+                df = stock_history(clean_symbol(stock), interval="1d", period="5d")
+            if df is None or len(df) < 1:
+                if force_close:
+                    updated.at[idx, "Result"] = "🔴 STOP LOSS HIT"
+                    updated.at[idx, "Fail Reason"] = "No bars to evaluate after 9:30"
+                    updated.at[idx, "PnL %"] = 0.0
+                    n += 1
                 continue
             hi = float(pd.to_numeric(df["High"], errors="coerce").max())
             lo = float(pd.to_numeric(df["Low"], errors="coerce").min())
             last = float(pd.to_numeric(df["Close"], errors="coerce").iloc[-1])
             hit_t = hit_s = False
-            if side == "CE":
-                hit_t = target > 0 and hi >= target
-                hit_s = stop > 0 and lo <= stop
-            else:  # PE — underlying down helps put; use underlying path
-                hit_t = target > 0 and lo <= target
-                hit_s = stop > 0 and hi >= stop
-            # Time exit after 9:30
-            now_t = _ist_now().time() if hasattr(_ist_now(), "time") else datetime.now().time()
-            from datetime import time as _time
-            past_930 = now_t >= _time(9, 30)
+            if "CE" in side or "CALL" in side:
+                hit_t = bool(target and hi >= target)
+                hit_s = bool(stop and lo <= stop)
+            else:
+                hit_t = bool(target and lo <= target)
+                hit_s = bool(stop and hi >= stop)
+
             if hit_t and not hit_s:
                 updated.at[idx, "Result"] = "🎯 TARGET ACHIEVED"
                 updated.at[idx, "Fail Reason"] = ""
-                pnl = ((target / entry) - 1) * 100 if side == "CE" else ((entry / target) - 1) * 100 if target else 0
+                if "CE" in side or "CALL" in side:
+                    pnl = ((target / entry) - 1) * 100
+                else:
+                    pnl = ((entry / target) - 1) * 100 if target else 0
                 updated.at[idx, "PnL %"] = round(pnl, 2)
                 n += 1
             elif hit_s:
                 updated.at[idx, "Result"] = "🔴 STOP LOSS HIT"
                 updated.at[idx, "Fail Reason"] = (
-                    f"Stop ₹{stop} hit before target ₹{target}. "
-                    f"Possible: weak follow-through after big open candle / opposite institutional flow."
+                    f"Stop ₹{stop} hit before target ₹{target}."
                 )
-                pnl = ((stop / entry) - 1) * 100 if side == "CE" else ((entry / stop) - 1) * 100 if stop else 0
+                if "CE" in side or "CALL" in side:
+                    pnl = ((stop / entry) - 1) * 100
+                else:
+                    pnl = ((entry / stop) - 1) * 100 if stop else 0
                 updated.at[idx, "PnL %"] = round(pnl, 2)
                 n += 1
-            elif past_930:
-                updated.at[idx, "Result"] = "⏰ 9:30 EXIT"
-                pnl = ((last / entry) - 1) * 100 if side == "CE" else ((entry / last) - 1) * 100 if last else 0
-                updated.at[idx, "PnL %"] = round(pnl, 2)
-                if pnl < 0:
+            elif force_close or hit_t or hit_s:
+                # After 9:30: classify by PnL vs entry (no PENDING)
+                if "CE" in side or "CALL" in side:
+                    pnl = ((last / entry) - 1) * 100
+                    # underlying up helps CE
+                    won = last >= entry
+                else:
+                    pnl = ((entry / last) - 1) * 100 if last else 0
+                    won = last <= entry
+                if won and pnl >= 0:
+                    updated.at[idx, "Result"] = "🎯 TARGET ACHIEVED"
                     updated.at[idx, "Fail Reason"] = (
-                        f"Flat by 9:30 without target. Exit LTP path ≈ ₹{last:.2f} vs entry ₹{entry:.2f}. "
-                        f"Momentum faded after open candle."
+                        f"Closed after 9:30 in profit (path LTP ₹{last:.2f})."
                     )
                 else:
-                    updated.at[idx, "Fail Reason"] = ""
+                    updated.at[idx, "Result"] = "🔴 STOP LOSS HIT"
+                    updated.at[idx, "Fail Reason"] = (
+                        f"Closed after 9:30 without target (path LTP ₹{last:.2f})."
+                    )
+                updated.at[idx, "PnL %"] = round(pnl, 2)
                 n += 1
-        except Exception:
+        except Exception as e:
+            if force_close:
+                updated.at[idx, "Result"] = "🔴 STOP LOSS HIT"
+                updated.at[idx, "Fail Reason"] = f"Eval error after 9:30: {type(e).__name__}"
+                updated.at[idx, "PnL %"] = 0.0
+                n += 1
             continue
+
+    # Final pass: anything still pending after 9:30 → STOP
+    if force_close:
+        for idx in updated.index:
+            res = str(updated.at[idx, "Result"]).upper()
+            if "TARGET" not in res and "STOP" not in res:
+                updated.at[idx, "Result"] = "🔴 STOP LOSS HIT"
+                if not str(updated.at[idx, "Fail Reason"] or "").strip():
+                    updated.at[idx, "Fail Reason"] = "Session closed — forced stop (was pending)"
+                n += 1
+            elif "TARGET" in res:
+                updated.at[idx, "Result"] = "🎯 TARGET ACHIEVED"
+            elif "STOP" in res:
+                updated.at[idx, "Result"] = "🔴 STOP LOSS HIT"
+
     if n:
         save_915_past(updated)
     return updated
+
 
 
 def render_915_candle_top20_page():
@@ -8297,9 +8401,19 @@ def render_915_candle_top20_page():
             evaluate_915_past_outcomes()
         st.success("Outcomes updated")
 
-    past = load_915_past()
+    try:
+        past = evaluate_915_past_outcomes(max_rows=200)
+    except Exception:
+        past = load_915_past()
     if past is None or past.empty:
         st.caption("No past 915 candle rows yet — run a scan during market open.")
+        return
+    # Closed only
+    if "Result" in past.columns:
+        ru0 = past["Result"].astype(str).str.upper()
+        past = past[ru0.str.contains("TARGET", na=False) | ru0.str.contains("STOP", na=False)].copy()
+    if past.empty:
+        st.caption("No closed Target/Stop rows yet — press Update results after 9:30.")
         return
 
     # Success stats
@@ -9465,7 +9579,7 @@ def show_fo_market_pulse():
                     )],
                     showlegend=False,
                 )
-                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                st.plotly_chart(fig, use_container_width=True, config=PLOTLY_DRAW_CONFIG)
             except Exception as e:
                 st.caption(f"Chart: {e}")
             cA, cB = st.columns(2)
@@ -9558,7 +9672,7 @@ def show_fo_market_pulse():
                     )],
                     showlegend=True,
                 )
-                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                st.plotly_chart(fig, use_container_width=True, config=PLOTLY_DRAW_CONFIG)
         except Exception:
             pass
         strikes = p.get("strikes")
@@ -9603,7 +9717,7 @@ def show_fo_market_pulse():
                     xaxis=dict(tickangle=-35),
                     title=dict(text="SECTOR SCOPE", font=dict(size=16, color="#86efac")),
                 )
-                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                st.plotly_chart(fig, use_container_width=True, config=PLOTLY_DRAW_CONFIG)
             except Exception as e:
                 st.caption(f"Bar chart: {e}")
 
@@ -10075,7 +10189,7 @@ def show_915_strategy_desk():
     if before_915:
         st.info("Before **9:15 IST** — signals appear after market open / GitHub 9:15 job.")
     elif after_930:
-        st.success("**After 9:30** — review closed trades, target/stop/9:30 exit, and 1-min charts below.")
+        st.success("**After 9:30** — only **Target achieved** / **Stop loss hit** (no pending). Use filters below.")
     else:
         st.warning("**Live window 9:15–9:30** — entries active; exit all by 9:30.")
 
@@ -10127,161 +10241,209 @@ def show_915_strategy_desk():
             st.caption(f"Scan: {e}")
 
     past = load_915_past()
+    # Always resolve results first — no PENDING in the book after eval
+    try:
+        past = evaluate_915_past_outcomes(max_rows=200)
+    except Exception:
+        past = load_915_past()
+    if past is None:
+        past = load_915_past()
+
     money = summarize_915_money(past) if past is not None and not past.empty else {}
 
     m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Today signals", 0 if live is None or getattr(live, "empty", True) else len(live))
-    m2.metric("Making money", money.get("wins", 0))
-    m3.metric("Losing", money.get("losses", 0))
-    m4.metric("Pending", money.get("pending", 0))
-    m5.metric("Success %", f"{money.get('win_rate', 0)}%")
+    m1.metric("Closed trades", money.get("total", 0))
+    m2.metric("🎯 Target achieved", money.get("wins", 0))
+    m3.metric("🔴 Stop loss hit", money.get("losses", 0))
+    m4.metric("Success %", f"{money.get('win_rate', 0)}%")
+    m5.metric("Sum PnL %", f"{money.get('sum_pnl', 0):+.1f}%")
+    st.caption("Results show **only Target achieved** or **Stop loss hit** — pending is cleared after 9:30 / Update results.")
 
-    # ----- Trade blotter -----
-    st.markdown("### 📋 Trades · stock · CE/PE · entry price")
-    blotter = None
-    if live is not None and not getattr(live, "empty", True):
-        blotter = live.copy()
-    elif past is not None and not past.empty:
-        # show today's past rows
-        try:
+    # ----- Filters -----
+    st.markdown("### 🔎 Filters")
+    f1, f2, f3, f4 = st.columns(4)
+    with f1:
+        f_list = st.selectbox("List", ["All", "GAINER", "LOSER"], key="desk915_f_list")
+    with f2:
+        f_sig = st.selectbox("Signal", ["All", "CE", "PE"], key="desk915_f_sig")
+    with f3:
+        f_res = st.selectbox(
+            "Result",
+            ["All closed", "🎯 TARGET ACHIEVED", "🔴 STOP LOSS HIT"],
+            key="desk915_f_res",
+        )
+    with f4:
+        f_day = st.selectbox(
+            "Day",
+            ["All days", "Today only"],
+            key="desk915_f_day",
+        )
+
+    def _filter_915(df: pd.DataFrame) -> pd.DataFrame:
+        if df is None or df.empty:
+            return df
+        v = df.copy()
+        if "Result" in v.columns:
+            ru = v["Result"].astype(str).str.upper()
+            v = v[ru.str.contains("TARGET", na=False) | ru.str.contains("STOP", na=False)].copy()
+        if f_list != "All" and "List" in v.columns:
+            v = v[v["List"].astype(str).str.upper().str.contains(f_list, na=False)]
+        if f_sig != "All":
+            if "Signal" in v.columns:
+                v = v[v["Signal"].astype(str).str.upper().str.contains(f_sig, na=False)]
+            elif "Option" in v.columns:
+                key = "CALL" if f_sig == "CE" else "PUT"
+                v = v[v["Option"].astype(str).str.upper().str.contains(key, na=False)]
+        if f_res == "🎯 TARGET ACHIEVED" and "Result" in v.columns:
+            v = v[v["Result"].astype(str).str.upper().str.contains("TARGET", na=False)]
+        elif f_res == "🔴 STOP LOSS HIT" and "Result" in v.columns:
+            v = v[v["Result"].astype(str).str.upper().str.contains("STOP", na=False)]
+        if f_day == "Today only" and "Prediction Date" in v.columns:
             today = india_now().strftime("%Y-%m-%d")
-            if "Prediction Date" in past.columns:
-                blotter = past[past["Prediction Date"].astype(str).str.startswith(today)].copy()
-            if blotter is None or blotter.empty:
-                blotter = past.tail(30).copy()
-        except Exception:
-            blotter = past.tail(30).copy()
+            v = v[v["Prediction Date"].astype(str).str.startswith(today)]
+        return v
 
-    if blotter is None or blotter.empty:
-        st.info("No 9:15–9:30 trades yet. Wait for GitHub 9:15 job or click **Refresh signals**.")
+    # ----- Trade blotter (closed only) -----
+    st.markdown("### 📋 Closed trades · stock · CE/PE · entry · result")
+    blotter_src = None
+    if past is not None and not past.empty:
+        blotter_src = past.copy()
+    if live is not None and not getattr(live, "empty", True):
+        # merge live rows only for chart picker; results still from past
+        pass
+    view = _filter_915(blotter_src) if blotter_src is not None else pd.DataFrame()
+
+    if view is None or view.empty:
+        st.info(
+            "No **closed** results yet (Target / Stop only). "
+            "After 9:30 press **Update results**, or wait for auto-eval on open."
+        )
     else:
-        if list_mode == "Top Gainer" and "List" in blotter.columns:
-            blotter = blotter[blotter["List"].astype(str).str.upper().str.contains("GAINER", na=False)]
-        elif list_mode == "Top Loser" and "List" in blotter.columns:
-            blotter = blotter[blotter["List"].astype(str).str.upper().str.contains("LOSER", na=False)]
-
-        # Human trade line: BUY CE @ price / BUY PE @ price
         lines = []
-        for _, r in blotter.iterrows():
+        for _, r in view.iterrows():
             stock = str(r.get("Stock", "")).upper()
             sig = str(r.get("Signal") or r.get("Option") or "").upper()
-            opt = "BUY CE" if "CE" in sig or "CALL" in sig else ("BUY PE" if "PE" in sig or "PUT" in sig else str(r.get("Option", "")))
-            entry = r.get("Entry (candle)") or r.get("Entry") or r.get("LTP")
-            stop = r.get("Stop") or r.get("Stop Loss")
-            tgt = r.get("Target")
-            res = r.get("Result", "PENDING")
+            opt = "BUY CE" if ("CE" in sig or "CALL" in sig) else (
+                "BUY PE" if ("PE" in sig or "PUT" in sig) else str(r.get("Option", ""))
+            )
+            res = str(r.get("Result", ""))
+            if "TARGET" in res.upper():
+                res = "🎯 TARGET ACHIEVED"
+            elif "STOP" in res.upper():
+                res = "🔴 STOP LOSS HIT"
+            else:
+                continue  # never show pending
             lines.append({
                 "Stock": stock,
                 "Action": opt,
-                "Entry ₹": entry,
-                "Stop ₹": stop,
-                "Target ₹": tgt,
-                "LTP": r.get("LTP"),
-                "Candle": r.get("Candle"),
+                "Entry ₹": r.get("Entry (candle)") or r.get("Entry") or r.get("LTP"),
+                "Stop ₹": r.get("Stop") or r.get("Stop Loss"),
+                "Target ₹": r.get("Target"),
                 "List": r.get("List"),
                 "Result": res,
                 "PnL %": r.get("PnL %"),
-                "Fail Reason": r.get("Fail Reason", ""),
+                "Fail Reason": r.get("Fail Reason", "") if "STOP" in res else "",
                 "Time": r.get("Prediction Date", ""),
             })
         show = pd.DataFrame(lines)
-        st.dataframe(show, use_container_width=True, hide_index=True, height=320)
-
-        # Pick stock for 1-min chart
-        stocks = show["Stock"].astype(str).unique().tolist()
-        pick = st.selectbox("Select stock for **1-minute chart** (9:15–9:30 window)", stocks, key="desk915_pick")
-        row = show[show["Stock"] == pick].iloc[0] if pick else None
-        if row is not None:
-            action = str(row.get("Action", ""))
-            st.markdown(
-                f"#### {pick} · **{action}** @ **₹{row.get('Entry ₹')}** · "
-                f"SL ₹{row.get('Stop ₹')} · Target ₹{row.get('Target ₹')} · Result: **{row.get('Result')}**"
+        if show.empty:
+            st.info("No rows match filters (Target / Stop only).")
+        else:
+            st.dataframe(show, use_container_width=True, hide_index=True, height=320)
+            stocks = show["Stock"].astype(str).unique().tolist()
+            pick = st.selectbox(
+                "Select stock for **1-minute chart** (9:15–9:30 window)",
+                stocks,
+                key="desk915_pick",
             )
-            # 1-minute chart focused on morning session
-            df1 = None
-            try:
-                df1 = stock_history(clean_symbol(pick), interval="1m", period="1d")
-                if df1 is None or len(df1) < 2:
-                    df1 = stock_history(clean_symbol(pick), interval="1m", period="5d")
-            except Exception:
+            row = show[show["Stock"] == pick].iloc[0] if pick else None
+            if row is not None:
+                action = str(row.get("Action", ""))
+                st.markdown(
+                    f"#### {pick} · **{action}** @ **₹{row.get('Entry ₹')}** · "
+                    f"SL ₹{row.get('Stop ₹')} · Target ₹{row.get('Target ₹')} · **{row.get('Result')}**"
+                )
                 df1 = None
-            if df1 is not None and not df1.empty:
                 try:
-                    # Filter to ~9:15–10:00 if timestamps allow
-                    d = df1.copy()
+                    df1 = stock_history(clean_symbol(pick), interval="1m", period="1d")
+                    if df1 is None or len(df1) < 2:
+                        df1 = stock_history(clean_symbol(pick), interval="1m", period="5d")
+                except Exception:
+                    df1 = None
+                if df1 is not None and not df1.empty:
                     try:
-                        idx = pd.to_datetime(d.index)
-                        if getattr(idx, "tz", None) is not None:
-                            try:
-                                idx = idx.tz_convert("Asia/Kolkata")
-                            except Exception:
-                                idx = idx.tz_localize(None)
-                        d.index = idx
-                        mask = (d.index.hour == 9) & (d.index.minute >= 15) & (d.index.minute <= 45)
-                        if mask.any():
-                            d = d.loc[mask]
-                        else:
-                            d = d.tail(30)
-                    except Exception:
-                        d = df1.tail(30)
-                    import plotly.graph_objects as go
-                    fig = go.Figure(data=[go.Candlestick(
-                        x=list(d.index),
-                        open=d["Open"], high=d["High"], low=d["Low"], close=d["Close"],
-                        name="1m",
-                        increasing_line_color="#22c55e", decreasing_line_color="#ef4444",
-                    )])
-                    entry = safe_float(row.get("Entry ₹"))
-                    stop = safe_float(row.get("Stop ₹"))
-                    tgt = safe_float(row.get("Target ₹"))
-                    shapes = []
-                    annotations = []
-                    if entry:
-                        fig.add_hline(y=entry, line_dash="solid", line_color="#38bdf8",
-                                      annotation_text=f"{action} @ {entry}", annotation_position="top left")
-                    if stop:
-                        fig.add_hline(y=stop, line_dash="dot", line_color="#ef4444",
-                                      annotation_text=f"SL {stop}", annotation_position="bottom left")
-                    if tgt:
-                        fig.add_hline(y=tgt, line_dash="dot", line_color="#22c55e",
-                                      annotation_text=f"TGT {tgt}", annotation_position="top right")
-                    fig.update_layout(
-                        title=f"{pick} · 1-minute · 9:15–9:30 window",
-                        height=480,
-                        xaxis_rangeslider_visible=False,
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        plot_bgcolor="rgba(15,23,42,0.6)",
-                        font_color="#e2e8f0",
-                        margin=dict(l=10, r=10, t=40, b=10),
-                    )
-                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
-                except Exception as e:
-                    st.caption(f"Chart: {e}")
-                    try:
-                        show_tradingview_chart(pick, title=f"{pick} 1m")
-                    except Exception:
-                        pass
-            else:
-                st.warning("1-minute bars not available for this symbol right now.")
+                        d = df1.copy()
+                        try:
+                            idx = pd.to_datetime(d.index)
+                            if getattr(idx, "tz", None) is not None:
+                                try:
+                                    idx = idx.tz_convert("Asia/Kolkata")
+                                except Exception:
+                                    idx = idx.tz_localize(None)
+                            d.index = idx
+                            mask = (d.index.hour == 9) & (d.index.minute >= 15) & (d.index.minute <= 45)
+                            if mask.any():
+                                d = d.loc[mask]
+                            else:
+                                d = d.tail(30)
+                        except Exception:
+                            d = df1.tail(30)
+                        import plotly.graph_objects as go
+                        fig = go.Figure(data=[go.Candlestick(
+                            x=list(d.index),
+                            open=d["Open"], high=d["High"], low=d["Low"], close=d["Close"],
+                            name="1m",
+                            increasing_line_color="#22c55e", decreasing_line_color="#ef4444",
+                        )])
+                        entry = safe_float(row.get("Entry ₹"))
+                        stop = safe_float(row.get("Stop ₹"))
+                        tgt = safe_float(row.get("Target ₹"))
+                        if entry:
+                            fig.add_hline(y=entry, line_dash="solid", line_color="#38bdf8",
+                                          annotation_text=f"{action} @ {entry}")
+                        if stop:
+                            fig.add_hline(y=stop, line_dash="dot", line_color="#ef4444",
+                                          annotation_text=f"SL {stop}")
+                        if tgt:
+                            fig.add_hline(y=tgt, line_dash="dot", line_color="#22c55e",
+                                          annotation_text=f"TGT {tgt}")
+                        fig.update_layout(
+                            title=f"{pick} · 1-minute · 9:15–9:30 · {row.get('Result')}",
+                            height=480,
+                            xaxis_rangeslider_visible=False,
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            plot_bgcolor="rgba(15,23,42,0.6)",
+                            font_color="#e2e8f0",
+                            margin=dict(l=10, r=10, t=40, b=10),
+                        )
+                        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
+                    except Exception as e:
+                        st.caption(f"Chart: {e}")
+                else:
+                    st.warning("1-minute bars not available for this symbol right now.")
 
-    # Full past book
-    st.markdown("### 📚 Full past book (all days)")
+    # Full past book — closed only + same filters
+    st.markdown("### 📚 Closed past book (Target / Stop only)")
     if past is not None and not past.empty:
-        st.dataframe(past.tail(150), use_container_width=True, hide_index=True, height=360)
-        try:
-            st.download_button(
-                "Download 9:15 past CSV",
-                past.to_csv(index=False).encode("utf-8"),
-                file_name="strategy_915_candle_past.csv",
-                mime="text/csv",
-                key="desk915_dl",
-            )
-        except Exception:
-            pass
+        closed = _filter_915(past)
+        if closed is not None and not closed.empty:
+            st.dataframe(closed.tail(150), use_container_width=True, hide_index=True, height=360)
+            try:
+                st.download_button(
+                    "Download closed 9:15 CSV",
+                    closed.to_csv(index=False).encode("utf-8"),
+                    file_name="strategy_915_closed.csv",
+                    mime="text/csv",
+                    key="desk915_dl",
+                )
+            except Exception:
+                pass
+        else:
+            st.caption("No closed rows for current filters.")
     else:
         st.caption("No history yet.")
 
-    st.divider()
+        st.divider()
     if st.button("← Back to Intraday & F&O desk", key="desk915_back"):
         try:
             nav_go("Intraday FO")
@@ -10628,7 +10790,7 @@ def show_intraday_fo_desk():
                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(15,23,42,0.92)",
                 font=dict(color="#e2e8f0", size=11),
             )
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig, use_container_width=True, config=PLOTLY_DRAW_CONFIG)
             try:
                 pats = detect_patterns(tail) if len(tail) >= 20 else []
             except Exception:
@@ -10888,7 +11050,7 @@ def show_intraday_fo_desk():
                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(15,23,42,0.9)",
                 font=dict(color="#e2e8f0"),
             )
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig, use_container_width=True, config=PLOTLY_DRAW_CONFIG)
             try:
                 pats = detect_patterns(tail)
                 if pats:
@@ -11375,7 +11537,7 @@ def show_tool_iv():
                               xaxis_title="Strike", yaxis_title="IV %",
                               paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(15,23,42,0.9)",
                               font=dict(color="#e2e8f0"))
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig, use_container_width=True, config=PLOTLY_DRAW_CONFIG)
     except Exception:
         pass
 
@@ -11558,7 +11720,7 @@ def show_tool_option_history():
     fig.update_layout(height=380, xaxis_rangeslider_visible=False, margin=dict(l=8, r=8, t=30, b=8),
                       title=f"{display_symbol(sym)} · daily", paper_bgcolor="rgba(0,0,0,0)",
                       plot_bgcolor="rgba(15,23,42,0.9)", font=dict(color="#e2e8f0"))
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_DRAW_CONFIG)
     exps = _option_expiries(sym)
     if exps:
         exp = st.selectbox("Overlay chain expiry", exps[:8], key="oh_exp")
@@ -11633,7 +11795,7 @@ def show_tool_candles():
         fig.update_layout(height=340, xaxis_rangeslider_visible=False, margin=dict(l=8, r=8, t=20, b=8),
                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(15,23,42,0.9)",
                           font=dict(color="#e2e8f0"))
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_DRAW_CONFIG)
     else:
         universe = list(NSE_STOCKS)[:40] if NSE_STOCKS else ["RELIANCE", "TCS", "INFY"]
         rows = []
@@ -11812,7 +11974,7 @@ def show_multi_timeframe(results: pd.DataFrame = None):
                 ))
                 fig.update_layout(height=300, margin=dict(l=0, r=0, t=10, b=0),
                                   xaxis_rangeslider_visible=False, paper_bgcolor="rgba(0,0,0,0)")
-                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                st.plotly_chart(fig, use_container_width=True, config=PLOTLY_DRAW_CONFIG)
             except Exception:
                 pass
         try:
