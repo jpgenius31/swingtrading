@@ -3369,15 +3369,44 @@ def scan_chart_patterns(
     return hits
 
 
-def _pattern_mini_chart(df, hit: dict, height: int = 280):
+def _pattern_chart_x_labels(df):
+    """Date labels for x-axis when index is datetime; else bar numbers."""
+    n = len(df)
+    xs = list(range(n))
+    labels = []
+    try:
+        idx = pd.to_datetime(df.index, errors="coerce")
+        for i, ts in enumerate(idx):
+            if pd.isna(ts):
+                labels.append(str(i))
+            else:
+                try:
+                    labels.append(ts.strftime("%d-%b-%y"))
+                except Exception:
+                    labels.append(str(i))
+    except Exception:
+        labels = [str(i) for i in xs]
+    return xs, labels
+
+
+def _pattern_mini_chart(df, hit: dict, height: int = 280, full: bool = False):
     """
-    Candles + ALL important pattern points marked (2, 3, 4, 5… as given).
-    Labels A/B/C/D, LS/H/RS, V1/V2/V3, etc. + entry/stop/target lines.
+    Full OHLC chart + pattern highlight:
+    - Date + timeframe in title
+    - All structure points marked
+    - Connecting structure lines
+    - Arrows from point → next point
+    - Pattern zone shading
+    - Entry / stop / target lines
     """
     if df is None or df.empty:
         return None
+    try:
+        import plotly.graph_objects as go
+    except Exception:
+        return None
     n = len(df)
-    xs_all = list(range(n))
+    xs_all, x_labels = _pattern_chart_x_labels(df)
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
         x=xs_all,
@@ -3385,6 +3414,8 @@ def _pattern_mini_chart(df, hit: dict, height: int = 280):
         name="OHLC",
         increasing_line_color="#22c55e", decreasing_line_color="#ef4444",
         increasing_fillcolor="#22c55e", decreasing_fillcolor="#ef4444",
+        text=x_labels,
+        hovertext=x_labels,
     ))
 
     # Normalize points: list of (label, index, price)
@@ -3403,11 +3434,9 @@ def _pattern_mini_chart(df, hit: dict, height: int = 280):
         except Exception:
             continue
 
-    # If detector gave no points, mark start / mid / end of pattern span
     if not pts:
         s = int(hit.get("start_i", 0) or 0)
         e = int(hit.get("end_i", n - 1) or (n - 1))
-        # indices may be absolute from pre-slice; clamp to chart
         s = max(0, min(s, n - 1))
         e = max(0, min(e, n - 1))
         if e < s:
@@ -3422,49 +3451,82 @@ def _pattern_mini_chart(df, hit: dict, height: int = 280):
         except Exception:
             pts = []
 
-    # Sort by index so the connecting line follows time
     pts = sorted(pts, key=lambda t: t[1])
+    direction = str(hit.get("direction") or "").upper()
+    line_col = "#22c55e" if "BULL" in direction else ("#ef4444" if "BEAR" in direction else "#f97316")
 
+    # Pattern zone highlight (shaded region between first and last point)
+    if pts and len(pts) >= 2:
+        x0, x1 = pts[0][1], pts[-1][1]
+        fig.add_vrect(
+            x0=x0 - 0.5, x1=x1 + 0.5,
+            fillcolor="rgba(56,189,248,0.12)" if "BULL" in direction else "rgba(248,113,113,0.12)",
+            line_width=0,
+            layer="below",
+        )
+
+    point_summary = ""
     if pts:
         px = [p[1] for p in pts]
         py = [p[2] for p in pts]
-        plab = [p[0] for p in pts]
-
-        # Connecting polyline through every point
+        # Structure polyline
         fig.add_trace(go.Scatter(
             x=px, y=py,
             mode="lines",
-            line=dict(color="#f97316", width=2.5, dash="solid"),
-            name="Structure",
+            line=dict(color=line_col, width=3, dash="solid"),
+            name="Pattern lines",
             hoverinfo="skip",
         ))
+        # Trendline segments as thicker dashed guides
+        for a, b in zip(pts[:-1], pts[1:]):
+            fig.add_trace(go.Scatter(
+                x=[a[1], b[1]], y=[a[2], b[2]],
+                mode="lines",
+                line=dict(color="#fbbf24", width=1.5, dash="dash"),
+                hoverinfo="skip",
+                showlegend=False,
+            ))
+            # Arrow annotation from a → b
+            fig.add_annotation(
+                x=b[1], y=b[2],
+                ax=a[1], ay=a[2],
+                xref="x", yref="y", axref="x", ayref="y",
+                showarrow=True,
+                arrowhead=3,
+                arrowsize=1.2,
+                arrowwidth=2,
+                arrowcolor=line_col,
+                opacity=0.9,
+            )
 
-        # Each point as its own marker + label (all of them)
         colors = ["#fbbf24", "#38bdf8", "#a78bfa", "#f472b6", "#4ade80", "#fb7185", "#2dd4bf"]
         for k, (lab, xi, yi) in enumerate(pts):
             col = colors[k % len(colors)]
+            # Date for this bar if available
+            try:
+                dlab = x_labels[xi] if 0 <= xi < len(x_labels) else str(xi)
+            except Exception:
+                dlab = str(xi)
             fig.add_trace(go.Scatter(
                 x=[xi], y=[yi],
                 mode="markers+text",
-                marker=dict(size=12, color=col, symbol="circle",
-                            line=dict(width=2, color="#0f172a")),
+                marker=dict(
+                    size=14 if full else 11,
+                    color=col,
+                    symbol="diamond",
+                    line=dict(width=2, color="#0f172a"),
+                ),
                 text=[str(lab)],
                 textposition="top center" if k % 2 == 0 else "bottom center",
-                textfont=dict(size=12, color=col, family="Arial Black"),
+                textfont=dict(size=13 if full else 11, color=col, family="Arial Black"),
                 name=str(lab),
-                hovertemplate=f"<b>{lab}</b><br>Bar {xi}<br>₹{yi:,.2f}<extra></extra>",
+                hovertemplate=f"<b>{lab}</b><br>{dlab}<br>₹{yi:,.2f}<extra></extra>",
             ))
-            # Vertical guide at each key bar
             fig.add_vline(
-                x=xi, line_width=1, line_dash="dot", line_color="rgba(148,163,184,0.35)"
+                x=xi, line_width=1, line_dash="dot", line_color="rgba(148,163,184,0.4)"
             )
-
-        # Caption under chart
         point_summary = " → ".join([f"{lab}(₹{yi:,.1f})" for lab, _, yi in pts])
-    else:
-        point_summary = ""
 
-    # Entry / Stop / Target horizontal levels
     for key, color, dash in (
         ("entry", "#38bdf8", "dash"),
         ("stop", "#f87171", "dot"),
@@ -3477,29 +3539,47 @@ def _pattern_mini_chart(df, hit: dict, height: int = 280):
             val = None
         if val and val > 0:
             fig.add_hline(
-                y=val, line_width=1.5, line_dash=dash, line_color=color,
+                y=val, line_width=1.8, line_dash=dash, line_color=color,
                 annotation_text=f"{key.upper()} ₹{val:,.1f}",
                 annotation_position="right",
-                annotation_font_size=10,
+                annotation_font_size=11 if full else 10,
                 annotation_font_color=color,
             )
 
+    tf = hit.get("timeframe") or hit.get("interval") or "Daily"
+    stock = hit.get("stock") or ""
+    dr = hit.get("date_range") or ""
+    title_main = f"{stock} · {hit.get('pattern') or 'Pattern'} · {tf}"
+    if dr:
+        title_main += f" · {dr}"
+    h = height if not full else max(height, 520)
     fig.update_layout(
-        height=height,
-        margin=dict(l=8, r=8, t=28, b=8),
+        height=h,
+        margin=dict(l=10, r=10, t=48, b=40),
         xaxis_rangeslider_visible=False,
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(15,23,42,0.95)",
-        font=dict(color="#e2e8f0", size=10),
+        font=dict(color="#e2e8f0", size=11),
         showlegend=False,
         title=dict(
-            text=point_summary[:80] + ("…" if len(point_summary) > 80 else ""),
-            font=dict(size=11, color="#94a3b8"),
+            text=f"<b>{title_main}</b><br><span style='font-size:11px;color:#94a3b8'>{point_summary[:100]}</span>",
+            font=dict(size=14, color="#f8fafc"),
             x=0.01, xanchor="left",
         ),
     )
-    fig.update_xaxes(showgrid=False, visible=True, tickfont=dict(size=9))
-    fig.update_yaxes(showgrid=True, gridcolor="#1e293b", tickfont=dict(size=9))
+    # Tick dates under bars (show subset for clarity)
+    tickvals = xs_all
+    ticktext = x_labels
+    if n > 20:
+        step = max(1, n // 12)
+        tickvals = xs_all[::step]
+        ticktext = x_labels[::step]
+    fig.update_xaxes(
+        showgrid=False, visible=True, tickfont=dict(size=9),
+        tickmode="array", tickvals=tickvals, ticktext=ticktext,
+        title_text=f"Timeframe: {tf}",
+    )
+    fig.update_yaxes(showgrid=True, gridcolor="#1e293b", tickfont=dict(size=9), title_text="Price ₹")
     return fig
 
 
@@ -3684,15 +3764,46 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
                     """,
                     unsafe_allow_html=True,
                 )
-                fig = _pattern_mini_chart(hit.get("df_tail"), hit)
+                fig = _pattern_mini_chart(hit.get("df_tail"), hit, height=300, full=False)
                 if fig is not None:
-                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
                 st.markdown(
                     f"**Timeframe:** `{hit.get('timeframe') or 'Daily'}` (`{hit.get('interval') or '1d'}`) · "
+                    f"**Dates:** {hit.get('date_range') or '—'} · "
                     f"Entry ₹{hit.get('entry') or '—'} · "
                     f"Stop ₹{hit.get('stop') or '—'} · Target ₹{hit.get('target') or '—'}"
                 )
-                st.caption(f"Pattern formed on **{hit.get('timeframe') or 'Daily'}** chart. " + (hit.get("explain") or ""))
+                st.caption(
+                    f"Pattern formed on **{hit.get('timeframe') or 'Daily'}** · "
+                    f"{hit.get('date_range') or ''} · " + (hit.get("explain") or "")
+                )
+                # Full regular chart with arrows + lines + dates
+                with st.expander(
+                    f"📈 Full pattern chart · {hit.get('stock')} · {hit.get('timeframe') or 'Daily'} · arrows & lines",
+                    expanded=False,
+                ):
+                    st.markdown(
+                        f"**{hit.get('pattern')}** on **{hit.get('timeframe') or 'Daily'}** · "
+                        f"formed **{hit.get('date_range') or '—'}** · "
+                        f"{hit.get('sessions_ago', '?')} sessions ago · Fit **{hit.get('fit', 0):.0f}**"
+                    )
+                    full_fig = _pattern_mini_chart(hit.get("df_tail"), hit, height=560, full=True)
+                    if full_fig is not None:
+                        st.plotly_chart(full_fig, use_container_width=True, config={"displayModeBar": True})
+                    else:
+                        st.warning("Chart data missing for this hit.")
+                    pts = hit.get("points") or []
+                    if pts:
+                        st.markdown("**Pattern points (draw order)**")
+                        rows = []
+                        for p in pts:
+                            try:
+                                if isinstance(p, (list, tuple)) and len(p) >= 3:
+                                    rows.append({"Label": p[0], "Bar #": p[1], "Price ₹": round(float(p[2]), 2)})
+                            except Exception:
+                                pass
+                        if rows:
+                            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
                 with st.expander("Rules & more"):
                     st.write(hit.get("rules") or "")
                     extra = hit.get("extra_patterns") or []
