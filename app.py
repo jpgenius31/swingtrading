@@ -9741,6 +9741,244 @@ def show_fo_analysis_dashboard(results: pd.DataFrame = None):
 
 
 
+
+def show_915_strategy_desk():
+    """
+    Dedicated page: 9:15–9:30 strategy trades — after 9:30 check results,
+    stock name, BUY CE/PE @ price, 1-minute chart for the open window.
+    """
+    st.title("⏱️ 9:15–9:30 Strategy Desk")
+    st.caption(
+        "All trades for this session · **BUY CE / BUY PE** with entry price · "
+        "**1-minute chart** of the 9:15–9:30 window · check results **after 9:30 IST**"
+    )
+    try:
+        from datetime import time as _time
+        now_t = india_now().time()
+        after_930 = now_t >= _time(9, 30)
+        before_915 = now_t < _time(9, 15)
+    except Exception:
+        after_930, before_915 = True, False
+
+    if before_915:
+        st.info("Before **9:15 IST** — signals appear after market open / GitHub 9:15 job.")
+    elif after_930:
+        st.success("**After 9:30** — review closed trades, target/stop/9:30 exit, and 1-min charts below.")
+    else:
+        st.warning("**Live window 9:15–9:30** — entries active; exit all by 9:30.")
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        list_mode = st.selectbox("List filter", ["All", "Top Gainer", "Top Loser"], key="desk915_list")
+    with c2:
+        if st.button("🔄 Refresh signals / load GitHub", type="primary", key="desk915_refresh"):
+            st.session_state.pop("c915_live", None)
+            for k in list(st.session_state.keys()):
+                if str(k).startswith("c915_live_"):
+                    st.session_state.pop(k, None)
+            st.session_state["_force_915_scan"] = True
+    with c3:
+        if st.button("Update results (after 9:30)", key="desk915_eval"):
+            with st.spinner("Marking target / stop / 9:30…"):
+                evaluate_915_past_outcomes(max_rows=120)
+            st.success("Results updated")
+
+    # Load live + past
+    live = None
+    try:
+        if STRATEGY_915_LIVE_FILE.exists():
+            live = pd.read_csv(STRATEGY_915_LIVE_FILE)
+    except Exception:
+        live = None
+    if live is None or (isinstance(live, pd.DataFrame) and live.empty):
+        live = st.session_state.get("c915_live")
+    if st.session_state.get("_force_915_scan"):
+        try:
+            st.session_state.pop("_force_915_scan", None)
+            mode = "Top Loser" if list_mode == "Top Loser" else ("Top Gainer" if list_mode == "Top Gainer" else "Top Gainer")
+            # If All, scan both and concat
+            if list_mode == "All":
+                a = scan_915_top20_candle_signals(limit=20, list_mode="Top Gainer")
+                b = scan_915_top20_candle_signals(limit=20, list_mode="Top Loser")
+                parts = [x for x in (a, b) if x is not None and not x.empty]
+                live = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+            else:
+                live = scan_915_top20_candle_signals(limit=20, list_mode=list_mode)
+            st.session_state["c915_live"] = live
+            if live is not None and not live.empty:
+                append_915_calls_to_past(live)
+                try:
+                    auto_paper_915_min_capital(live, capital_per_trade=5000.0)
+                except Exception:
+                    pass
+        except Exception as e:
+            st.caption(f"Scan: {e}")
+
+    past = load_915_past()
+    money = summarize_915_money(past) if past is not None and not past.empty else {}
+
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Today signals", 0 if live is None or getattr(live, "empty", True) else len(live))
+    m2.metric("Making money", money.get("wins", 0))
+    m3.metric("Losing", money.get("losses", 0))
+    m4.metric("Pending", money.get("pending", 0))
+    m5.metric("Success %", f"{money.get('win_rate', 0)}%")
+
+    # ----- Trade blotter -----
+    st.markdown("### 📋 Trades · stock · CE/PE · entry price")
+    blotter = None
+    if live is not None and not getattr(live, "empty", True):
+        blotter = live.copy()
+    elif past is not None and not past.empty:
+        # show today's past rows
+        try:
+            today = india_now().strftime("%Y-%m-%d")
+            if "Prediction Date" in past.columns:
+                blotter = past[past["Prediction Date"].astype(str).str.startswith(today)].copy()
+            if blotter is None or blotter.empty:
+                blotter = past.tail(30).copy()
+        except Exception:
+            blotter = past.tail(30).copy()
+
+    if blotter is None or blotter.empty:
+        st.info("No 9:15–9:30 trades yet. Wait for GitHub 9:15 job or click **Refresh signals**.")
+    else:
+        if list_mode == "Top Gainer" and "List" in blotter.columns:
+            blotter = blotter[blotter["List"].astype(str).str.upper().str.contains("GAINER", na=False)]
+        elif list_mode == "Top Loser" and "List" in blotter.columns:
+            blotter = blotter[blotter["List"].astype(str).str.upper().str.contains("LOSER", na=False)]
+
+        # Human trade line: BUY CE @ price / BUY PE @ price
+        lines = []
+        for _, r in blotter.iterrows():
+            stock = str(r.get("Stock", "")).upper()
+            sig = str(r.get("Signal") or r.get("Option") or "").upper()
+            opt = "BUY CE" if "CE" in sig or "CALL" in sig else ("BUY PE" if "PE" in sig or "PUT" in sig else str(r.get("Option", "")))
+            entry = r.get("Entry (candle)") or r.get("Entry") or r.get("LTP")
+            stop = r.get("Stop") or r.get("Stop Loss")
+            tgt = r.get("Target")
+            res = r.get("Result", "PENDING")
+            lines.append({
+                "Stock": stock,
+                "Action": opt,
+                "Entry ₹": entry,
+                "Stop ₹": stop,
+                "Target ₹": tgt,
+                "LTP": r.get("LTP"),
+                "Candle": r.get("Candle"),
+                "List": r.get("List"),
+                "Result": res,
+                "PnL %": r.get("PnL %"),
+                "Fail Reason": r.get("Fail Reason", ""),
+                "Time": r.get("Prediction Date", ""),
+            })
+        show = pd.DataFrame(lines)
+        st.dataframe(show, use_container_width=True, hide_index=True, height=320)
+
+        # Pick stock for 1-min chart
+        stocks = show["Stock"].astype(str).unique().tolist()
+        pick = st.selectbox("Select stock for **1-minute chart** (9:15–9:30 window)", stocks, key="desk915_pick")
+        row = show[show["Stock"] == pick].iloc[0] if pick else None
+        if row is not None:
+            action = str(row.get("Action", ""))
+            st.markdown(
+                f"#### {pick} · **{action}** @ **₹{row.get('Entry ₹')}** · "
+                f"SL ₹{row.get('Stop ₹')} · Target ₹{row.get('Target ₹')} · Result: **{row.get('Result')}**"
+            )
+            # 1-minute chart focused on morning session
+            df1 = None
+            try:
+                df1 = stock_history(clean_symbol(pick), interval="1m", period="1d")
+                if df1 is None or len(df1) < 2:
+                    df1 = stock_history(clean_symbol(pick), interval="1m", period="5d")
+            except Exception:
+                df1 = None
+            if df1 is not None and not df1.empty:
+                try:
+                    # Filter to ~9:15–10:00 if timestamps allow
+                    d = df1.copy()
+                    try:
+                        idx = pd.to_datetime(d.index)
+                        if getattr(idx, "tz", None) is not None:
+                            try:
+                                idx = idx.tz_convert("Asia/Kolkata")
+                            except Exception:
+                                idx = idx.tz_localize(None)
+                        d.index = idx
+                        mask = (d.index.hour == 9) & (d.index.minute >= 15) & (d.index.minute <= 45)
+                        if mask.any():
+                            d = d.loc[mask]
+                        else:
+                            d = d.tail(30)
+                    except Exception:
+                        d = df1.tail(30)
+                    import plotly.graph_objects as go
+                    fig = go.Figure(data=[go.Candlestick(
+                        x=list(d.index),
+                        open=d["Open"], high=d["High"], low=d["Low"], close=d["Close"],
+                        name="1m",
+                        increasing_line_color="#22c55e", decreasing_line_color="#ef4444",
+                    )])
+                    entry = safe_float(row.get("Entry ₹"))
+                    stop = safe_float(row.get("Stop ₹"))
+                    tgt = safe_float(row.get("Target ₹"))
+                    shapes = []
+                    annotations = []
+                    if entry:
+                        fig.add_hline(y=entry, line_dash="solid", line_color="#38bdf8",
+                                      annotation_text=f"{action} @ {entry}", annotation_position="top left")
+                    if stop:
+                        fig.add_hline(y=stop, line_dash="dot", line_color="#ef4444",
+                                      annotation_text=f"SL {stop}", annotation_position="bottom left")
+                    if tgt:
+                        fig.add_hline(y=tgt, line_dash="dot", line_color="#22c55e",
+                                      annotation_text=f"TGT {tgt}", annotation_position="top right")
+                    fig.update_layout(
+                        title=f"{pick} · 1-minute · 9:15–9:30 window",
+                        height=480,
+                        xaxis_rangeslider_visible=False,
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="rgba(15,23,42,0.6)",
+                        font_color="#e2e8f0",
+                        margin=dict(l=10, r=10, t=40, b=10),
+                    )
+                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
+                except Exception as e:
+                    st.caption(f"Chart: {e}")
+                    try:
+                        show_tradingview_chart(pick, title=f"{pick} 1m")
+                    except Exception:
+                        pass
+            else:
+                st.warning("1-minute bars not available for this symbol right now.")
+
+    # Full past book
+    st.markdown("### 📚 Full past book (all days)")
+    if past is not None and not past.empty:
+        st.dataframe(past.tail(150), use_container_width=True, hide_index=True, height=360)
+        try:
+            st.download_button(
+                "Download 9:15 past CSV",
+                past.to_csv(index=False).encode("utf-8"),
+                file_name="strategy_915_candle_past.csv",
+                mime="text/csv",
+                key="desk915_dl",
+            )
+        except Exception:
+            pass
+    else:
+        st.caption("No history yet.")
+
+    st.divider()
+    if st.button("← Back to Intraday & F&O desk", key="desk915_back"):
+        try:
+            nav_go("Intraday FO")
+        except Exception:
+            st.session_state.page = "Intraday FO"
+            st.rerun()
+
+
+
 def show_intraday_fo_desk():
     """
     Intraday + Futures & Options desk:
@@ -9748,12 +9986,21 @@ def show_intraday_fo_desk():
     chart patterns + strategy explanations.
     """
     st.caption("**Market Pulse** (Index Mover · PCR · Sector · F&O board) is on **Home** — open Home first for the market overview.")
-    if st.button("📡 Open F&O Analysis (Nifty50 / sector / stock)", use_container_width=True, key="ifo_open_foan"):
-        try:
-            nav_go("FO Analysis")
-        except Exception:
-            st.session_state.page = "FO Analysis"
-            st.rerun()
+    b915, bfo = st.columns(2)
+    with b915:
+        if st.button("⏱️ 9:15–9:30 Strategy Desk (trades + 1m charts)", type="primary", use_container_width=True, key="ifo_open_915"):
+            try:
+                nav_go("915 Strategy")
+            except Exception:
+                st.session_state.page = "915 Strategy"
+                st.rerun()
+    with bfo:
+        if st.button("📡 Open F&O Analysis (Nifty50 / sector / stock)", use_container_width=True, key="ifo_open_foan"):
+            try:
+                nav_go("FO Analysis")
+            except Exception:
+                st.session_state.page = "FO Analysis"
+                st.rerun()
     st.markdown(
         """
         <div style="border-radius:16px;padding:18px 20px;margin-bottom:14px;
@@ -26700,6 +26947,7 @@ PAGE_PARENT = {
     "Watchlist": "Dashboard",
     "Scanner Query": "Dashboard",
     "Intraday Backtest": "Intraday FO",
+    "915 Strategy": "Intraday FO",
     "Tool Square9": "NSE Tools",
     "Tool IV": "NSE Tools",
     "Tool OI Chain": "NSE Tools",
@@ -26746,6 +26994,7 @@ PAGE_LABELS = {
     "Watchlist": "Watchlist",
     "Scanner Query": "Scanner Query",
     "Intraday Backtest": "Intraday Backtest",
+    "915 Strategy": "9:15–9:30 Strategy",
     "Tool Square9": "Square of 9",
     "Tool IV": "IV Tool",
     "Tool OI Chain": "Open Interest Chain",
@@ -27051,6 +27300,42 @@ def render_header_nav():
     if nav == "scan":
         do_scan = True
         _clear_jp_nav()
+    elif nav == "reload":
+        # Static header Reload — refresh current page data without full market scan
+        _clear_jp_nav()
+        try:
+            live_quote.clear()
+        except Exception:
+            pass
+        try:
+            stock_history.clear()
+        except Exception:
+            pass
+        try:
+            _pulse_index_movers.clear()
+        except Exception:
+            pass
+        try:
+            fetch_nse_fo_gainers_losers.clear()
+        except Exception:
+            pass
+        try:
+            apply_realtime_sync(force=True, refresh_prices=True)
+        except Exception:
+            try:
+                apply_realtime_sync(force=True)
+            except Exception:
+                pass
+        try:
+            n_load = ensure_scan_on_reload()
+            if n_load and n_load > 0:
+                st.session_state["_scan_done_msg"] = (
+                    f"Page reloaded · **{n_load}** stocks from disk/GitHub · "
+                    f"{india_now().strftime('%H:%M IST')}"
+                )
+        except Exception:
+            pass
+        st.rerun()
     elif nav in nav_map:
         target = nav_map[nav]
         prev = st.session_state.get("page", "Dashboard")
@@ -27105,7 +27390,7 @@ def render_header_nav():
             or cur in ("FII DII", "Pattern Hub", "Chart Pattern Scanner", "Multi Timeframe", "Tools Hub", "Find Stock")
         ):
             active = True
-        elif key == "intraday" and cur in ("Intraday FO", "Intraday Backtest"):
+        elif key == "intraday" and cur in ("Intraday FO", "Intraday Backtest", "915 Strategy"):
             active = True
         elif key == "scanner" and cur == "Scanner Query":
             active = True
@@ -27203,6 +27488,12 @@ def render_header_nav():
             color: #fff !important;
             border-color: transparent !important;
         }}
+        .jp-pill-reload {{
+            background: linear-gradient(135deg,#0f766e,#14b8a6) !important;
+            color: #fff !important;
+            border-color: transparent !important;
+            font-weight: 800 !important;
+        }}
         .jp-meta {{
             display: flex; align-items: center; gap: 6px;
             flex-shrink: 0; margin-left: auto;
@@ -27252,6 +27543,9 @@ def render_header_nav():
               {_pill("superstar", "Bank deals")}
               <a class="jp-pill jp-pill-scan" href="?jp_nav=scan" target="_self"
                  onclick="try{{window.parent.location.search='?jp_nav=scan';return false;}}catch(e){{}}">Scan</a>
+              <a class="jp-pill jp-pill-reload" href="?jp_nav=reload" target="_self"
+                 title="Reload page data · prices · scan file"
+                 onclick="try{{window.parent.location.search='?jp_nav=reload';return false;}}catch(e){{}}">↻ Reload</a>
             </div>
             <div class="jp-meta">
               <span class="jp-chip jp-chip-live">● {live_dot}</span>
@@ -27263,6 +27557,48 @@ def render_header_nav():
         """,
         unsafe_allow_html=True,
     )
+
+    # Always-visible Reload under fixed header (static zone on every page)
+    _hr1, _hr2, _hr3 = st.columns([1, 1, 4])
+    with _hr1:
+        if st.button("↻ Reload", type="primary", use_container_width=True, key="hdr_static_reload",
+                     help="Refresh page · clear price cache · reload scan file from disk/GitHub"):
+            try:
+                live_quote.clear()
+            except Exception:
+                pass
+            try:
+                stock_history.clear()
+            except Exception:
+                pass
+            try:
+                apply_realtime_sync(force=True, refresh_prices=True)
+            except Exception:
+                try:
+                    apply_realtime_sync(force=True)
+                except Exception:
+                    pass
+            try:
+                n_load = ensure_scan_on_reload()
+                if n_load and n_load > 0:
+                    st.session_state["_scan_done_msg"] = (
+                        f"Reloaded · **{n_load}** stocks · {india_now().strftime('%H:%M IST')}"
+                    )
+            except Exception:
+                pass
+            st.rerun()
+    with _hr2:
+        if st.button("📥 Reload scan", use_container_width=True, key="hdr_static_reload_scan",
+                     help="Load latest_results.csv from disk / GitHub"):
+            with st.spinner("Reloading scan…"):
+                n_load = ensure_scan_on_reload()
+            if n_load and n_load > 0:
+                st.session_state["_scan_done_msg"] = (
+                    f"Reload complete · **{n_load}** stocks · {india_now().strftime('%H:%M IST')}"
+                )
+                st.rerun()
+            else:
+                st.warning("No scan file yet — wait for GitHub 9:15/9:20 job or run Scan.")
 
     # Notifications + live controls in header zone (compact)
     with st.expander("⚙️ Live prices · notifications · sync", expanded=False):
@@ -28204,6 +28540,8 @@ elif st.session_state.page == "FII DII":
 elif st.session_state.page == "NSE Tools":
     show_nse_tools_workspace()
 
+elif st.session_state.page == "915 Strategy":
+    show_915_strategy_desk()
 elif st.session_state.page == "Intraday FO":
     show_intraday_fo_desk()
 
