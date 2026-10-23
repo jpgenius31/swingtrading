@@ -50,6 +50,8 @@ STRATEGY_PREV_FILE = APP_DIR / "strategy_live_signals_prev.csv"
 STRATEGY_META_FILE = APP_DIR / "strategy_live_meta.json"
 STRATEGY_915_PAST_FILE = APP_DIR / "strategy_915_candle_past.csv"
 STRATEGY_915_LIVE_FILE = APP_DIR / "strategy_915_candle_live.csv"
+PATTERN_SCAN_FILE = APP_DIR / "pattern_scan_results.json"
+PATTERN_SCAN_META = APP_DIR / "pattern_scan_meta.json"
 STRATEGY_ALL_MAP_FILE = APP_DIR / "strategy_all_stocks_map.csv"
 STRATEGY_ALL_SUMMARY_FILE = APP_DIR / "strategy_all_stocks_summary.csv"
 STRATEGY_ALL_META_FILE = APP_DIR / "strategy_all_stocks_meta.json"
@@ -3283,6 +3285,123 @@ def detect_structure_pattern(df: pd.DataFrame, pattern_name: str, swing_order: i
     return None
 
 
+
+def save_pattern_scan_hits(hits: list, pattern: str = "", tf: str = "") -> int:
+    """Persist pattern hits (no DataFrames) for instant load after 9:15 job."""
+    slim = []
+    for h in hits or []:
+        try:
+            slim.append({
+                "stock": h.get("stock"),
+                "pattern": h.get("pattern"),
+                "direction": h.get("direction"),
+                "fit": h.get("fit"),
+                "points": h.get("points_abs") or h.get("points") or [],
+                "points_abs": h.get("points_abs") or h.get("points") or [],
+                "start_i": h.get("start_i"),
+                "end_i": h.get("end_i"),
+                "sessions": h.get("sessions"),
+                "sessions_ago": h.get("sessions_ago"),
+                "date_range": h.get("date_range"),
+                "entry": h.get("entry"),
+                "stop": h.get("stop"),
+                "target": h.get("target"),
+                "explain": h.get("explain"),
+                "rules": h.get("rules"),
+                "timeframe": h.get("timeframe"),
+                "interval": h.get("interval") or "1d",
+                "live": h.get("live"),
+                "gap_pct": h.get("gap_pct"),
+                "extra_patterns": h.get("extra_patterns") or [],
+            })
+        except Exception:
+            continue
+    try:
+        PATTERN_SCAN_FILE.write_text(json.dumps(slim, indent=2, default=str), encoding="utf-8")
+        PATTERN_SCAN_META.write_text(json.dumps({
+            "rows": len(slim),
+            "pattern": pattern,
+            "timeframe": tf,
+            "saved_at_ist": india_now().strftime("%Y-%m-%d %H:%M:%S IST"),
+            "source": "pattern_scanner",
+        }, indent=2), encoding="utf-8")
+    except Exception:
+        return 0
+    return len(slim)
+
+
+def load_pattern_scan_hits() -> list:
+    """Load 9:15 / last auto pattern scan for instant display."""
+    try:
+        if PATTERN_SCAN_FILE.exists():
+            data = json.loads(PATTERN_SCAN_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                return data
+    except Exception:
+        pass
+    return []
+
+
+def hydrate_pattern_hit_charts(hit: dict) -> dict:
+    """Attach df_full / df_tail for a slim saved hit so charts work immediately."""
+    h = dict(hit or {})
+    sym = h.get("stock")
+    iv = h.get("interval") or "1d"
+    if not sym:
+        return h
+    try:
+        df = stock_history(clean_symbol(sym), interval=iv)
+        if df is None or len(df) < 30:
+            return h
+        # keep last ~180 bars for TV-style full chart
+        if len(df) > 200:
+            # shift absolute indices if we trim from left
+            cut = len(df) - 200
+            df = df.tail(200).copy()
+            pts = []
+            for p in (h.get("points_abs") or h.get("points") or []):
+                try:
+                    lab, ii, price = p[0], int(p[1]) - cut, float(p[2])
+                    if 0 <= ii < len(df):
+                        pts.append((lab, ii, price))
+                except Exception:
+                    continue
+            if pts:
+                h["points_abs"] = pts
+                h["points"] = pts
+                if h.get("start_i") is not None:
+                    h["start_i"] = max(0, int(h["start_i"]) - cut)
+                if h.get("end_i") is not None:
+                    h["end_i"] = max(0, int(h["end_i"]) - cut)
+        else:
+            pts = h.get("points_abs") or h.get("points") or []
+            h["points_abs"] = pts
+            h["points"] = pts
+        h["df_full"] = df
+        # mini tail around pattern
+        s_i = int(h.get("start_i") or 0)
+        e_i = int(h.get("end_i") or (len(df) - 1))
+        left = max(0, s_i - 12)
+        right = min(len(df), e_i + 13)
+        chart_df = df.iloc[left:right].copy()
+        rel = []
+        for p in (h.get("points_abs") or []):
+            try:
+                lab, ii, price = p[0], int(p[1]), float(p[2])
+                r = ii - left
+                if 0 <= r < len(chart_df):
+                    rel.append((lab, r, price))
+            except Exception:
+                continue
+        h["df_tail"] = chart_df
+        if rel:
+            h["points"] = rel
+    except Exception:
+        pass
+    return h
+
+
+
 def scan_chart_patterns(
     symbols,
     pattern_name: str,
@@ -3334,30 +3453,36 @@ def scan_chart_patterns(
                 extra = detect_patterns(df.tail(20))[:4]
             except Exception:
                 pass
-            # Chart window: pattern span + padding so all points stay on screen
+            # Absolute points on full history (for TradingView-style full chart)
+            abs_pts = []
+            for p in (hit.get("points") or []):
+                try:
+                    lab, ii, price = p[0], int(p[1]), float(p[2])
+                    if 0 <= ii < len(df):
+                        abs_pts.append((lab, ii, price))
+                except Exception:
+                    continue
+            # Mini window: pattern span + padding
             s_i = int(hit.get("start_i") or 0)
             e_i = int(hit.get("end_i") or (len(df) - 1))
             pad = 12
             left = max(0, s_i - pad)
             right = min(len(df), e_i + pad + 1)
             chart_df = df.iloc[left:right].copy()
-            # Re-index points relative to chart_df
             rel_pts = []
-            for p in (hit.get("points") or []):
-                try:
-                    lab, ii, price = p[0], int(p[1]), float(p[2])
-                    rel = ii - left
-                    if 0 <= rel < len(chart_df):
-                        rel_pts.append((lab, rel, price))
-                except Exception:
-                    continue
+            for lab, ii, price in abs_pts:
+                rel = ii - left
+                if 0 <= rel < len(chart_df):
+                    rel_pts.append((lab, rel, price))
             hit.update({
                 "stock": display_symbol(sym),
                 "live": round(live, 2) if live else None,
                 "gap_pct": round(gap_pct, 2) if gap_pct is not None else None,
                 "extra_patterns": extra,
-                "df_tail": chart_df,
-                "points": rel_pts if rel_pts else hit.get("points") or [],
+                "df_tail": chart_df,          # zoomed mini
+                "df_full": df.copy(),         # whole series for full TV-style chart
+                "points": rel_pts if rel_pts else abs_pts,
+                "points_abs": abs_pts,        # indices on df_full
                 "_chart_left": left,
                 "timeframe": hit.get("timeframe") or timeframe_label,
                 "interval": hit.get("interval") or interval,
@@ -3719,11 +3844,67 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
             st.session_state["cps_hits"] = all_hits
             st.session_state["cps_hits_pattern"] = pattern
             st.session_state["cps_hits_tf"] = tf_label
+            try:
+                save_pattern_scan_hits(all_hits, pattern=pattern, tf=tf_label)
+            except Exception:
+                pass
+
+    # Instant load from 9:15 / last auto scan (no wait)
+    if not st.session_state.get("cps_hits"):
+        disk_hits = load_pattern_scan_hits()
+        if disk_hits:
+            meta = {}
+            try:
+                if PATTERN_SCAN_META.exists():
+                    meta = json.loads(PATTERN_SCAN_META.read_text(encoding="utf-8"))
+            except Exception:
+                meta = {}
+            st.session_state["cps_hits"] = disk_hits
+            st.session_state["cps_hits_pattern"] = meta.get("pattern") or (disk_hits[0].get("pattern") if disk_hits else "")
+            st.session_state["cps_hits_tf"] = meta.get("timeframe") or "Daily"
+            st.session_state["cps_from_auto"] = True
 
     hits = st.session_state.get("cps_hits") or []
+
+    c_auto1, c_auto2 = st.columns([2, 1])
+    with c_auto1:
+        if st.session_state.get("cps_from_auto") and hits:
+            try:
+                meta = json.loads(PATTERN_SCAN_META.read_text(encoding="utf-8")) if PATTERN_SCAN_META.exists() else {}
+            except Exception:
+                meta = {}
+            st.success(
+                f"Loaded **{len(hits)}** patterns from last auto/9:15 scan "
+                f"({meta.get('saved_at_ist', 'saved')}) — charts hydrate on expand."
+            )
+    with c_auto2:
+        if st.button("⚡ Show auto patterns now", type="primary", key="cps_show_auto"):
+            disk_hits = load_pattern_scan_hits()
+            if disk_hits:
+                st.session_state["cps_hits"] = disk_hits
+                st.session_state["cps_from_auto"] = True
+                try:
+                    meta = json.loads(PATTERN_SCAN_META.read_text(encoding="utf-8")) if PATTERN_SCAN_META.exists() else {}
+                    st.session_state["cps_hits_pattern"] = meta.get("pattern") or ""
+                    st.session_state["cps_hits_tf"] = meta.get("timeframe") or "Daily"
+                except Exception:
+                    pass
+                st.rerun()
+            else:
+                st.warning("No auto pattern file yet — wait for 9:15 GitHub job or Screen once.")
+
     if not hits:
-        st.info("Pick a pattern, then **Screen the market**. Results appear as cards (most recent first).")
+        st.info("Pick a pattern, then **Screen the market** — or wait for **9:15 auto pattern scan** then press **Show auto patterns now**.")
         return
+
+    # Hydrate charts for visible hits (full TV chart needs OHLC)
+    hydrated = []
+    for h in hits[:12]:
+        if h.get("df_full") is None and h.get("df_tail") is None:
+            hydrated.append(hydrate_pattern_hit_charts(h))
+        else:
+            hydrated.append(h)
+    hits = hydrated
 
     st.markdown(f"##### Most recently completed — **{len(hits)}** hits · {st.session_state.get('cps_hits_pattern', pattern)}")
     # Show top 12 cards in 2–4 columns
@@ -3779,20 +3960,40 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
                 )
                 # Full regular chart with arrows + lines + dates
                 with st.expander(
-                    f"📈 Full pattern chart · {hit.get('stock')} · {hit.get('timeframe') or 'Daily'} · arrows & lines",
+                    f"📈 Full chart (TradingView style) · {hit.get('stock')} · {hit.get('timeframe') or 'Daily'} · pattern highlighted",
                     expanded=False,
                 ):
+                    _pat = hit.get("pattern") or "Pattern"
+                    _tf = hit.get("timeframe") or "Daily"
+                    _dr = hit.get("date_range") or "—"
+                    _ago = hit.get("sessions_ago", "?")
+                    _fit = hit.get("fit", 0)
                     st.markdown(
-                        f"**{hit.get('pattern')}** on **{hit.get('timeframe') or 'Daily'}** · "
-                        f"formed **{hit.get('date_range') or '—'}** · "
-                        f"{hit.get('sessions_ago', '?')} sessions ago · Fit **{hit.get('fit', 0):.0f}**"
+                        f"**{_pat}** on **{_tf}** · formed **{_dr}** · "
+                        f"{_ago} sessions ago · Fit **{_fit:.0f}**\n"
+                        f"Whole chart shown · pattern zone shaded · arrows & structure lines only on the pattern."
                     )
-                    full_fig = _pattern_mini_chart(hit.get("df_tail"), hit, height=560, full=True)
+                    # Prefer full history; fallback reload if session lost df
+                    full_df = hit.get("df_full")
+                    if full_df is None or (hasattr(full_df, "empty") and full_df.empty):
+                        try:
+                            full_df = stock_history(
+                                clean_symbol(hit.get("stock")),
+                                interval=hit.get("interval") or "1d",
+                            )
+                            if full_df is not None and len(full_df) > 180:
+                                full_df = full_df.tail(180)
+                        except Exception:
+                            full_df = hit.get("df_tail")
+                    full_hit = dict(hit)
+                    if hit.get("points_abs"):
+                        full_hit["points"] = hit.get("points_abs")
+                    full_fig = _pattern_mini_chart(full_df, full_hit, height=620, full=True)
                     if full_fig is not None:
                         st.plotly_chart(full_fig, use_container_width=True, config={"displayModeBar": True})
                     else:
                         st.warning("Chart data missing for this hit.")
-                    pts = hit.get("points") or []
+                    pts = hit.get("points_abs") or hit.get("points") or []
                     if pts:
                         st.markdown("**Pattern points (draw order)**")
                         rows = []

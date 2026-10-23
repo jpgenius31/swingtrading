@@ -57,7 +57,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add strategy_915_candle_live.csv strategy_915_candle_past.csv strategy_915_candle_meta.json strategy_915_money_summary.json index_market_snap.json realtime_sync_version.json || true
+          git add strategy_915_candle_live.csv strategy_915_candle_past.csv strategy_915_candle_meta.json strategy_915_money_summary.json pattern_scan_results.json pattern_scan_meta.json index_market_snap.json realtime_sync_version.json || true
           if git diff --staged --quiet; then
             echo "No 9:15 changes to commit"
             exit 0

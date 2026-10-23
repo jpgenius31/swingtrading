@@ -526,6 +526,87 @@ def run_915_open_strategy(limit: int = 20, list_mode: str = "both") -> pd.DataFr
         (ROOT / "index_market_snap.json").write_text(json.dumps(idx, indent=2), encoding="utf-8")
     except Exception:
         pass
+    
+    # Auto chart-pattern snapshot (Double Top/Bottom etc.) for instant app load
+    try:
+        pat_rows = []
+        # Reuse mover universe as pattern universe
+        univ = list({s for s, _ in universe})[:40]
+        for sym in univ:
+            try:
+                h = yf.Ticker(yf_sym(sym)).history(period="6mo", interval="1d")
+                if h is None or len(h) < 50:
+                    continue
+                close = h["Close"].astype(float)
+                low = h["Low"].astype(float)
+                high = h["High"].astype(float)
+                # Simple double bottom: two similar lows in last 40 bars
+                window = low.tail(40)
+                i1 = int(window.values.argmin())
+                # second lowest away from first
+                vals = list(window.values)
+                idxs = sorted(range(len(vals)), key=lambda i: vals[i])
+                if len(idxs) < 2:
+                    continue
+                a, b = idxs[0], idxs[1]
+                if abs(a - b) < 5:
+                    continue
+                p1, p2 = float(vals[a]), float(vals[b])
+                if abs(p1 - p2) / max(p1, 1e-9) > 0.03:
+                    continue
+                # neckline = max between the two lows
+                lo, hi = min(a, b), max(a, b)
+                neck = float(high.tail(40).iloc[lo:hi+1].max()) if hi > lo else float(high.iloc[-1])
+                fit = 90 - abs(p1 - p2) / max(p1, 1e-9) * 100
+                n = len(h)
+                # map window indices to full
+                base = n - 40
+                pts = [("L1", base + min(a, b), min(p1, p2)), ("Neck", base + (lo + hi) // 2, neck), ("L2", base + max(a, b), max(p1, p2))]
+                pat_rows.append({
+                    "stock": sym,
+                    "pattern": "Double Bottom",
+                    "direction": "BULLISH",
+                    "fit": round(fit, 0),
+                    "points": pts,
+                    "points_abs": pts,
+                    "start_i": base + min(a, b),
+                    "end_i": base + max(a, b),
+                    "sessions": abs(a - b),
+                    "sessions_ago": max(0, 39 - max(a, b)),
+                    "date_range": f"{h.index[base+min(a,b)].strftime('%d-%b-%Y')} → {h.index[base+max(a,b)].strftime('%d-%b-%Y')}",
+                    "entry": round(neck, 2),
+                    "stop": round(min(p1, p2) * 0.98, 2),
+                    "target": round(neck + (neck - min(p1, p2)), 2),
+                    "explain": f"Double bottom near ₹{min(p1,p2):.1f}; neckline ₹{neck:.1f}",
+                    "rules": "Two equal lows + neckline break bias",
+                    "timeframe": "Daily",
+                    "interval": "1d",
+                    "live": round(float(close.iloc[-1]), 2),
+                    "gap_pct": 0,
+                    "extra_patterns": [],
+                })
+            except Exception:
+                continue
+            time.sleep(0.05)
+        if pat_rows:
+            (ROOT / "pattern_scan_results.json").write_text(
+                json.dumps(pat_rows, indent=2, default=str), encoding="utf-8"
+            )
+            (ROOT / "pattern_scan_meta.json").write_text(
+                json.dumps({
+                    "rows": len(pat_rows),
+                    "pattern": "Double Bottom (auto 9:15)",
+                    "timeframe": "Daily",
+                    "saved_at_ist": now.strftime("%Y-%m-%d %H:%M:%S IST"),
+                    "source": "scan_job --915",
+                }, indent=2),
+                encoding="utf-8",
+            )
+            print(f"OK pattern_scan_results.json · {len(pat_rows)} hits")
+    except Exception as e:
+        print(f"pattern auto skip: {e}")
+
+
     return df
 
 
