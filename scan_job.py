@@ -404,12 +404,32 @@ def run_915_open_strategy(limit: int = 20, list_mode: str = "both") -> pd.DataFr
                 h = yf.Ticker(yf_sym(sym)).history(period="5d", interval="1m")
             if h is None or len(h) < 1:
                 continue
-            # Prefer first bars of session / recent completed bar
-            row = h.iloc[0] if len(h) == 1 else h.iloc[min(2, len(h) - 1)]
-            if len(h) >= 3:
-                row = h.iloc[-2]  # last completed
+            # FIRST 1-min bar of session only (not a later green recovery bar)
+            row = h.iloc[0]
+            try:
+                idx = h.index
+                # prefer 09:15–09:20 IST bars if timestamps allow
+                for i, ts in enumerate(idx):
+                    try:
+                        hh, mm = ts.hour, ts.minute
+                        # assume already IST or naive market time
+                        if hh == 9 and 15 <= mm <= 20:
+                            row = h.iloc[i]
+                            break
+                        if hh == 3 and 45 <= mm <= 50:  # UTC≈IST-5:30 open window
+                            row = h.iloc[i]
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
             sig = _big_candle_signal(row["Open"], row["High"], row["Low"], row["Close"])
             if not sig:
+                continue
+            # Losers → only PUT; Gainers → only CALL
+            if tag == "LOSER" and sig.get("Signal") != "PE":
+                continue
+            if tag == "GAINER" and sig.get("Signal") != "CE":
                 continue
             out_rows.append({
                 "Stock": sym,
@@ -465,6 +485,20 @@ def run_915_open_strategy(limit: int = 20, list_mode: str = "both") -> pd.DataFr
             encoding="utf-8",
         )
         print(f"OK 9:15 candle · {len(df)} signals → {live_path.name}")
+        # Money tracker summary for app (how many making money) — without opening dashboard
+        try:
+            summary = {
+                "signals_today": int(len(df)),
+                "ce": int((df["Signal"] == "CE").sum()) if "Signal" in df.columns else 0,
+                "pe": int((df["Signal"] == "PE").sum()) if "Signal" in df.columns else 0,
+                "saved_at_ist": now.strftime("%Y-%m-%d %H:%M:%S IST"),
+                "note": "Auto signals from F&O-style movers; app evaluates target/stop → money count",
+            }
+            (ROOT / "strategy_915_money_summary.json").write_text(
+                json.dumps(summary, indent=2), encoding="utf-8"
+            )
+        except Exception:
+            pass
     else:
         print("WARN: no 9:15 big-candle signals this run")
         live_path.write_text("Stock,List,Signal,Option,Result\n", encoding="utf-8")

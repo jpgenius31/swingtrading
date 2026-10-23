@@ -7447,11 +7447,43 @@ def detect_915_big_candle_1m(df_1m: pd.DataFrame, min_body_pct: float = 55.0, mi
             out["reason"] = "Missing OHLC"
             return out
         d[col] = pd.to_numeric(d[col], errors="coerce")
-    # Prefer first session candle; else last completed bar
+    # CRITICAL: use the FIRST 1-min candle of the session (≈9:15–9:16), NOT a later bar.
+    # Later bars often flip colour and caused wrong GREEN on red open losers.
+    try:
+        idx = pd.to_datetime(d.index)
+        if getattr(idx, "tz", None) is not None:
+            try:
+                idx = idx.tz_convert("Asia/Kolkata")
+            except Exception:
+                try:
+                    idx = idx.tz_localize(None)
+                except Exception:
+                    pass
+        d = d.copy()
+        d.index = idx
+        # keep today's bars if possible
+        try:
+            today = india_now().date()
+            d_today = d[[getattr(i, "date", lambda: None)() == today or (hasattr(i, "date") and i.date() == today) for i in d.index]]
+            if d_today is not None and len(d_today) >= 1:
+                d = d_today
+        except Exception:
+            pass
+        # Prefer bars whose time is between 09:15 and 09:20
+        try:
+            hours = d.index.hour if hasattr(d.index, "hour") else None
+            mins = d.index.minute if hasattr(d.index, "minute") else None
+            if hours is not None:
+                mask = (hours == 9) & (mins >= 15) & (mins <= 20)
+                d915 = d.loc[mask] if hasattr(mask, "any") and mask.any() else d.iloc[0:0]
+                if len(d915) >= 1:
+                    d = d915
+        except Exception:
+            pass
+    except Exception:
+        pass
+    # First bar of filtered series = open candle
     row = d.iloc[0]
-    if len(d) >= 2:
-        # use most recent completed 1m if available after open
-        row = d.iloc[-2] if len(d) > 2 else d.iloc[-1]
     o, h, l, c = float(row["Open"]), float(row["High"]), float(row["Low"]), float(row["Close"])
     out.update({"candle_open": o, "candle_high": h, "candle_low": l, "candle_close": c})
     body = _candle_body_pct(o, h, l, c)
@@ -7512,26 +7544,36 @@ def scan_915_top20_candle_signals(
     list_mode: str = "Top Gainer",
 ) -> pd.DataFrame:
     """
-    Top 20 NSE gainers OR losers (dropdown) → 1m big-candle CE/PE only.
+    NSE **F&O Securities** top 20 gainers OR losers (NSE website same list) →
+    first 1-min open candle CE/PE only.
     list_mode: "Top Gainer" | "Top Loser"
     """
     rows = []
     gainers = losers = pd.DataFrame()
     mode = str(list_mode or "Top Gainer").strip().upper()
     want_gainer = "GAINER" in mode or mode.startswith("TOP G")
-    want_loser = "LOSER" in mode or "LOSER" in mode or mode.startswith("TOP L")
+    want_loser = "LOSER" in mode or mode.startswith("TOP L")
 
-    if want_gainer or (not want_loser and not want_gainer):
+    # Primary: NSE F&O Securities (Market Data → F&O Securities gainers/losers)
+    try:
+        fo_g, fo_l = fetch_nse_fo_gainers_losers(limit=limit)
+        if want_gainer and fo_g is not None and not fo_g.empty:
+            gainers = fo_g
+        if want_loser and fo_l is not None and not fo_l.empty:
+            losers = fo_l
+    except Exception:
+        pass
+    # Fallback: cash top g/l
+    if want_gainer and (gainers is None or getattr(gainers, "empty", True)):
         try:
             gainers = fetch_nse_top_gainers(limit=limit)
         except Exception:
             pass
-    if want_loser:
+    if want_loser and (losers is None or getattr(losers, "empty", True)):
         try:
             losers = fetch_nse_top_losers(limit=limit)
         except Exception:
             pass
-    # fallback movers
     need_fb = (want_gainer and (gainers is None or getattr(gainers, "empty", True))) or (
         want_loser and (losers is None or getattr(losers, "empty", True))
     )
@@ -7575,9 +7617,14 @@ def scan_915_top20_candle_signals(
             sig = detect_915_big_candle_1m(df1, min_body_pct=min_body_pct)
             if sig.get("signal") not in ("CE", "PE"):
                 continue
+            # Align with list direction (avoids CALL on red-day losers from wrong bar)
+            if tag == "LOSER" and sig.get("signal") != "PE":
+                continue  # losers: only big RED → PUT
+            if tag == "GAINER" and sig.get("signal") != "CE":
+                continue  # gainers: only big GREEN → CALL
             move = None
             try:
-                move = safe_float(meta.get("Move %") or meta.get("Change %") or meta.get("pChange"))
+                move = safe_float(meta.get("Move %") or meta.get("Change %") or meta.get("pChange") or meta.get("Day %"))
             except Exception:
                 pass
             ltp = sig.get("candle_close")
@@ -7609,6 +7656,83 @@ def scan_915_top20_candle_signals(
         except Exception:
             continue
     return pd.DataFrame(rows)
+
+
+
+def auto_paper_915_min_capital(live: pd.DataFrame, capital_per_trade: float = 5000.0) -> int:
+    """
+    Paper-buy each 915 signal with small fixed capital (no broker).
+    Runs on scan / GitHub so user need not keep dashboard open.
+    """
+    if live is None or live.empty:
+        return 0
+    n = 0
+    today = india_now().strftime("%Y-%m-%d")
+    for _, r in live.iterrows():
+        try:
+            stock = str(r.get("Stock", "")).upper()
+            entry = safe_float(r.get("Entry (candle)") or r.get("LTP") or 0)
+            tgt = safe_float(r.get("Target") or 0)
+            sl = safe_float(r.get("Stop") or 0)
+            side = str(r.get("Signal") or "CE").upper()
+            if not stock or not entry or entry <= 0:
+                continue
+            # qty from min capital
+            qty = max(1, int(float(capital_per_trade) // entry))
+            tag = f"STRAT_915_AUTO_{side}"
+            # one auto entry per stock per day
+            flag = f"_915_auto_paper_{today}_{stock}_{side}"
+            if st.session_state.get(flag):
+                continue
+            try:
+                execute_paper_order(
+                    display_symbol(stock),
+                    "BUY",
+                    entry=entry,
+                    target=tgt,
+                    stop=sl,
+                    source=tag,
+                    force=True,
+                )
+            except TypeError:
+                # older signature without qty
+                execute_paper_order(
+                    display_symbol(stock),
+                    "BUY",
+                    entry=entry,
+                    target=tgt,
+                    stop=sl,
+                    source=tag,
+                    force=True,
+                )
+            st.session_state[flag] = True
+            n += 1
+        except Exception:
+            continue
+    return n
+
+
+def summarize_915_money(past: pd.DataFrame) -> dict:
+    """How many 915 trades making money vs losing (from past book)."""
+    out = {"total": 0, "wins": 0, "losses": 0, "pending": 0, "win_rate": 0.0, "sum_pnl": 0.0}
+    if past is None or past.empty:
+        return out
+    out["total"] = len(past)
+    ru = past["Result"].astype(str).str.upper() if "Result" in past.columns else pd.Series([""] * len(past))
+    wins = ru.str.contains("TARGET", na=False)
+    losses = ru.str.contains("STOP", na=False) | (
+        ru.str.contains("9:30|EXIT", na=False)
+        & (pd.to_numeric(past["PnL %"], errors="coerce").fillna(0) < 0 if "PnL %" in past.columns else False)
+    )
+    out["wins"] = int(wins.sum())
+    out["losses"] = int(losses.sum())
+    out["pending"] = int((~wins & ~losses).sum())
+    decided = out["wins"] + out["losses"]
+    out["win_rate"] = round(100.0 * out["wins"] / decided, 1) if decided else 0.0
+    if "PnL %" in past.columns:
+        out["sum_pnl"] = round(float(pd.to_numeric(past["PnL %"], errors="coerce").fillna(0).sum()), 2)
+    return out
+
 
 
 def load_915_past() -> pd.DataFrame:
@@ -7759,7 +7883,7 @@ def render_915_candle_top20_page():
     """Full desk: Top 20 G/L · big 1m candle · CE/PE · past success %."""
     st.markdown(f"### 🕯️ {STRATEGY_915_CANDLE_NAME}")
     st.caption(
-        "Choose **Top Gainer** or **Top Loser** · only that list is scanned · "
+        "Universe = **NSE F&O Securities** top gainers/losers (same as NSE website) · "
         "**1-minute** · **Big green → CALL (top/high)** · **Big red → PUT (bottom/low)** · Flat by **9:30 IST**"
     )
     with st.expander("Rules (this variant)", expanded=True):
@@ -7825,8 +7949,15 @@ def render_915_candle_top20_page():
             st.session_state["c915_live"] = live
             if live is not None and not live.empty:
                 n = append_915_calls_to_past(live)
+                # Auto paper BUY (min capital) so P&L tracks without staying on dashboard
+                auto_n = 0
+                try:
+                    auto_n = auto_paper_915_min_capital(live, capital_per_trade=5000.0)
+                except Exception:
+                    auto_n = 0
                 st.success(
-                    f"**{list_mode}** · **{len(live)}** CALL/PUT signals · **{n}** new rows in past book"
+                    f"**{list_mode}** · **{len(live)}** CALL/PUT · **{n}** past rows · "
+                    f"**{auto_n}** auto paper buys (₹5,000 each)"
                 )
             else:
                 st.warning(f"No big-candle CALL/PUT on **{list_mode}** this run.")
@@ -7867,12 +7998,19 @@ def render_915_candle_top20_page():
     n_p = int((~ru.str.contains("TARGET|STOP|9:30|EXIT|HOLDING", na=False)).sum()) if len(ru) else 0
     decided = n_t + n_s
     wr = round(100.0 * n_t / decided, 1) if decided else 0.0
-    k1, k2, k3, k4, k5 = st.columns(5)
+    money = summarize_915_money(past)
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
     k1.metric("Calls logged", len(past))
-    k2.metric("Targets", n_t)
-    k3.metric("Stops", n_s)
+    k2.metric("Making money (targets)", money["wins"])
+    k3.metric("Losing (stops)", money["losses"])
     k4.metric("9:30 exits", n_e)
-    k5.metric("Success % (T vs SL)", f"{wr}%")
+    k5.metric("Success %", f"{money['win_rate']}%")
+    k6.metric("Sum PnL %", f"{money['sum_pnl']:+.1f}%")
+    st.info(
+        f"**Without opening the app:** GitHub 9:15 job + auto paper (₹5k each) log results here. "
+        f"**{money['wins']}** trades making money · **{money['losses']}** losing · "
+        f"**{money['pending']}** pending · win rate **{money['win_rate']}%**."
+    )
     if decided:
         st.progress(min(1.0, n_t / decided))
         st.caption(f"Hit rate on decided trades (target vs stop only): **{wr}%** · pending **{n_p}**")
@@ -7952,6 +8090,62 @@ def fo_liquid_stock_universe() -> list:
 
 @st.cache_data(ttl=120, show_spinner=False)
 @st.cache_data(ttl=90, show_spinner=False)
+
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_nse_fo_gainers_losers(limit: int = 20) -> tuple:
+    """
+    NSE F&O Securities top gainers / losers (same universe as NSE website
+    Market Data → Top 20 Gainers/Losers → Select Index: F&O Securities).
+    Uses /api/equity-stockIndices?index=SECURITIES IN F&O then sorts by pChange.
+    """
+    gainers = losers = pd.DataFrame()
+    rows = []
+    try:
+        data = nse_get_json(
+            "/api/equity-stockIndices",
+            params={"index": "SECURITIES IN F&O"},
+            timeout=15,
+        )
+        if not data:
+            data = nse_get_json(
+                "https://www.nseindia.com/api/equity-stockIndices?index=SECURITIES%20IN%20F%26O",
+                timeout=15,
+            )
+        data_rows = []
+        if isinstance(data, dict):
+            data_rows = data.get("data") or data.get("stocks") or []
+        elif isinstance(data, list):
+            data_rows = data
+        for it in data_rows:
+            if not isinstance(it, dict):
+                continue
+            sym = str(it.get("symbol") or it.get("Symbol") or "").upper().strip()
+            if not sym or sym in ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"):
+                continue
+            try:
+                ltp = float(it.get("lastPrice") or it.get("ltp") or it.get("last") or 0)
+            except Exception:
+                ltp = 0.0
+            try:
+                pct = float(it.get("pChange") or it.get("perChange") or it.get("pchange") or 0)
+            except Exception:
+                pct = 0.0
+            try:
+                chg = float(it.get("change") or it.get("netChange") or 0)
+            except Exception:
+                chg = 0.0
+            rows.append({"Symbol": sym, "Stock": sym, "LTP": ltp, "Change": chg, "Move %": pct, "Change %": pct})
+    except Exception:
+        rows = []
+    if rows:
+        df = pd.DataFrame(rows)
+        df = df.drop_duplicates(subset=["Symbol"])
+        gainers = df.sort_values("Move %", ascending=False).head(limit).reset_index(drop=True)
+        losers = df.sort_values("Move %", ascending=True).head(limit).reset_index(drop=True)
+    return gainers, losers
+
+
+
 def fetch_nse_top_gainers(limit: int = 30) -> pd.DataFrame:
     """Top gainers from NSE live-analysis-variations (official-style list)."""
     rows = []
@@ -8309,7 +8503,7 @@ def _fo_bias_reason(sym: str) -> dict:
 
 # ---------- F&O Market Pulse (TradeBrahma-style: Index Mover, PCR, Sector, Gainers) ----------
 
-@st.cache_data(ttl=90, show_spinner=False)
+@st.cache_data(ttl=180, show_spinner=False)
 def _pulse_index_movers(index_key: str = "NIFTY50") -> dict:
     """
     Build Index Mover style table: day % change, up/down count, contribution proxy.
@@ -8330,28 +8524,71 @@ def _pulse_index_movers(index_key: str = "NIFTY50") -> dict:
         idx_yf, idx_name = "^NSEI", "NIFTY 50"
 
     rows = []
-    for sym in syms[:50]:
-        try:
-            df = stock_history(clean_symbol(sym), interval="1d", period="5d")
-            if df is None or len(df) < 2 or "Close" not in df.columns:
+    # Fast path: one batch Yahoo download (much faster than per-symbol on Reload)
+    try:
+        import yfinance as yf
+        tickers = " ".join([f"{s}.NS" for s in syms[:50]])
+        batch = yf.download(
+            tickers, period="5d", interval="1d", group_by="ticker",
+            threads=True, progress=False, auto_adjust=True,
+        )
+        if batch is not None and not batch.empty:
+            for sym in syms[:50]:
+                try:
+                    if isinstance(batch.columns, pd.MultiIndex):
+                        if sym + ".NS" in batch.columns.get_level_values(0):
+                            sub = batch[sym + ".NS"]
+                        elif sym in batch.columns.get_level_values(0):
+                            sub = batch[sym]
+                        else:
+                            continue
+                    else:
+                        continue
+                    if "Close" not in sub.columns:
+                        continue
+                    c = pd.to_numeric(sub["Close"], errors="coerce").dropna()
+                    if len(c) < 2:
+                        continue
+                    last, prev = float(c.iloc[-1]), float(c.iloc[-2])
+                    if prev <= 0:
+                        continue
+                    chg = last - prev
+                    pct = (chg / prev) * 100
+                    rows.append({
+                        "Stock": sym,
+                        "LTP": round(last, 2),
+                        "Change": round(chg, 2),
+                        "Change %": round(pct, 2),
+                        "AbsContrib": abs(pct),
+                    })
+                except Exception:
+                    continue
+    except Exception:
+        rows = []
+    # Fallback: few sequential calls if batch failed
+    if not rows:
+        for sym in syms[:30]:
+            try:
+                df = stock_history(clean_symbol(sym), interval="1d", period="5d")
+                if df is None or len(df) < 2 or "Close" not in df.columns:
+                    continue
+                c = pd.to_numeric(df["Close"], errors="coerce").dropna()
+                if len(c) < 2:
+                    continue
+                last, prev = float(c.iloc[-1]), float(c.iloc[-2])
+                if prev <= 0:
+                    continue
+                chg = last - prev
+                pct = (chg / prev) * 100
+                rows.append({
+                    "Stock": sym,
+                    "LTP": round(last, 2),
+                    "Change": round(chg, 2),
+                    "Change %": round(pct, 2),
+                    "AbsContrib": abs(pct),
+                })
+            except Exception:
                 continue
-            c = pd.to_numeric(df["Close"], errors="coerce").dropna()
-            if len(c) < 2:
-                continue
-            last, prev = float(c.iloc[-1]), float(c.iloc[-2])
-            if prev <= 0:
-                continue
-            chg = last - prev
-            pct = (chg / prev) * 100
-            rows.append({
-                "Stock": sym,
-                "LTP": round(last, 2),
-                "Change": round(chg, 2),
-                "Change %": round(pct, 2),
-                "AbsContrib": abs(pct),  # proxy without official weights
-            })
-        except Exception:
-            continue
 
     df = pd.DataFrame(rows)
     idx_ltp, idx_chg, idx_pct = None, None, None
@@ -8893,15 +9130,17 @@ def show_fo_market_pulse():
                 top.nsmallest(4, "Change %"),
             ]).drop_duplicates(subset=["Stock"])
             try:
-                import plotly.express as px
-                fig = px.pie(
-                    top_n,
-                    values="AbsContrib",
-                    names="Stock",
-                    color="Change %",
-                    color_continuous_scale=["#ef4444", "#22c55e"],
+                import plotly.graph_objects as go
+                # Discrete green/red donut (px.pie does not support color_continuous_scale)
+                colors = ["#22c55e" if float(x) >= 0 else "#ef4444" for x in top_n["Change %"].tolist()]
+                fig = go.Figure(data=[go.Pie(
+                    labels=top_n["Stock"].astype(str).tolist(),
+                    values=top_n["AbsContrib"].tolist(),
                     hole=0.55,
-                )
+                    marker=dict(colors=colors, line=dict(color="#0f172a", width=1)),
+                    textinfo="label+percent",
+                    hovertemplate="%{label}<br>%{value:.2f}<extra></extra>",
+                )])
                 fig.update_layout(
                     height=380,
                     margin=dict(l=10, r=10, t=30, b=10),
@@ -8912,6 +9151,7 @@ def show_fo_market_pulse():
                         text=f"<b>{name}</b><br>{ltp:,.0f}" if ltp else name,
                         x=0.5, y=0.5, showarrow=False, font=dict(size=14, color="#f8fafc"),
                     )],
+                    showlegend=False,
                 )
                 st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
             except Exception as e:
@@ -26298,13 +26538,22 @@ def ensure_scan_on_reload() -> int:
     except Exception:
         n = 0
     if n > 0:
+        # Fast reload: use disk/GitHub data only — do NOT rebuild strategies or
+        # re-fetch every index on every Reload (that made the page feel stuck).
         try:
-            refresh_index_market_once(force=True)
+            # Index snap from file if present; else one light refresh
+            idx_p = APP_DIR / "index_market_snap.json"
+            if idx_p.exists():
+                snap = json.loads(idx_p.read_text(encoding="utf-8"))
+                if isinstance(snap, dict) and snap:
+                    st.session_state["_index_market_snap"] = snap
+                    st.session_state["_index_market_snap_ts"] = time.time()
+            else:
+                refresh_index_market_once(force=False)
         except Exception:
             pass
         try:
-            st.session_state["_force_strategy_rebuild"] = True
-            rebuild_strategies_after_scan(st.session_state.get("results"), max_per_strategy=40)
+            load_strategy_snapshot(force=True)
         except Exception:
             pass
         return n
