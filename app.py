@@ -205,8 +205,9 @@ st.markdown(
     .block-container {
         padding-top: 5.25rem; /* room for fixed JP header */
         padding-bottom: 2.5rem;
-        padding-left: 1.5rem;
-        padding-right: 1.5rem;
+        padding-left: 1rem;
+        padding-right: 1rem;
+        max-width: 100%;
     }
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #0b1220 0%, #111827 100%);
@@ -347,6 +348,125 @@ st.markdown(
         header[data-testid="stHeader"] { background: transparent; }
     }
 
+
+    /* ===== JP mobile-friendly v2 ===== */
+    @media (max-width: 900px) {
+        /* Fixed header: compact, scrollable pills, no overflow */
+        .jp-top-fixed {
+            padding: 0 !important;
+        }
+        .jp-top-inner {
+            padding: 0.35rem 0.5rem !important;
+            gap: 6px !important;
+            flex-wrap: wrap !important;
+            align-items: center !important;
+        }
+        .jp-brand-title { font-size: 0.78rem !important; }
+        .jp-brand-sub { display: none !important; }
+        .jp-logo { width: 28px !important; height: 28px !important; font-size: 0.65rem !important; }
+        .jp-nav-pills {
+            width: 100% !important;
+            order: 3 !important;
+            overflow-x: auto !important;
+            flex-wrap: nowrap !important;
+            -webkit-overflow-scrolling: touch !important;
+            padding-bottom: 2px !important;
+            gap: 4px !important;
+            justify-content: flex-start !important;
+        }
+        .jp-pill {
+            padding: 0.28rem 0.55rem !important;
+            font-size: 0.72rem !important;
+            flex-shrink: 0 !important;
+        }
+        .jp-meta {
+            margin-left: 0 !important;
+            gap: 4px !important;
+        }
+        .jp-chip { font-size: 0.62rem !important; padding: 2px 6px !important; }
+        .jp-chip-mkt { display: none !important; }
+        /* Content room under fixed header */
+        .main .block-container,
+        .block-container {
+            padding-top: 5.8rem !important;
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+            padding-bottom: 5.5rem !important;
+            max-width: 100% !important;
+        }
+        /* Stack most 2–3 column layouts */
+        [data-testid="stHorizontalBlock"] {
+            flex-direction: column !important;
+            flex-wrap: nowrap !important;
+            gap: 0.5rem !important;
+        }
+        [data-testid="stHorizontalBlock"] > div {
+            min-width: 100% !important;
+            width: 100% !important;
+            flex: 1 1 100% !important;
+        }
+        /* Exception: keep tiny icon rows (gear) horizontal if only 2 narrow cols — still ok full width */
+        /* Tabs scroll horizontally */
+        [data-testid="stTabs"] [role="tablist"] {
+            overflow-x: auto !important;
+            flex-wrap: nowrap !important;
+            -webkit-overflow-scrolling: touch !important;
+        }
+        [data-testid="stTabs"] button[role="tab"] {
+            font-size: 0.82rem !important;
+            padding: 0.4rem 0.65rem !important;
+            white-space: nowrap !important;
+        }
+        /* Dataframes: swipe to scroll */
+        [data-testid="stDataFrame"] {
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+            max-width: 100vw !important;
+        }
+        [data-testid="stDataFrame"] table {
+            font-size: 0.78rem !important;
+        }
+        /* Charts smaller height on phone via container */
+        .js-plotly-plot, .plotly-graph-div {
+            max-width: 100% !important;
+        }
+        /* Expander / popover full width */
+        [data-testid="stExpander"],
+        div[data-testid="stPopover"] {
+            width: 100% !important;
+        }
+        div[data-testid="stPopover"] button {
+            min-height: 2.6rem !important;
+            width: 100% !important;
+        }
+        /* Back float doesn't cover content */
+        div.st-key-nav_back_float,
+        div[class*="st-key-nav_back_float"] {
+            bottom: 12px !important;
+            left: 8px !important;
+            max-width: 42vw !important;
+        }
+        /* Sidebar full height drawer */
+        section[data-testid="stSidebar"] {
+            width: min(88vw, 320px) !important;
+        }
+        /* Metric grid readable */
+        [data-testid="stMetric"] {
+            min-width: 0 !important;
+        }
+        /* Avoid iOS zoom on input focus */
+        input, select, textarea {
+            font-size: 16px !important;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .jp-nav-pills .jp-pill { font-size: 0.68rem !important; padding: 0.25rem 0.45rem !important; }
+        h1 { font-size: 1.25rem !important; }
+        .main .block-container { padding-top: 6.2rem !important; }
+    }
+
+
     /* Very small phones */
     @media (max-width: 400px) {
         h1 { font-size: 1.2rem !important; }
@@ -359,6 +479,7 @@ st.markdown(
 
     /* Smooth scroll + soft motion */
     html { scroll-behavior: auto; }
+    button, a { touch-action: manipulation; }
     @media (prefers-reduced-motion: no-preference) {
         .block-container {
             animation: nseFadeIn 0.35s ease-out;
@@ -3598,7 +3719,7 @@ def _pattern_chart_x_labels(df):
     return xs, labels
 
 
-def _pattern_mini_chart(df, hit: dict, height: int = 280, full: bool = False):
+def _pattern_mini_chart(df, hit: dict, height: int = 280, full: bool = False, measure_from=None, measure_to=None):
     """
     Full OHLC chart + pattern highlight:
     - Date + timeframe in title
@@ -4233,11 +4354,18 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
                     else:
                         m_from, m_to = None, None
 
-                    full_fig = _pattern_mini_chart(
-                        full_df, full_hit, height=620, full=True,
-                        measure_from=int(m_from) if m_from is not None else None,
-                        measure_to=int(m_to) if m_to is not None else None,
-                    )
+                    try:
+                        _mf = int(m_from) if m_from is not None else None
+                        _mt = int(m_to) if m_to is not None else None
+                    except Exception:
+                        _mf, _mt = None, None
+                    try:
+                        full_fig = _pattern_mini_chart(
+                            full_df, full_hit, height=420, full=True,
+                            measure_from=_mf, measure_to=_mt,
+                        )
+                    except TypeError:
+                        full_fig = _pattern_mini_chart(full_df, full_hit, height=620, full=True)
                     if full_fig is not None:
                         try:
                             full_fig.update_layout(dragmode="drawline")
@@ -28717,12 +28845,35 @@ def render_header_nav():
             overflow: hidden;
             text-overflow: ellipsis;
         }}
-        @media (max-width: 820px) {{
-            .main .block-container {{ padding-top: 4.0rem !important; }}
-            .jp-brand-sub {{ display: none; }}
-            .jp-chip-mkt {{ display: none; }}
-            .jp-top-inner {{ flex-wrap: wrap; overflow-x: visible; }}
-            .jp-nav-pills {{ justify-content: flex-start; width: 100%; order: 3; }}
+
+        /* Compact header settings popover button row */
+        div[data-testid="stPopover"] button,
+        div.st-key-hdr_settings_pop button {
+            min-height: 2rem !important;
+            padding: 0.15rem 0.4rem !important;
+            border-radius: 999px !important;
+        }
+        @media (max-width: 900px) {{
+            .main .block-container {{ padding-top: 5.8rem !important; padding-left: 0.5rem !important; padding-right: 0.5rem !important; }}
+            .jp-brand-sub {{ display: none !important; }}
+            .jp-chip-mkt {{ display: none !important; }}
+            .jp-top-inner {{
+                flex-wrap: wrap !important;
+                overflow-x: visible !important;
+                padding: 0.35rem 0.5rem !important;
+                gap: 6px !important;
+            }}
+            .jp-nav-pills {{
+                justify-content: flex-start !important;
+                width: 100% !important;
+                order: 3 !important;
+                overflow-x: auto !important;
+                flex-wrap: nowrap !important;
+                -webkit-overflow-scrolling: touch !important;
+            }}
+            .jp-pill {{ font-size: 0.72rem !important; padding: 0.28rem 0.55rem !important; flex-shrink: 0 !important; }}
+            .jp-brand-title {{ font-size: 0.78rem !important; }}
+            .jp-logo {{ width: 28px !important; height: 28px !important; }}
         }}
         </style>
         <div class="jp-top-fixed">
@@ -28754,9 +28905,6 @@ def render_header_nav():
               <a class="jp-pill jp-pill-scanfile jp-pill-icon" href="?jp_nav=reloadscan" target="_self"
                  title="Reload scan file from disk / GitHub"
                  onclick="try{{window.parent.location.search='?jp_nav=reloadscan';return false;}}catch(e){{}}">📥</a>
-              <a class="jp-pill jp-pill-gear jp-pill-icon" href="?jp_nav=settings" target="_self"
-                 title="Live prices · notifications · theme"
-                 onclick="try{{window.parent.location.search='?jp_nav=settings';return false;}}catch(e){{}}">⚙️</a>
             </div>
           </div>
         </div>
@@ -28764,127 +28912,144 @@ def render_header_nav():
         unsafe_allow_html=True,
     )
 
-    # Settings drawer (opened from header ⚙️) — no big Reload buttons under header
-    _open_settings = bool(st.session_state.pop("_hdr_settings_open", False))
-    with st.expander("⚙️ Live · alerts · theme", expanded=_open_settings):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.caption("**Live market**")
-            st.write(f"{'🟢' if open_now else '🔴'} **{live_dot}** · {mkt}")
-            st.session_state.live_prices_on = st.checkbox(
-                "Auto live prices (uses data quota — keep OFF on Cloud)",
-                value=bool(st.session_state.get("live_prices_on", False)),
-                key="hdr_live_on",
-            )
-            _opts = [30, 60, 120, 300, 600]
-            _cur_sec = int(st.session_state.get("refresh_seconds") or 60)
-            if _cur_sec not in _opts:
-                _cur_sec = 60
-            st.session_state.refresh_seconds = int(
-                st.selectbox("Refresh (sec)", _opts, index=_opts.index(_cur_sec), key="refresh_secs_select")
-            )
-            st.markdown("**Scan type** (light = safe to run often)")
-            _modes = {
-                "Nifty 50 (light)": "nifty50",
-                "Nifty 200 (light)": "nifty200",
-                "Bank Nifty stocks (light)": "banknifty",
-                "Sector-wise (light)": "sector",
-                "Master — full market (heavy)": "master",
-            }
-            _labels = list(_modes.keys())
-            _cur_mode = st.session_state.get("scan_mode", "nifty50")
-            _cur_label = next((k for k, v in _modes.items() if v == _cur_mode), _labels[0])
-            _pick = st.selectbox(
-                "Universe",
-                _labels,
-                index=_labels.index(_cur_label) if _cur_label in _labels else 0,
-                key="hdr_scan_mode_label",
-                help="Nifty / Bank / Sector can be run multiple times. Master is heavy — use rarely.",
-            )
-            st.session_state.scan_mode = _modes[_pick]
-            if st.session_state.scan_mode == "sector":
-                _secs = sorted({str(v) for v in (SECTOR_MAP.values() if SECTOR_MAP else []) if v and str(v) != "Other"})
-                if not _secs:
-                    _secs = ["Banking", "IT", "Pharma", "Automobile", "FMCG", "Energy", "Metals", "Financial Services"]
-                st.session_state.scan_sector = st.selectbox(
-                    "Sector",
-                    _secs,
-                    index=0,
-                    key="hdr_scan_sector",
+    # Compact header-only settings (popover). No full-width Live bar on any tab.
+    st.markdown(
+        """
+        <style>
+        /* Keep settings control tight under fixed header, right side */
+        div[data-testid="stHorizontalBlock"]:has(button[kind="secondary"]) {
+            gap: 0.25rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    _sp, _gear = st.columns([12, 1])
+    with _gear:
+        try:
+            _pop = st.popover("⚙️", help="Live · alerts · theme · scan")
+        except TypeError:
+            _pop = st.popover("⚙️")
+        with _pop:
+            st.caption("Header settings")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.caption("**Live market**")
+                st.write(f"{'🟢' if open_now else '🔴'} **{live_dot}** · {mkt}")
+                st.session_state.live_prices_on = st.checkbox(
+                    "Auto live prices (uses data quota — keep OFF on Cloud)",
+                    value=bool(st.session_state.get("live_prices_on", False)),
+                    key="hdr_live_on",
                 )
-            else:
-                st.session_state.scan_sector = ""
-            st.caption(
-                "Header **Scan** runs the selected type. "
-                "Light scans ≈ low Cloud load. Master ≈ high load."
-            )
-        with c2:
-            st.caption("**Notifications**")
-            try:
-                render_notification_controls("header")
-            except Exception:
-                st.caption("Notifications unavailable")
-        with c3:
-            st.caption("**Sync / reload**")
-            st.session_state.auto_refresh = st.checkbox(
-                "Auto refresh page",
-                value=bool(st.session_state.get("auto_refresh", False)),
-                key="hdr_auto_ref",
-            )
-            st.session_state.live_sync = st.checkbox(
-                "Live sync (devices)",
-                value=bool(st.session_state.get("live_sync", False)),
-                key="hdr_live_sync",
-            )
-            # Theme switcher
-            st.caption("**Theme**")
-            _th = st.radio(
-                "Theme",
-                ["Dark", "Light", "System"],
-                index=["Dark", "Light", "System"].index(
-                    st.session_state.get("ui_theme", "Dark")
-                    if st.session_state.get("ui_theme") in ("Dark", "Light", "System")
-                    else "Dark"
-                ),
-                horizontal=True,
-                key="hdr_theme_radio",
-                label_visibility="collapsed",
-            )
-            if _th != st.session_state.get("ui_theme"):
-                st.session_state.ui_theme = _th
-                st.rerun()
-
-            if st.button("📥 Reload scan", use_container_width=True, key="hdr_reload"):
-                with st.spinner("Reloading scan (file → or light Nifty50)…"):
-                    n_load = ensure_scan_on_reload()
-                if n_load > 0:
-                    src = st.session_state.get("_scan_source_file", "latest_results.csv")
-                    st.session_state["_scan_done_msg"] = (
-                        f"Reload complete · **{n_load}** stocks loaded · "
-                        f"source `{Path(str(src)).name}` · you can use Dashboard / Strategy now."
+                _opts = [30, 60, 120, 300, 600]
+                _cur_sec = int(st.session_state.get("refresh_seconds") or 60)
+                if _cur_sec not in _opts:
+                    _cur_sec = 60
+                st.session_state.refresh_seconds = int(
+                    st.selectbox("Refresh (sec)", _opts, index=_opts.index(_cur_sec), key="refresh_secs_select")
+                )
+                st.markdown("**Scan type** (light = safe to run often)")
+                _modes = {
+                    "Nifty 50 (light)": "nifty50",
+                    "Nifty 200 (light)": "nifty200",
+                    "Bank Nifty stocks (light)": "banknifty",
+                    "Sector-wise (light)": "sector",
+                    "Master — full market (heavy)": "master",
+                }
+                _labels = list(_modes.keys())
+                _cur_mode = st.session_state.get("scan_mode", "nifty50")
+                _cur_label = next((k for k, v in _modes.items() if v == _cur_mode), _labels[0])
+                _pick = st.selectbox(
+                    "Universe",
+                    _labels,
+                    index=_labels.index(_cur_label) if _cur_label in _labels else 0,
+                    key="hdr_scan_mode_label",
+                    help="Nifty / Bank / Sector can be run multiple times. Master is heavy — use rarely.",
+                )
+                st.session_state.scan_mode = _modes[_pick]
+                if st.session_state.scan_mode == "sector":
+                    _secs = sorted({str(v) for v in (SECTOR_MAP.values() if SECTOR_MAP else []) if v and str(v) != "Other"})
+                    if not _secs:
+                        _secs = ["Banking", "IT", "Pharma", "Automobile", "FMCG", "Energy", "Metals", "Financial Services"]
+                    st.session_state.scan_sector = st.selectbox(
+                        "Sector",
+                        _secs,
+                        index=0,
+                        key="hdr_scan_sector",
                     )
-                    st.balloons()
-                    st.rerun()
                 else:
-                    st.error(
-                        "Reload failed: no CSV and light scan returned 0 rows "
-                        "(data source blocked). Try GitHub Action **Market Scan**, "
-                        "or Dashboard **Scan → Nifty 50**."
-                    )
-                    st.caption(f"CSV path: `{RESULT_FILE}` · exists={RESULT_FILE.exists()}")
-            if st.button("🔄 Refresh now", use_container_width=True, key="hdr_manual_ref"):
+                    st.session_state.scan_sector = ""
+                st.caption(
+                    "Header **Scan** runs the selected type. "
+                    "Light scans ≈ low Cloud load. Master ≈ high load."
+                )
+            with c2:
+                st.caption("**Notifications**")
                 try:
-                    live_quote.clear()
+                    render_notification_controls("header")
                 except Exception:
-                    pass
-                try:
-                    apply_realtime_sync(force=True, refresh_prices=True)
-                except Exception:
+                    st.caption("Notifications unavailable")
+            with c3:
+                st.caption("**Sync / reload**")
+                st.session_state.auto_refresh = st.checkbox(
+                    "Auto refresh page",
+                    value=bool(st.session_state.get("auto_refresh", False)),
+                    key="hdr_auto_ref",
+                )
+                st.session_state.live_sync = st.checkbox(
+                    "Live sync (devices)",
+                    value=bool(st.session_state.get("live_sync", False)),
+                    key="hdr_live_sync",
+                )
+                # Theme switcher
+                st.caption("**Theme**")
+                _th = st.radio(
+                    "Theme",
+                    ["Dark", "Light", "System"],
+                    index=["Dark", "Light", "System"].index(
+                        st.session_state.get("ui_theme", "Dark")
+                        if st.session_state.get("ui_theme") in ("Dark", "Light", "System")
+                        else "Dark"
+                    ),
+                    horizontal=True,
+                    key="hdr_theme_radio",
+                    label_visibility="collapsed",
+                )
+                if _th != st.session_state.get("ui_theme"):
+                    st.session_state.ui_theme = _th
+                    st.rerun()
+
+                if st.button("📥 Reload scan", use_container_width=True, key="hdr_reload"):
+                    with st.spinner("Reloading scan (file → or light Nifty50)…"):
+                        n_load = ensure_scan_on_reload()
+                    if n_load > 0:
+                        src = st.session_state.get("_scan_source_file", "latest_results.csv")
+                        st.session_state["_scan_done_msg"] = (
+                            f"Reload complete · **{n_load}** stocks loaded · "
+                            f"source `{Path(str(src)).name}` · you can use Dashboard / Strategy now."
+                        )
+                        st.balloons()
+                        st.rerun()
+                    else:
+                        st.error(
+                            "Reload failed: no CSV and light scan returned 0 rows "
+                            "(data source blocked). Try GitHub Action **Market Scan**, "
+                            "or Dashboard **Scan → Nifty 50**."
+                        )
+                        st.caption(f"CSV path: `{RESULT_FILE}` · exists={RESULT_FILE.exists()}")
+                if st.button("🔄 Refresh now", use_container_width=True, key="hdr_manual_ref"):
                     try:
-                        apply_realtime_sync(force=True)
+                        live_quote.clear()
                     except Exception:
                         pass
-                st.rerun()
+                    try:
+                        apply_realtime_sync(force=True, refresh_prices=True)
+                    except Exception:
+                        try:
+                            apply_realtime_sync(force=True)
+                        except Exception:
+                            pass
+                    st.rerun()
 
     return do_scan
 
