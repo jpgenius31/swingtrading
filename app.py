@@ -2670,6 +2670,47 @@ def detect_patterns(df):
     return out
 
 
+def detect_patterns_located(df, lookback: int = 40):
+    """
+    Scan last `lookback` bars and return list of {name, bar, price, date}.
+    Names are placed on the candle where the pattern completes.
+    """
+    found = []
+    if df is None or len(df) < 5:
+        return found
+    n = len(df)
+    start = max(5, n - int(lookback))
+    for end_i in range(start, n):
+        sub = df.iloc[: end_i + 1]
+        try:
+            names = detect_patterns(sub) or []
+        except Exception:
+            names = []
+        if not names:
+            continue
+        try:
+            price = float(sub["High"].iloc[-1])
+        except Exception:
+            price = float(sub["Close"].iloc[-1])
+        try:
+            dlab = pd.Timestamp(sub.index[-1]).strftime("%d-%b")
+        except Exception:
+            dlab = str(end_i)
+        for nm in names:
+            # avoid flooding same name every bar — keep latest occurrence only later
+            found.append({
+                "name": nm,
+                "bar": end_i,
+                "price": price,
+                "date": dlab,
+            })
+    # Keep last occurrence of each name (most recent)
+    latest = {}
+    for row in found:
+        latest[row["name"]] = row
+    return list(latest.values())
+
+
 # Default pattern importance (before learning adjusts weights)
 PATTERN_IMPORTANCE = {
     "Hammer": {
@@ -12037,9 +12078,8 @@ def show_nse_tools_workspace():
         ("📊", "Open Interest Chain", "Full chain for a stored/live session — OI, volume, LTP, max-pain estimate.", "Tool OI Chain"),
         ("⚡", "Option Strategy Backtester", "Replay simple straddle / strangle on historical underlying with BS marks.", "Tool Option Backtester"),
         ("✦", "Square of 9", "Support and resistance from Square of 9 on a real NSE last price — triggers & targets.", "Tool Square9"),
-        ("🔍", "Chart Pattern Scanner", "Gartley, Butterfly, ABCD, H&S, double/triple tops, wedges, triangles — drawn on chart.", "Chart Pattern Scanner"),
-        ("🔎", "Pattern Screener", "Pick one pattern and sweep NSE stocks — newest completions first with fit score.", "Chart Pattern Scanner"),
-        ("🕯", "Candlestick Patterns", "Hammers, engulfings, stars — one stock or market sweep.", "Tool Candles"),
+        ("🔍", "Chart Pattern Scanner", "Structure: H&S, double/triple tops, wedges, triangles, harmonics — multi-bar shapes drawn on chart.", "Chart Pattern Scanner"),
+        ("🕯", "Candlestick Patterns", "Candle names on chart: Hammer, Engulfing, Doji, Star — at the bar they form.", "Tool Candles"),
         ("🗓", "Multi-Timeframe", "Monthly, weekly and daily confluence on NSE bars.", "Multi Timeframe"),
         ("⚡", "Momentum Divergence", "Sharp impulse followed by a slower, smaller recovery — market sweep.", "Tool Momentum"),
     ]
@@ -12374,7 +12414,11 @@ def show_tool_option_backtester():
 
 def show_tool_candles():
     st.markdown("### 🕯 Candlestick Patterns")
-    st.caption("Named one/two/three candle formations on real OHLC.")
+    st.caption(
+        "Named **candle** patterns (Hammer, Engulfing, Doji, Star…) on real OHLC. "
+        "Names are drawn **on the chart** at the bar where the pattern completed. "
+        "This is different from **Chart Pattern Scanner** (H&S, double top, triangles — multi-bar structure)."
+    )
     mode = st.radio("Mode", ["One stock", "Sweep market (sample)"], horizontal=True, key="cdl_mode")
     if mode.startswith("One"):
         sym = sym_input("Symbol", value="RELIANCE", key="cdl_sym")
@@ -12382,15 +12426,60 @@ def show_tool_candles():
         if df is None or df.empty:
             st.warning("No data.")
             return
-        df = df.tail(120)
-        pats = detect_patterns(df)
-        st.write("**Recent patterns:**", ", ".join(pats) if pats else "None flagged on last bars")
+        df = df.tail(120).copy()
+        located = detect_patterns_located(df, lookback=50)
+        pats = [x["name"] for x in located]
+        st.write("**Named on chart:**", ", ".join(pats) if pats else "None flagged on recent bars")
+        if located:
+            st.dataframe(
+                pd.DataFrame([{
+                    "Pattern name": x["name"],
+                    "Bar #": x["bar"],
+                    "Date": x["date"],
+                    "Price ₹": round(x["price"], 2),
+                } for x in located]),
+                use_container_width=True,
+                hide_index=True,
+            )
         fig = go.Figure(go.Candlestick(
-            x=list(range(len(df))), open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"]
+            x=list(range(len(df))),
+            open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"],
+            name="OHLC",
+            increasing_line_color="#22c55e", decreasing_line_color="#ef4444",
         ))
-        fig.update_layout(height=340, xaxis_rangeslider_visible=False, margin=dict(l=8, r=8, t=20, b=8),
-                          paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(15,23,42,0.9)",
-                          font=dict(color="#e2e8f0"))
+        # Draw pattern NAMES on the candles
+        colors = ["#fbbf24", "#38bdf8", "#a78bfa", "#f472b6", "#4ade80", "#fb7185"]
+        for k, x in enumerate(located):
+            bi = int(x["bar"])
+            if bi < 0 or bi >= len(df):
+                continue
+            col = colors[k % len(colors)]
+            y = float(x["price"])
+            fig.add_annotation(
+                x=bi,
+                y=y,
+                text=f"<b>{x['name']}</b>",
+                showarrow=True,
+                arrowhead=2,
+                arrowcolor=col,
+                ax=0,
+                ay=-40 if k % 2 == 0 else 40,
+                font=dict(size=11, color=col, family="Arial Black"),
+                bgcolor="rgba(15,23,42,0.85)",
+                bordercolor=col,
+                borderwidth=1,
+                borderpad=3,
+            )
+            fig.add_vline(x=bi, line_width=1, line_dash="dot", line_color="rgba(148,163,184,0.35)")
+        fig.update_layout(
+            height=420,
+            xaxis_rangeslider_visible=False,
+            margin=dict(l=8, r=8, t=28, b=8),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(15,23,42,0.9)",
+            font=dict(color="#e2e8f0"),
+            title=dict(text=f"{display_symbol(sym)} · candlestick names on chart", font=dict(size=13)),
+        )
         st.plotly_chart(fig, use_container_width=True, config=PLOTLY_DRAW_CONFIG)
     else:
         universe = list(NSE_STOCKS)[:40] if NSE_STOCKS else ["RELIANCE", "TCS", "INFY"]
@@ -12401,9 +12490,12 @@ def show_tool_candles():
                     df = stock_history(clean_symbol(sym), interval="1d")
                     if df is None or len(df) < 30:
                         continue
-                    pats = detect_patterns(df.tail(40))
-                    if pats:
-                        rows.append({"Stock": display_symbol(sym), "Patterns": ", ".join(pats[:5])})
+                    located = detect_patterns_located(df.tail(40), lookback=40)
+                    if located:
+                        rows.append({
+                            "Stock": display_symbol(sym),
+                            "Patterns (named)": ", ".join(x["name"] for x in located[:6]),
+                        })
                 except Exception:
                     continue
         if rows:
@@ -12426,7 +12518,7 @@ def show_pattern_hub():
     )
     st.caption("Format aligned with RG Tools · pick one tool card")
     _hub_card_grid([
-        ("📐 Pattern Screener", "Pick one pattern · sweep NSE stocks · newest completions first · points marked · fit score · timeframe badge.", "Chart Pattern Scanner"),
+        ("📐 Chart Pattern Scanner", "Structure patterns (H&S, double top, triangles…) · points marked · fit score · timeframe.", "Chart Pattern Scanner"),
         ("🗓 Multi-Timeframe Confluence", "Monthly · Weekly · Daily must agree. One stock or market sweep. Neutral/doji never counts.", "Multi Timeframe"),
     ], key_prefix="pattern_hub")
 
@@ -28373,7 +28465,7 @@ def render_header_nav():
         do_scan = True
         _clear_jp_nav()
     elif nav == "reload":
-        # Static header Reload — refresh current page data without full market scan
+        # Header ↻ — refresh page data without full market scan
         _clear_jp_nav()
         try:
             live_quote.clear()
@@ -28402,13 +28494,31 @@ def render_header_nav():
             n_load = ensure_scan_on_reload()
             if n_load and n_load > 0:
                 st.session_state["_scan_done_msg"] = (
-                    f"Page reloaded · **{n_load}** stocks from disk/GitHub · "
+                    f"Page reloaded · **{n_load}** stocks · "
                     f"{india_now().strftime('%H:%M IST')}"
                 )
         except Exception:
             pass
         st.rerun()
+    elif nav == "reloadscan":
+        _clear_jp_nav()
+        try:
+            n_load = ensure_scan_on_reload()
+            if n_load and n_load > 0:
+                st.session_state["_scan_done_msg"] = (
+                    f"Reload scan · **{n_load}** stocks · {india_now().strftime('%H:%M IST')}"
+                )
+            else:
+                st.session_state["_scan_done_msg"] = "No scan file yet — run Scan or wait for GitHub."
+        except Exception:
+            pass
+        st.rerun()
+    elif nav == "settings":
+        _clear_jp_nav()
+        st.session_state["_hdr_settings_open"] = True
+        # fall through — page stays, expander opens
     elif nav in nav_map:
+
         target = nav_map[nav]
         prev = st.session_state.get("page", "Dashboard")
         if prev != target:
@@ -28492,7 +28602,7 @@ def render_header_nav():
         }}
         .main .block-container {{
             max-width: 1180px !important;
-            padding-top: 4.8rem !important;
+            padding-top: 3.6rem !important;
             padding-bottom: 2rem !important;
         }}
         .jp-top-fixed {{
@@ -28565,6 +28675,26 @@ def render_header_nav():
             color: #fff !important;
             border-color: transparent !important;
             font-weight: 800 !important;
+            min-width: 2.1rem;
+            text-align: center;
+            padding-left: 0.55rem !important;
+            padding-right: 0.55rem !important;
+        }}
+        .jp-pill-icon {{
+            min-width: 2.1rem;
+            text-align: center;
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+            font-size: 0.95rem !important;
+        }}
+        .jp-pill-scanfile {{
+            background: linear-gradient(135deg,#0369a1,#0ea5e9) !important;
+            color: #fff !important;
+            border-color: transparent !important;
+        }}
+        .jp-pill-gear {{
+            background: #f1f5f9 !important;
+            color: #0f172a !important;
         }}
         .jp-meta {{
             display: flex; align-items: center; gap: 6px;
@@ -28588,7 +28718,7 @@ def render_header_nav():
             text-overflow: ellipsis;
         }}
         @media (max-width: 820px) {{
-            .main .block-container {{ padding-top: 5.2rem !important; }}
+            .main .block-container {{ padding-top: 4.0rem !important; }}
             .jp-brand-sub {{ display: none; }}
             .jp-chip-mkt {{ display: none; }}
             .jp-top-inner {{ flex-wrap: wrap; overflow-x: visible; }}
@@ -28607,23 +28737,26 @@ def render_header_nav():
             </a>
             <div class="jp-nav-pills">
               {_pill("home", "Home")}
-              {_pill("mypage", "My Page")}
+              {_pill("mypage", "My")}
               {_pill("swing", "Swing")}
               {_pill("tools", "Tools")}
-              {_pill("intraday", "Intraday / F&amp;O")}
-              {_pill("scanner", "Scanner")}
-              {_pill("broker", "Broker")}
-              {_pill("superstar", "Bank deals")}
+              {_pill("intraday", "F&amp;O")}
+              {_pill("scanner", "ScanQ")}
               <a class="jp-pill jp-pill-scan" href="?jp_nav=scan" target="_self"
-                 onclick="try{{window.parent.location.search='?jp_nav=scan';return false;}}catch(e){{}}">Scan</a>
-              <a class="jp-pill jp-pill-reload" href="?jp_nav=reload" target="_self"
-                 title="Reload page data · prices · scan file"
-                 onclick="try{{window.parent.location.search='?jp_nav=reload';return false;}}catch(e){{}}">↻ Reload</a>
+                 title="Run scan" onclick="try{{window.parent.location.search='?jp_nav=scan';return false;}}catch(e){{}}">▶</a>
             </div>
             <div class="jp-meta">
-              <span class="jp-chip jp-chip-live">● {live_dot}</span>
-              <span class="jp-chip jp-chip-mkt">{mkt} · {scan_chip}</span>
-              <span class="jp-chip">{notif_label}</span>
+              <span class="jp-chip jp-chip-live" title="Market">● {live_dot}</span>
+              <span class="jp-chip jp-chip-mkt" title="Status">{scan_chip}</span>
+              <a class="jp-pill jp-pill-reload jp-pill-icon" href="?jp_nav=reload" target="_self"
+                 title="Reload page · prices · caches"
+                 onclick="try{{window.parent.location.search='?jp_nav=reload';return false;}}catch(e){{}}">↻</a>
+              <a class="jp-pill jp-pill-scanfile jp-pill-icon" href="?jp_nav=reloadscan" target="_self"
+                 title="Reload scan file from disk / GitHub"
+                 onclick="try{{window.parent.location.search='?jp_nav=reloadscan';return false;}}catch(e){{}}">📥</a>
+              <a class="jp-pill jp-pill-gear jp-pill-icon" href="?jp_nav=settings" target="_self"
+                 title="Live prices · notifications · theme"
+                 onclick="try{{window.parent.location.search='?jp_nav=settings';return false;}}catch(e){{}}">⚙️</a>
             </div>
           </div>
         </div>
@@ -28631,50 +28764,9 @@ def render_header_nav():
         unsafe_allow_html=True,
     )
 
-    # Always-visible Reload under fixed header (static zone on every page)
-    _hr1, _hr2, _hr3 = st.columns([1, 1, 4])
-    with _hr1:
-        if st.button("↻ Reload", type="primary", use_container_width=True, key="hdr_static_reload",
-                     help="Refresh page · clear price cache · reload scan file from disk/GitHub"):
-            try:
-                live_quote.clear()
-            except Exception:
-                pass
-            try:
-                stock_history.clear()
-            except Exception:
-                pass
-            try:
-                apply_realtime_sync(force=True, refresh_prices=True)
-            except Exception:
-                try:
-                    apply_realtime_sync(force=True)
-                except Exception:
-                    pass
-            try:
-                n_load = ensure_scan_on_reload()
-                if n_load and n_load > 0:
-                    st.session_state["_scan_done_msg"] = (
-                        f"Reloaded · **{n_load}** stocks · {india_now().strftime('%H:%M IST')}"
-                    )
-            except Exception:
-                pass
-            st.rerun()
-    with _hr2:
-        if st.button("📥 Reload scan", use_container_width=True, key="hdr_static_reload_scan",
-                     help="Load latest_results.csv from disk / GitHub"):
-            with st.spinner("Reloading scan…"):
-                n_load = ensure_scan_on_reload()
-            if n_load and n_load > 0:
-                st.session_state["_scan_done_msg"] = (
-                    f"Reload complete · **{n_load}** stocks · {india_now().strftime('%H:%M IST')}"
-                )
-                st.rerun()
-            else:
-                st.warning("No scan file yet — wait for GitHub 9:15/9:20 job or run Scan.")
-
-    # Notifications + live controls in header zone (compact)
-    with st.expander("⚙️ Live prices · notifications · sync", expanded=False):
+    # Settings drawer (opened from header ⚙️) — no big Reload buttons under header
+    _open_settings = bool(st.session_state.pop("_hdr_settings_open", False))
+    with st.expander("⚙️ Live · alerts · theme", expanded=_open_settings):
         c1, c2, c3 = st.columns(3)
         with c1:
             st.caption("**Live market**")
