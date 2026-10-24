@@ -3332,11 +3332,38 @@ def save_pattern_scan_hits(hits: list, pattern: str = "", tf: str = "") -> int:
 
 
 def load_pattern_scan_hits() -> list:
-    """Load 9:15 / last auto pattern scan for instant display."""
+    """Load last pattern scan (disk first, then GitHub raw) — works when market is closed."""
     try:
         if PATTERN_SCAN_FILE.exists():
             data = json.loads(PATTERN_SCAN_FILE.read_text(encoding="utf-8"))
-            if isinstance(data, list):
+            if isinstance(data, list) and data:
+                return data
+    except Exception:
+        pass
+    # GitHub raw fallback (same base as latest_results)
+    try:
+        base = ""
+        try:
+            base = (st.secrets.get("GITHUB_RESULTS_RAW") if hasattr(st, "secrets") else None) or ""
+        except Exception:
+            base = ""
+        if not base:
+            base = os.environ.get("GITHUB_RESULTS_RAW", "")
+        if base:
+            base = str(base).rstrip("/")
+            # if points to a csv file, strip to folder
+            if base.endswith(".csv"):
+                base = base.rsplit("/", 1)[0]
+            url = base + "/pattern_scan_results.json"
+            import urllib.request
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Cache-Control": "no-cache"})
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            if isinstance(data, list) and data:
+                try:
+                    PATTERN_SCAN_FILE.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+                except Exception:
+                    pass
                 return data
     except Exception:
         pass
@@ -3804,7 +3831,11 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
 
     # --- Instant mode: no live market screening ---
     # Always keep full auto library in session; filter by selected PATTERN immediately.
-    # Always prefer fresh disk library (GitHub) so filters are instant with latest auto-scan
+    # Market closed → always last scanned library (disk / GitHub)
+    try:
+        mkt_open = nse_market_open_now()
+    except Exception:
+        mkt_open = False
     disk_hits = load_pattern_scan_hits()
     if disk_hits:
         st.session_state["cps_library"] = disk_hits
@@ -3812,25 +3843,47 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
     elif "cps_library" not in st.session_state:
         st.session_state["cps_library"] = []
 
+    meta = {}
+    try:
+        if PATTERN_SCAN_META.exists():
+            meta = json.loads(PATTERN_SCAN_META.read_text(encoding="utf-8"))
+    except Exception:
+        meta = {}
+
+    if not mkt_open:
+        st.info(
+            f"**Market closed** — showing **last scanned** pattern library "
+            f"({meta.get('rows', len(disk_hits or []))} hits · saved {meta.get('saved_at_ist', '—')}). "
+            "Filters still work instantly."
+        )
+    elif disk_hits:
+        st.success(
+            f"Pattern library ready · **{len(disk_hits)}** hits · {meta.get('saved_at_ist', 'from disk/GitHub')}"
+        )
+
     b1, b2, b3 = st.columns([1, 1, 1])
     with b1:
-        if st.button("⚡ Load / refresh auto patterns", type="primary", use_container_width=True, key="cps_show_auto"):
+        if st.button("⚡ Load last scan (disk / GitHub)", type="primary", use_container_width=True, key="cps_show_auto"):
             disk_hits = load_pattern_scan_hits()
             if disk_hits:
                 st.session_state["cps_library"] = disk_hits
                 st.session_state["cps_from_auto"] = True
-                st.success(f"Loaded **{len(disk_hits)}** pre-scanned hits — pick a pattern above.")
+                st.success(f"Loaded **{len(disk_hits)}** last-scanned hits.")
                 st.rerun()
             else:
-                st.warning("No auto file yet. Use optional deep scan below once, or wait for 9:15 GitHub job.")
+                st.warning("No saved library yet — run **Scan ALL patterns** below or wait for GitHub job.")
     with b2:
         if st.button("Start over / clear", use_container_width=True, key="cps_clear"):
             for k in ("cps_hits", "cps_library", "cps_from_auto"):
                 st.session_state.pop(k, None)
             st.rerun()
     with b3:
-        deep = st.button("Optional deep rescan (slow)", use_container_width=True, key="cps_deep",
-                         help="Only if auto library is empty — scans market live (can take minutes).")
+        deep = st.button(
+            "🔍 Scan ALL patterns at once",
+            use_container_width=True,
+            key="cps_deep",
+            help="Runs every structure pattern on the universe in one job, then saves library for instant filters.",
+        )
 
     if deep:
         tf_label, tf_code = timeframe[0], timeframe[1]
@@ -3848,13 +3901,12 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
         else:
             tf_jobs = [(_label_map.get(tf_code, tf_label), tf_code, int(hist_bars))]
         all_hits = []
-        # Scan several popular patterns so library covers exploration in <5 min next time
-        pat_list = [pattern]
-        for extra in ("Double Top", "Double Bottom", "Head and Shoulders", "Inverse Head and Shoulders",
-                      "Ascending Triangle", "Descending Triangle", "Bull Flag", "Bear Flag"):
-            if extra in CHART_STRUCTURE_PATTERNS and extra not in pat_list:
-                pat_list.append(extra)
-        with st.spinner(f"Deep scan {min(max_chk, len(universe))} stocks × {len(pat_list)} patterns…"):
+        # ALL structure patterns in one run
+        pat_list = list(CHART_STRUCTURE_PATTERNS.keys())
+        with st.spinner(
+            f"Scanning **ALL {len(pat_list)} patterns** × {min(max_chk, len(universe))} stocks — "
+            "please wait; results are saved for instant use (works when market is closed too)…"
+        ):
             for pn in pat_list:
                 for lbl, iv, bars in tf_jobs:
                     part = scan_chart_patterns(
@@ -3869,7 +3921,7 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
                 save_pattern_scan_hits(all_hits, pattern="MULTI", tf=tf_label)
             except Exception:
                 pass
-        st.success(f"Library updated · **{len(all_hits)}** hits across patterns — switch PATTERN for instant view.")
+        st.success(f"**ALL patterns** scan done · **{len(all_hits)}** hits saved — pick any pattern for instant filter (market open or closed).")
         st.rerun()
 
     library = st.session_state.get("cps_library") or []
@@ -28874,6 +28926,76 @@ if st.session_state.page == "Dashboard":
         "All stocks • Live market mode • Closing-price mode • "
         "Prediction history • Risk • Target • Stop Loss • Live prices"
     )
+
+    # Pattern library: last scan when market closed + scan ALL patterns
+    try:
+        _mkt_open = nse_market_open_now()
+    except Exception:
+        _mkt_open = False
+    _pat_lib = load_pattern_scan_hits()
+    _pat_meta = {}
+    try:
+        if PATTERN_SCAN_META.exists():
+            _pat_meta = json.loads(PATTERN_SCAN_META.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    with st.container():
+        st.markdown("#### 📐 Chart patterns")
+        cpa, cpb, cpc = st.columns([2, 1, 1])
+        with cpa:
+            if _pat_lib:
+                st.caption(
+                    f"{'Market **closed** — ' if not _mkt_open else ''}"
+                    f"Last scan: **{len(_pat_lib)}** hits · "
+                    f"{_pat_meta.get('patterns_covered', '—')} pattern types · "
+                    f"{_pat_meta.get('saved_at_ist', 'saved on disk/GitHub')}"
+                )
+            else:
+                st.caption(
+                    "No pattern library yet. Run **Scan ALL patterns** or wait for GitHub auto job."
+                )
+        with cpb:
+            if st.button("Open pattern scanner", use_container_width=True, key="dash_open_pat"):
+                try:
+                    nav_go("Chart Pattern Scanner")
+                except Exception:
+                    st.session_state.page = "Chart Pattern Scanner"
+                    st.rerun()
+        with cpc:
+            if st.button("🔍 Scan ALL patterns", type="primary", use_container_width=True, key="dash_scan_all_pat"):
+                st.session_state["_dash_run_all_patterns"] = True
+        if st.session_state.get("_dash_run_all_patterns"):
+            st.session_state["_dash_run_all_patterns"] = False
+            uni = []
+            try:
+                res = st.session_state.get("results")
+                if res is not None and not getattr(res, "empty", True) and "Stock" in res.columns:
+                    uni = res["Stock"].astype(str).str.replace(".NS", "", regex=False).str.upper().unique().tolist()
+            except Exception:
+                uni = []
+            if not uni:
+                uni = list(NSE_STOCKS)[:60] if NSE_STOCKS else []
+            uni = uni[:60]
+            pats = list(CHART_STRUCTURE_PATTERNS.keys()) if CHART_STRUCTURE_PATTERNS else []
+            all_hits = []
+            with st.spinner(f"Scanning ALL {len(pats)} patterns × {len(uni)} stocks…"):
+                for pn in pats:
+                    try:
+                        part = scan_chart_patterns(
+                            uni, pn, max_stocks=len(uni), history_bars=180,
+                            swing_order=3, min_fit=62.0, completed_within=30,
+                            interval="1d", timeframe_label="Daily",
+                        )
+                        all_hits.extend(part or [])
+                    except Exception:
+                        continue
+            try:
+                save_pattern_scan_hits(all_hits, pattern="ALL", tf="Daily")
+            except Exception:
+                pass
+            st.session_state["cps_library"] = all_hits
+            st.success(f"Done · **{len(all_hits)}** pattern hits saved — open Pattern Scanner for instant filters.")
+            st.rerun()
 
     # JP upgrade: find any stock in two clicks + see what the bot learned from mistakes
     if JPUI is not None:
