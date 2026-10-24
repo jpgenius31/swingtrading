@@ -28848,11 +28848,11 @@ def render_header_nav():
 
         /* Compact header settings popover button row */
         div[data-testid="stPopover"] button,
-        div.st-key-hdr_settings_pop button {
+        div.st-key-hdr_settings_pop button {{
             min-height: 2rem !important;
             padding: 0.15rem 0.4rem !important;
             border-radius: 999px !important;
-        }
+        }}
         @media (max-width: 900px) {{
             .main .block-container {{ padding-top: 5.8rem !important; padding-left: 0.5rem !important; padding-right: 0.5rem !important; }}
             .jp-brand-sub {{ display: none !important; }}
