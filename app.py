@@ -3714,6 +3714,70 @@ def _pattern_mini_chart(df, hit: dict, height: int = 280, full: bool = False):
                 annotation_font_color=color,
             )
 
+    # --- Bar length measure tool (line + bar count + price change) ---
+    try:
+        mf = measure_from
+        mt = measure_to
+        if mf is None and mt is None and hit.get("measure_from") is not None:
+            mf = hit.get("measure_from")
+            mt = hit.get("measure_to")
+        if mf is not None and mt is not None:
+            mf, mt = int(mf), int(mt)
+            if mf > mt:
+                mf, mt = mt, mf
+            if 0 <= mf < n and 0 <= mt < n and mf != mt:
+                y0 = float(df["Close"].iloc[mf])
+                y1 = float(df["Close"].iloc[mt])
+                # horizontal midline for length ruler + vertical ticks
+                y_mid = (y0 + y1) / 2.0
+                bars = mt - mf
+                d_price = y1 - y0
+                d_pct = (d_price / y0 * 100.0) if y0 else 0.0
+                label = f"{bars} bars  ·  Δ₹{d_price:+.2f}  ·  {d_pct:+.2f}%"
+                # Main measure line (price path)
+                fig.add_trace(go.Scatter(
+                    x=[mf, mt], y=[y0, y1],
+                    mode="lines+markers",
+                    line=dict(color="#f472b6", width=3, dash="solid"),
+                    marker=dict(size=10, color="#f472b6", symbol="diamond"),
+                    name="Bar length",
+                    hovertemplate=f"<b>Measure</b><br>{label}<extra></extra>",
+                ))
+                # Horizontal ruler at mid for visual bar-span
+                fig.add_trace(go.Scatter(
+                    x=[mf, mt], y=[y_mid, y_mid],
+                    mode="lines",
+                    line=dict(color="#fbbf24", width=2, dash="dot"),
+                    hoverinfo="skip",
+                    showlegend=False,
+                ))
+                # End caps
+                fig.add_trace(go.Scatter(
+                    x=[mf, mf, mt, mt],
+                    y=[y_mid - abs(y1 - y0) * 0.05 - 0.01 * y_mid,
+                       y_mid + abs(y1 - y0) * 0.05 + 0.01 * y_mid,
+                       y_mid - abs(y1 - y0) * 0.05 - 0.01 * y_mid,
+                       y_mid + abs(y1 - y0) * 0.05 + 0.01 * y_mid],
+                    mode="lines",
+                    line=dict(color="#fbbf24", width=2),
+                    hoverinfo="skip",
+                    showlegend=False,
+                ))
+                fig.add_annotation(
+                    x=(mf + mt) / 2.0,
+                    y=y_mid,
+                    text=f"<b>{label}</b>",
+                    showarrow=False,
+                    font=dict(size=13, color="#0f172a", family="Arial Black"),
+                    bgcolor="#fbbf24",
+                    bordercolor="#f59e0b",
+                    borderwidth=1,
+                    borderpad=4,
+                    yshift=18,
+                )
+    except Exception:
+        pass
+
     tf = hit.get("timeframe") or hit.get("interval") or "Daily"
     stock = hit.get("stock") or ""
     dr = hit.get("date_range") or ""
@@ -4096,7 +4160,43 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
                                 full_hit["points_abs"] = []
                         except Exception:
                             pass
-                    full_fig = _pattern_mini_chart(full_df, full_hit, height=620, full=True)
+                    # Bar length measure tool
+                    _nbar = len(full_df) if full_df is not None else 0
+                    if _nbar >= 2:
+                        st.markdown("**📏 Bar length measure** — set start & end bar; line shows **bar count + ₹ change**")
+                        _def_a = int(full_hit.get("start_i") or max(0, _nbar - 30))
+                        _def_b = int(full_hit.get("end_i") or (_nbar - 1))
+                        _def_a = max(0, min(_def_a, _nbar - 1))
+                        _def_b = max(0, min(_def_b, _nbar - 1))
+                        if _def_a == _def_b:
+                            _def_a = max(0, _def_b - 10)
+                        mc1, mc2, mc3 = st.columns([1, 1, 1])
+                        with mc1:
+                            m_from = st.number_input(
+                                "From bar #", 0, max(0, _nbar - 1), _def_a,
+                                key=f"cps_mfrom_{hit.get('stock')}_{idx}",
+                            )
+                        with mc2:
+                            m_to = st.number_input(
+                                "To bar #", 0, max(0, _nbar - 1), _def_b,
+                                key=f"cps_mto_{hit.get('stock')}_{idx}",
+                            )
+                        with mc3:
+                            _bars = abs(int(m_to) - int(m_from))
+                            try:
+                                _p0 = float(full_df["Close"].iloc[int(m_from)])
+                                _p1 = float(full_df["Close"].iloc[int(m_to)])
+                                st.metric("Length", f"{_bars} bars", f"Δ₹{_p1-_p0:+.2f}")
+                            except Exception:
+                                st.metric("Length", f"{_bars} bars")
+                    else:
+                        m_from, m_to = None, None
+
+                    full_fig = _pattern_mini_chart(
+                        full_df, full_hit, height=620, full=True,
+                        measure_from=int(m_from) if m_from is not None else None,
+                        measure_to=int(m_to) if m_to is not None else None,
+                    )
                     if full_fig is not None:
                         try:
                             full_fig.update_layout(dragmode="drawline")
@@ -26680,8 +26780,7 @@ def show_find_stock(
 
         if JPUI is not None:
             JPUI.render_quick_finder(
-                st, results, load_learning(), _jp_open_stock, _jp_base_weights(), key="findpg",
-                sym_index=_jp_symbol_index()
+                st, results, load_learning(), _jp_open_stock, _jp_base_weights(), key="findpg"
             )
         else:
             st.info(
@@ -28942,81 +29041,11 @@ if st.session_state.page == "Dashboard":
         "Prediction history • Risk • Target • Stop Loss • Live prices"
     )
 
-    # Pattern library: last scan when market closed + scan ALL patterns
-    try:
-        _mkt_open = nse_market_open_now()
-    except Exception:
-        _mkt_open = False
-    _pat_lib = load_pattern_scan_hits()
-    _pat_meta = {}
-    try:
-        if PATTERN_SCAN_META.exists():
-            _pat_meta = json.loads(PATTERN_SCAN_META.read_text(encoding="utf-8"))
-    except Exception:
-        pass
-    with st.container():
-        st.markdown("#### 📐 Chart patterns")
-        cpa, cpb, cpc = st.columns([2, 1, 1])
-        with cpa:
-            if _pat_lib:
-                st.caption(
-                    f"{'Market **closed** — ' if not _mkt_open else ''}"
-                    f"Last scan: **{len(_pat_lib)}** hits · "
-                    f"{_pat_meta.get('patterns_covered', '—')} pattern types · "
-                    f"{_pat_meta.get('saved_at_ist', 'saved on disk/GitHub')}"
-                )
-            else:
-                st.caption(
-                    "No pattern library yet. Run **Scan ALL patterns** or wait for GitHub auto job."
-                )
-        with cpb:
-            if st.button("Open pattern scanner", use_container_width=True, key="dash_open_pat"):
-                try:
-                    nav_go("Chart Pattern Scanner")
-                except Exception:
-                    st.session_state.page = "Chart Pattern Scanner"
-                    st.rerun()
-        with cpc:
-            if st.button("🔍 Scan ALL patterns", type="primary", use_container_width=True, key="dash_scan_all_pat"):
-                st.session_state["_dash_run_all_patterns"] = True
-        if st.session_state.get("_dash_run_all_patterns"):
-            st.session_state["_dash_run_all_patterns"] = False
-            uni = []
-            try:
-                res = st.session_state.get("results")
-                if res is not None and not getattr(res, "empty", True) and "Stock" in res.columns:
-                    uni = res["Stock"].astype(str).str.replace(".NS", "", regex=False).str.upper().unique().tolist()
-            except Exception:
-                uni = []
-            if not uni:
-                uni = list(NSE_STOCKS)[:60] if NSE_STOCKS else []
-            uni = uni[:60]
-            pats = list(CHART_STRUCTURE_PATTERNS.keys()) if CHART_STRUCTURE_PATTERNS else []
-            all_hits = []
-            with st.spinner(f"Scanning ALL {len(pats)} patterns × {len(uni)} stocks…"):
-                for pn in pats:
-                    try:
-                        part = scan_chart_patterns(
-                            uni, pn, max_stocks=len(uni), history_bars=180,
-                            swing_order=3, min_fit=62.0, completed_within=30,
-                            interval="1d", timeframe_label="Daily",
-                        )
-                        all_hits.extend(part or [])
-                    except Exception:
-                        continue
-            try:
-                save_pattern_scan_hits(all_hits, pattern="ALL", tf="Daily")
-            except Exception:
-                pass
-            st.session_state["cps_library"] = all_hits
-            st.success(f"Done · **{len(all_hits)}** pattern hits saved — open Pattern Scanner for instant filters.")
-            st.rerun()
-
     # JP upgrade: find any stock in two clicks + see what the bot learned from mistakes
     if JPUI is not None:
         try:
             _lrn = load_learning()
-            JPUI.render_quick_finder(st, results, _lrn, _jp_open_stock, _jp_base_weights(), key="dashfind", sym_index=_jp_symbol_index())
+            JPUI.render_quick_finder(st, results, _lrn, _jp_open_stock, _jp_base_weights(), key="dashfind")
             with st.expander("🧠 What the bot learned from its mistakes", expanded=False):
                 JPUI.render_learning_report(st, _lrn, on_relearn=_jp_relearn, key="dashlearn")
             st.divider()
