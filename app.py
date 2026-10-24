@@ -51,6 +51,7 @@ STRATEGY_META_FILE = APP_DIR / "strategy_live_meta.json"
 STRATEGY_915_PAST_FILE = APP_DIR / "strategy_915_candle_past.csv"
 STRATEGY_915_LIVE_FILE = APP_DIR / "strategy_915_candle_live.csv"
 PATTERN_SCAN_FILE = APP_DIR / "pattern_scan_results.json"
+MY_PAGE_LAYOUT_FILE = APP_DIR / "my_page_layout.json"
 PATTERN_SCAN_META = APP_DIR / "pattern_scan_meta.json"
 STRATEGY_ALL_MAP_FILE = APP_DIR / "strategy_all_stocks_map.csv"
 STRATEGY_ALL_SUMMARY_FILE = APP_DIR / "strategy_all_stocks_summary.csv"
@@ -3803,11 +3804,13 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
 
     # --- Instant mode: no live market screening ---
     # Always keep full auto library in session; filter by selected PATTERN immediately.
-    if "cps_library" not in st.session_state or not st.session_state.get("cps_library"):
-        disk_hits = load_pattern_scan_hits()
-        if disk_hits:
-            st.session_state["cps_library"] = disk_hits
-            st.session_state["cps_from_auto"] = True
+    # Always prefer fresh disk library (GitHub) so filters are instant with latest auto-scan
+    disk_hits = load_pattern_scan_hits()
+    if disk_hits:
+        st.session_state["cps_library"] = disk_hits
+        st.session_state["cps_from_auto"] = True
+    elif "cps_library" not in st.session_state:
+        st.session_state["cps_library"] = []
 
     b1, b2, b3 = st.columns([1, 1, 1])
     with b1:
@@ -3893,10 +3896,17 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
         hits.append(h)
 
     if library:
+        from collections import Counter
+        _pc = Counter(str(h.get("pattern")) for h in library)
         st.caption(
-            f"Library **{len(library)}** pre-scanned hits · showing **{len(hits)}** for **{pattern}** "
-            f"(instant — no live screening). Change PATTERN to explore others."
+            f"Library **{len(library)}** hits · **{len(_pc)}** pattern types · "
+            f"showing **{len(hits)}** for **{pattern}** (instant — GitHub auto-scan, no live wait)."
         )
+        with st.expander("Library coverage (all patterns auto-scanned)", expanded=False):
+            st.dataframe(
+                pd.DataFrame([{"Pattern": k, "Hits": v} for k, v in sorted(_pc.items(), key=lambda x: -x[1])]),
+                use_container_width=True, hide_index=True, height=280,
+            )
     else:
         st.info(
             "No pre-scanned library yet. Press **Load / refresh auto patterns** after the 9:15 GitHub job, "
@@ -3912,16 +3922,8 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
             st.caption("Patterns available in library: " + ", ".join(avail[:20]))
         return
 
-    # Hydrate only visible cards (fast)
-    hydrated = []
-    for h in hits[:12]:
-        if h.get("df_full") is None and h.get("df_tail") is None:
-            hydrated.append(hydrate_pattern_hit_charts(h))
-        else:
-            hydrated.append(h)
-    hits = hydrated
-
-    st.markdown(f"##### **{pattern}** — **{len(hits)}** hits (instant)")
+    # No chart hydrate here — list is instant; OHLC loads only when expander opens
+    st.markdown(f"##### **{pattern}** — **{len(hits)}** hits (instant from GitHub library)")
     # Show top 12 cards in 2–4 columns
     n_show = min(12, len(hits))
     for row_start in range(0, n_show, 2):
@@ -3960,6 +3962,8 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
                     """,
                     unsafe_allow_html=True,
                 )
+                if hit.get("df_tail") is None and hit.get("df_full") is None:
+                    hit = hydrate_pattern_hit_charts(hit)
                 fig = _pattern_mini_chart(hit.get("df_tail"), hit, height=300, full=False)
                 if fig is not None:
                     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
@@ -6661,6 +6665,431 @@ def render_index_lists_home():
         sx = lists.get("sensex") or _FALLBACK_SENSEX
         st.caption(f"Sensex 30: **{len(sx)}** stocks")
         _list_tab("Sensex", sx, "sx")
+
+
+# ---------- My Page (user-built dashboard) ----------
+MY_PAGE_WIDGETS = {
+    "scan_table": {
+        "label": "📋 Scan results table",
+        "desc": "Latest market scan stocks with live columns",
+        "needs": "table",
+    },
+    "scan_filters": {
+        "label": "🔎 Scan filters (sector / score)",
+        "desc": "Filter scan table by sector, recommendation",
+        "needs": "filter",
+    },
+    "strategy_table": {
+        "label": "🧪 Strategy / My Strategy hits",
+        "desc": "Live strategy signals table",
+        "needs": "table",
+    },
+    "past_table": {
+        "label": "📜 Past predictions (closed)",
+        "desc": "Target / stop closed history",
+        "needs": "table",
+    },
+    "past_filters": {
+        "label": "🔎 Past prediction filters",
+        "desc": "Filter by result, strategy, date",
+        "needs": "filter",
+    },
+    "paper_table": {
+        "label": "📝 Paper / dummy trades",
+        "desc": "Your paper portfolio rows",
+        "needs": "table",
+    },
+    "nifty_strip": {
+        "label": "📈 Nifty / BankNifty strip",
+        "desc": "Index LTP snapshot (no full chart)",
+        "needs": "data",
+    },
+    "index_chart": {
+        "label": "📊 Index chart (Nifty)",
+        "desc": "Simple Nifty chart — turn off if you want space",
+        "needs": "chart",
+    },
+    "stock_chart": {
+        "label": "📊 One-stock chart",
+        "desc": "Pick a symbol and view chart",
+        "needs": "chart",
+    },
+    "pattern_hits": {
+        "label": "📐 Chart pattern library hits",
+        "desc": "Pre-scanned patterns (instant)",
+        "needs": "table",
+    },
+    "pattern_filter": {
+        "label": "🔎 Pattern name filter",
+        "desc": "Filter pattern library by pattern",
+        "needs": "filter",
+    },
+    "fo_915_closed": {
+        "label": "⏱️ 9:15–9:30 closed trades",
+        "desc": "Target / stop only for open strategy",
+        "needs": "table",
+    },
+    "watchlist_box": {
+        "label": "⭐ My watchlist",
+        "desc": "Symbols you track",
+        "needs": "table",
+    },
+    "notes": {
+        "label": "📝 Personal notes",
+        "desc": "Free text for your rules / checklist",
+        "needs": "text",
+    },
+    "quick_links": {
+        "label": "🔗 Quick links",
+        "desc": "Buttons to open Strategy / Past / Paper / Intraday",
+        "needs": "nav",
+    },
+}
+
+
+def load_my_page_layout() -> dict:
+    default = {
+        "widgets": ["scan_table", "scan_filters", "quick_links", "notes"],
+        "show_charts": True,
+        "table_height": 320,
+        "columns": 1,
+        "title": "My Page",
+    }
+    try:
+        if MY_PAGE_LAYOUT_FILE.exists():
+            data = json.loads(MY_PAGE_LAYOUT_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                default.update(data)
+    except Exception:
+        pass
+    return default
+
+
+def save_my_page_layout(layout: dict) -> None:
+    try:
+        MY_PAGE_LAYOUT_FILE.write_text(json.dumps(layout, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def show_my_page(results: pd.DataFrame = None):
+    """
+    User-built dashboard: pick only the tables / filters / charts you need.
+    Layout saved to my_page_layout.json (survives reload on same machine / Cloud volume).
+    """
+    st.title("🧩 My Page")
+    st.caption(
+        "Build **your** workspace — choose tables, filters, charts, or none. "
+        "Layout is saved so the next open is instant."
+    )
+
+    layout = load_my_page_layout()
+    if "my_page_layout" not in st.session_state:
+        st.session_state["my_page_layout"] = layout
+
+    with st.expander("⚙️ Build / edit My Page layout", expanded=not layout.get("widgets")):
+        st.markdown("**Pick modules** (only what you need — turn charts off to save space)")
+        opts = list(MY_PAGE_WIDGETS.keys())
+        labels = {k: MY_PAGE_WIDGETS[k]["label"] for k in opts}
+        current = [w for w in (st.session_state["my_page_layout"].get("widgets") or []) if w in opts]
+        chosen = st.multiselect(
+            "Modules on this page",
+            opts,
+            default=current or ["scan_table", "quick_links"],
+            format_func=lambda k: labels.get(k, k),
+            key="my_page_widgets_pick",
+        )
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            show_charts = st.checkbox(
+                "Allow chart modules",
+                value=bool(st.session_state["my_page_layout"].get("show_charts", True)),
+                key="my_page_allow_charts",
+                help="Uncheck to hide all chart widgets even if selected",
+            )
+        with c2:
+            table_h = st.slider(
+                "Table height (px)",
+                180, 560,
+                int(st.session_state["my_page_layout"].get("table_height") or 320),
+                key="my_page_table_h",
+            )
+        with c3:
+            cols_n = st.selectbox(
+                "Layout columns",
+                [1, 2],
+                index=0 if int(st.session_state["my_page_layout"].get("columns") or 1) == 1 else 1,
+                key="my_page_cols",
+            )
+        title = st.text_input(
+            "Page title",
+            value=str(st.session_state["my_page_layout"].get("title") or "My Page"),
+            key="my_page_title",
+        )
+        # Space hint
+        n_tab = sum(1 for w in chosen if MY_PAGE_WIDGETS.get(w, {}).get("needs") == "table")
+        n_ch = sum(1 for w in chosen if MY_PAGE_WIDGETS.get(w, {}).get("needs") == "chart")
+        n_f = sum(1 for w in chosen if MY_PAGE_WIDGETS.get(w, {}).get("needs") == "filter")
+        st.info(
+            f"**Space estimate:** {len(chosen)} modules · "
+            f"{n_tab} table(s) · {n_f} filter(s) · {n_ch} chart(s) · "
+            f"~{max(1, n_tab) * (table_h/900) + n_ch * 0.6:.1f} screen-heights on phone. "
+            f"Charts use the most space — leave them off if you only need numbers."
+        )
+        if st.button("💾 Save My Page layout", type="primary", key="my_page_save"):
+            new_layout = {
+                "widgets": chosen,
+                "show_charts": show_charts,
+                "table_height": table_h,
+                "columns": cols_n,
+                "title": title,
+            }
+            st.session_state["my_page_layout"] = new_layout
+            save_my_page_layout(new_layout)
+            st.success("Layout saved — reload or navigate away and back; it stays.")
+            st.rerun()
+
+    L = st.session_state.get("my_page_layout") or layout
+    st.subheader(L.get("title") or "My Page")
+    widgets = [w for w in (L.get("widgets") or []) if w in MY_PAGE_WIDGETS]
+    if not widgets:
+        st.warning("No modules selected — open **Build / edit My Page layout** and save.")
+        return
+
+    allow_charts = bool(L.get("show_charts", True))
+    th = int(L.get("table_height") or 320)
+    use_2 = int(L.get("columns") or 1) == 2
+
+    # Shared filter state for this page
+    if "my_page_sector" not in st.session_state:
+        st.session_state["my_page_sector"] = "All"
+    if "my_page_pattern" not in st.session_state:
+        st.session_state["my_page_pattern"] = "All"
+    if "my_page_past_res" not in st.session_state:
+        st.session_state["my_page_past_res"] = "All closed"
+
+    def _render_widget(wid: str):
+        meta = MY_PAGE_WIDGETS.get(wid) or {}
+        if meta.get("needs") == "chart" and not allow_charts:
+            st.caption(f"_{meta.get('label')}_ hidden (charts off in layout).")
+            return
+        st.markdown(f"**{meta.get('label', wid)}**")
+        if wid == "quick_links":
+            b1, b2, b3, b4 = st.columns(4)
+            if b1.button("Strategy", key="mp_l_strat"):
+                nav_go("Strategy Lab")
+            if b2.button("Past", key="mp_l_past"):
+                nav_go("History")
+            if b3.button("Paper", key="mp_l_paper"):
+                nav_go("Paper Trading")
+            if b4.button("9:15 desk", key="mp_l_915"):
+                nav_go("915 Strategy")
+            return
+        if wid == "notes":
+            note = st.text_area(
+                "Notes",
+                value=str(st.session_state.get("my_page_notes") or ""),
+                height=120,
+                key="my_page_notes_area",
+            )
+            st.session_state["my_page_notes"] = note
+            return
+        if wid == "nifty_strip":
+            try:
+                rows = []
+                for name, sym in (("NIFTY 50", "^NSEI"), ("BANK NIFTY", "^NSEBANK")):
+                    try:
+                        import yfinance as yf
+                        t = yf.Ticker(sym)
+                        fi = t.fast_info if hasattr(t, "fast_info") else {}
+                        px = None
+                        try:
+                            px = float(fi.get("lastPrice") or fi.get("last_price") or 0) or None
+                        except Exception:
+                            px = None
+                        if not px:
+                            h = t.history(period="5d", interval="1d")
+                            if h is not None and not h.empty:
+                                px = float(h["Close"].iloc[-1])
+                        rows.append({"Index": name, "LTP": round(px, 2) if px else "—"})
+                    except Exception:
+                        rows.append({"Index": name, "LTP": "—"})
+                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            except Exception as e:
+                st.caption(f"Index strip: {e}")
+            return
+        if wid == "scan_filters":
+            res = results if results is not None and not getattr(results, "empty", True) else st.session_state.get("results")
+            secs = ["All"]
+            if res is not None and not getattr(res, "empty", True) and "Sector" in res.columns:
+                secs += sorted({str(x) for x in res["Sector"].dropna().unique()})
+            st.session_state["my_page_sector"] = st.selectbox(
+                "Sector", secs, key="mp_sector_sel"
+            )
+            return
+        if wid == "scan_table":
+            res = results if results is not None and not getattr(results, "empty", True) else st.session_state.get("results")
+            if res is None or getattr(res, "empty", True):
+                st.info("No scan loaded — use header **Reload** or wait for GitHub scan.")
+                return
+            view = res.copy()
+            sec = st.session_state.get("my_page_sector", "All")
+            if sec and sec != "All" and "Sector" in view.columns:
+                view = view[view["Sector"].astype(str) == sec]
+            show_cols = [c for c in view.columns if c in (
+                "Stock", "Sector", "LTP", "Current Price", "Close", "Recommendation",
+                "Score", "Target", "Stop Loss", "Signal", "Strategy",
+            )] or list(view.columns)[:8]
+            st.dataframe(view[show_cols].head(80), use_container_width=True, hide_index=True, height=th)
+            st.caption(f"{len(view)} rows")
+            return
+        if wid == "strategy_table":
+            try:
+                p = APP_DIR / "strategy_live_signals.csv"
+                if p.exists():
+                    df = pd.read_csv(p)
+                    st.dataframe(df.head(60), use_container_width=True, hide_index=True, height=th)
+                else:
+                    st.caption("No strategy_live_signals.csv yet.")
+            except Exception as e:
+                st.caption(str(e))
+            return
+        if wid == "past_filters":
+            st.session_state["my_page_past_res"] = st.selectbox(
+                "Result",
+                ["All closed", "🎯 TARGET ACHIEVED", "🔴 STOP LOSS HIT"],
+                key="mp_past_res",
+            )
+            return
+        if wid == "past_table":
+            try:
+                hist = None
+                for cand in ("trade_history.csv", "past_predictions.csv", "history.csv"):
+                    fp = APP_DIR / cand
+                    if fp.exists():
+                        hist = pd.read_csv(fp)
+                        break
+                if hist is None or hist.empty:
+                    st.caption("No past prediction file yet.")
+                    return
+                if "Result" in hist.columns:
+                    ru = hist["Result"].astype(str).str.upper()
+                    hist = hist[ru.str.contains("TARGET", na=False) | ru.str.contains("STOP", na=False)]
+                    fr = st.session_state.get("my_page_past_res", "All closed")
+                    if "TARGET" in fr:
+                        hist = hist[hist["Result"].astype(str).str.upper().str.contains("TARGET", na=False)]
+                    elif "STOP" in fr:
+                        hist = hist[hist["Result"].astype(str).str.upper().str.contains("STOP", na=False)]
+                st.dataframe(hist.tail(80), use_container_width=True, hide_index=True, height=th)
+            except Exception as e:
+                st.caption(str(e))
+            return
+        if wid == "paper_table":
+            try:
+                for cand in ("paper_trades.csv", "paper_portfolio.csv"):
+                    fp = APP_DIR / cand
+                    if fp.exists():
+                        st.dataframe(pd.read_csv(fp).tail(60), use_container_width=True, hide_index=True, height=th)
+                        return
+                st.caption("No paper trades file yet.")
+            except Exception as e:
+                st.caption(str(e))
+            return
+        if wid == "pattern_filter":
+            lib = load_pattern_scan_hits()
+            pats = ["All"] + sorted({str(h.get("pattern")) for h in lib if h.get("pattern")})
+            st.session_state["my_page_pattern"] = st.selectbox("Pattern", pats, key="mp_pat_sel")
+            return
+        if wid == "pattern_hits":
+            lib = load_pattern_scan_hits()
+            pf = st.session_state.get("my_page_pattern", "All")
+            if pf and pf != "All":
+                lib = [h for h in lib if str(h.get("pattern")) == pf]
+            if not lib:
+                st.caption("No pattern library — wait for GitHub auto-scan.")
+                return
+            rows = [{
+                "Stock": h.get("stock"),
+                "Pattern": h.get("pattern"),
+                "Dir": h.get("direction"),
+                "Fit": h.get("fit"),
+                "Dates": h.get("date_range"),
+                "TF": h.get("timeframe"),
+            } for h in lib[:80]]
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True, height=th)
+            return
+        if wid == "fo_915_closed":
+            try:
+                past = evaluate_915_past_outcomes(max_rows=120)
+            except Exception:
+                past = load_915_past()
+            if past is None or past.empty:
+                st.caption("No 9:15 closed trades yet.")
+                return
+            if "Result" in past.columns:
+                ru = past["Result"].astype(str).str.upper()
+                past = past[ru.str.contains("TARGET", na=False) | ru.str.contains("STOP", na=False)]
+            st.dataframe(past.tail(60), use_container_width=True, hide_index=True, height=th)
+            return
+        if wid == "watchlist_box":
+            try:
+                show_watchlist_page()
+            except Exception:
+                wl = st.session_state.get("watchlist") or []
+                st.write(wl if wl else "Empty watchlist")
+            return
+        if wid == "index_chart":
+            try:
+                import yfinance as yf
+                import plotly.graph_objects as go
+                h = yf.Ticker("^NSEI").history(period="3mo", interval="1d")
+                if h is not None and not h.empty:
+                    fig = go.Figure(data=[go.Candlestick(
+                        x=h.index, open=h["Open"], high=h["High"], low=h["Low"], close=h["Close"],
+                    )])
+                    fig.update_layout(height=320, margin=dict(l=8, r=8, t=24, b=8),
+                                      xaxis_rangeslider_visible=False, title="NIFTY 50")
+                    st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:
+                st.caption(f"Chart: {e}")
+            return
+        if wid == "stock_chart":
+            sym = st.text_input("Symbol for chart", value="RELIANCE", key="mp_chart_sym")
+            if sym:
+                try:
+                    show_tradingview_chart(sym, title=sym)
+                except Exception:
+                    try:
+                        df = stock_history(clean_symbol(sym), interval="1d")
+                        if df is not None and not df.empty:
+                            import plotly.graph_objects as go
+                            fig = go.Figure(data=[go.Candlestick(
+                                x=list(range(len(df.tail(90)))),
+                                open=df["Open"].tail(90), high=df["High"].tail(90),
+                                low=df["Low"].tail(90), close=df["Close"].tail(90),
+                            )])
+                            fig.update_layout(height=360, xaxis_rangeslider_visible=False, title=sym)
+                            st.plotly_chart(fig, use_container_width=True)
+                    except Exception as e:
+                        st.caption(str(e))
+            return
+        st.caption(f"Widget `{wid}` not implemented.")
+
+    if use_2:
+        left, right = st.columns(2)
+        for i, w in enumerate(widgets):
+            with (left if i % 2 == 0 else right):
+                with st.container():
+                    _render_widget(w)
+                    st.divider()
+    else:
+        for w in widgets:
+            with st.container():
+                _render_widget(w)
+                st.divider()
+
+    st.caption("Layout file: `my_page_layout.json` · Edit anytime via the expander at the top.")
+
 
 
 def show_watchlist_page():
@@ -27419,6 +27848,7 @@ PAGE_PARENT = {
     "Broker Angel": "Dashboard",
     "Superstar Bulk": "Dashboard",
     "Watchlist": "Dashboard",
+    "My Page": "Dashboard",
     "Scanner Query": "Dashboard",
     "Intraday Backtest": "Intraday FO",
     "915 Strategy": "Intraday FO",
@@ -27466,6 +27896,7 @@ PAGE_LABELS = {
     "Broker Angel": "Broker · Angel One",
     "Superstar Bulk": "Superstar · Bank bulk deals",
     "Watchlist": "Watchlist",
+    "My Page": "My Page",
     "Scanner Query": "Scanner Query",
     "Intraday Backtest": "Intraday Backtest",
     "915 Strategy": "9:15–9:30 Strategy",
@@ -27756,6 +28187,7 @@ def render_header_nav():
         "superstar": "Superstar Bulk",
         "query": "Scanner Query",
         "watchlist": "Watchlist",
+        "mypage": "My Page",
     }
 
     def _clear_jp_nav():
@@ -28009,6 +28441,7 @@ def render_header_nav():
             </a>
             <div class="jp-nav-pills">
               {_pill("home", "Home")}
+              {_pill("mypage", "My Page")}
               {_pill("swing", "Swing")}
               {_pill("tools", "Tools")}
               {_pill("intraday", "Intraday / F&amp;O")}
@@ -29025,6 +29458,8 @@ elif st.session_state.page == "Broker Angel":
 elif st.session_state.page == "Superstar Bulk":
     show_superstar_bulk_page()
 
+elif st.session_state.page == "My Page":
+    show_my_page(st.session_state.get("results"))
 elif st.session_state.page == "Watchlist":
     show_watchlist_page()
 

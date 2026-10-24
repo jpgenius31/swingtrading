@@ -57,7 +57,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add strategy_915_candle_live.csv strategy_915_candle_past.csv strategy_915_candle_meta.json strategy_915_money_summary.json pattern_scan_results.json pattern_scan_meta.json index_market_snap.json realtime_sync_version.json || true
+          git add pattern_lib.py strategy_915_candle_live.csv strategy_915_candle_past.csv strategy_915_candle_meta.json strategy_915_money_summary.json pattern_scan_results.json pattern_scan_meta.json index_market_snap.json realtime_sync_version.json || true
           if git diff --staged --quiet; then
             echo "No 9:15 changes to commit"
             exit 0
@@ -94,7 +94,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add latest_results.csv latest_results_meta.json realtime_sync_version.json strategy_live_signals.csv strategy_live_meta.json index_market_snap.json || true
+          git add latest_results.csv latest_results_meta.json realtime_sync_version.json strategy_live_signals.csv strategy_live_meta.json index_market_snap.json pattern_scan_results.json pattern_scan_meta.json pattern_lib.py || true
           if git diff --staged --quiet; then
             echo "No changes to commit"
             exit 0
