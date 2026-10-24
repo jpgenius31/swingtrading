@@ -3522,7 +3522,22 @@ def scan_chart_patterns(
     return hits
 
 
+PLOTLY_DRAW_CONFIG = {
+    "displayModeBar": True,
+    "scrollZoom": True,
+    "modeBarButtonsToAdd": [
+        "drawline",
+        "drawopenpath",
+        "drawcircle",
+        "drawrect",
+        "eraseshape",
+    ],
+    "displaylogo": False,
+}
+
+
 def _pattern_chart_x_labels(df):
+
     """Date labels for x-axis when index is datetime; else bar numbers."""
     n = len(df)
     xs = list(range(n))
