@@ -704,6 +704,139 @@ def run_all_pattern_scan(limit_stocks: int = 60, min_fit: float = 65.0, complete
     return len(all_hits)
 
 
+def evaluate_915_past_on_github(max_rows: int = 120) -> None:
+    """Close PENDING 915 rows to TARGET / STOP without Streamlit (GitHub Action)."""
+    import yfinance as yf
+    from datetime import datetime, timezone, timedelta, time as _time
+    path = ROOT / "strategy_915_candle_past.csv"
+    if not path.exists():
+        return
+    try:
+        past = pd.read_csv(path)
+    except Exception:
+        return
+    if past is None or past.empty:
+        return
+    for col in ("Result", "Fail Reason", "Signal", "Stock"):
+        if col not in past.columns:
+            past[col] = ""
+        past[col] = past[col].astype(object)
+    if "PnL %" not in past.columns:
+        past["PnL %"] = pd.NA
+    past["PnL %"] = pd.to_numeric(past["PnL %"], errors="coerce")
+    ist = timezone(timedelta(hours=5, minutes=30))
+    now = datetime.now(ist)
+    force = now.time() >= _time(9, 30)
+    n = 0
+    for idx in list(past.index)[:max_rows]:
+        res = str(past.at[idx, "Result"] or "").upper()
+        if "TARGET" in res:
+            past.loc[idx, "Result"] = "TARGET ACHIEVED"
+            continue
+        if "STOP" in res:
+            past.loc[idx, "Result"] = "STOP LOSS HIT"
+            continue
+        stock = str(past.at[idx, "Stock"]).upper()
+        entry = None
+        for c in ("Entry (candle)", "Entry", "LTP"):
+            if c in past.columns:
+                try:
+                    entry = float(past.at[idx, c])
+                    if entry and entry > 0:
+                        break
+                except Exception:
+                    pass
+        try:
+            target = float(past.at[idx, "Target"]) if "Target" in past.columns else 0
+        except Exception:
+            target = 0
+        try:
+            stop = float(past.at[idx, "Stop"]) if "Stop" in past.columns else 0
+        except Exception:
+            stop = 0
+        side = str(past.at[idx, "Signal"] if "Signal" in past.columns else "CE").upper()
+        if not entry:
+            if force:
+                past.loc[idx, "Result"] = "STOP LOSS HIT"
+                past.loc[idx, "Fail Reason"] = "No entry"
+                past.loc[idx, "PnL %"] = 0.0
+                n += 1
+            continue
+        try:
+            h = yf.Ticker(yf_sym(stock)).history(period="1d", interval="1m")
+            if h is None or len(h) < 2:
+                h = yf.Ticker(yf_sym(stock)).history(period="5d", interval="5m")
+            if h is None or len(h) < 1:
+                if force:
+                    past.loc[idx, "Result"] = "STOP LOSS HIT"
+                    past.loc[idx, "Fail Reason"] = "No bars"
+                    past.loc[idx, "PnL %"] = 0.0
+                    n += 1
+                continue
+            hi = float(h["High"].max())
+            lo = float(h["Low"].min())
+            last = float(h["Close"].iloc[-1])
+            if "CE" in side or "CALL" in side:
+                hit_t = target and hi >= target
+                hit_s = stop and lo <= stop
+                pnl_t = ((target / entry) - 1) * 100 if target else 0
+                pnl_s = ((stop / entry) - 1) * 100 if stop else 0
+                pnl_x = ((last / entry) - 1) * 100
+                won_x = last >= entry
+            else:
+                hit_t = target and lo <= target
+                hit_s = stop and hi >= stop
+                pnl_t = ((entry / target) - 1) * 100 if target else 0
+                pnl_s = ((entry / stop) - 1) * 100 if stop else 0
+                pnl_x = ((entry / last) - 1) * 100 if last else 0
+                won_x = last <= entry
+            if hit_t and not hit_s:
+                past.loc[idx, "Result"] = "TARGET ACHIEVED"
+                past.loc[idx, "Fail Reason"] = ""
+                past.loc[idx, "PnL %"] = round(pnl_t, 2)
+                n += 1
+            elif hit_s:
+                past.loc[idx, "Result"] = "STOP LOSS HIT"
+                past.loc[idx, "Fail Reason"] = f"Stop {stop} before target {target}"
+                past.loc[idx, "PnL %"] = round(pnl_s, 2)
+                n += 1
+            elif force:
+                if won_x and pnl_x >= 0:
+                    past.loc[idx, "Result"] = "TARGET ACHIEVED"
+                    past.loc[idx, "Fail Reason"] = f"9:30 exit profit LTP {last:.2f}"
+                else:
+                    past.loc[idx, "Result"] = "STOP LOSS HIT"
+                    past.loc[idx, "Fail Reason"] = f"9:30 exit LTP {last:.2f}"
+                past.loc[idx, "PnL %"] = round(pnl_x, 2)
+                n += 1
+        except Exception as e:
+            if force:
+                past.loc[idx, "Result"] = "STOP LOSS HIT"
+                past.loc[idx, "Fail Reason"] = type(e).__name__
+                past.loc[idx, "PnL %"] = 0.0
+                n += 1
+    if n:
+        past.to_csv(path, index=False)
+        # money summary
+        ru = past["Result"].astype(str).str.upper()
+        wins = int(ru.str.contains("TARGET", na=False).sum())
+        losses = int(ru.str.contains("STOP", na=False).sum())
+        tot = wins + losses
+        summary = {
+            "wins": wins,
+            "losses": losses,
+            "total_closed": tot,
+            "win_rate": round(100.0 * wins / tot, 1) if tot else 0,
+            "updated_at_ist": now.strftime("%Y-%m-%d %H:%M:%S IST"),
+            "source": "github_eval",
+        }
+        (ROOT / "strategy_915_money_summary.json").write_text(
+            json.dumps(summary, indent=2), encoding="utf-8"
+        )
+        print(f"915 eval closed {n} rows · win {wins} / loss {losses} ({summary['win_rate']}%)")
+
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=120)
@@ -722,7 +855,10 @@ def main():
             run_915_open_strategy(limit=min(args.limit, 25), list_mode=args.list_915)
         except Exception as e:
             print(f"915 candle: {e}")
-        # Full pattern library for instant Chart Pattern Scanner
+        try:
+            evaluate_915_past_on_github(max_rows=150)
+        except Exception as _ev:
+            print(f"915 eval: {_ev}")
         try:
             run_all_pattern_scan(limit_stocks=min(80, max(args.limit, 50)), min_fit=62.0, completed_within=30)
         except Exception as e:

@@ -8920,18 +8920,22 @@ def evaluate_915_past_outcomes(max_rows: int = 200) -> pd.DataFrame:
     """
     Resolve every 9:15 call to only:
       🎯 TARGET ACHIEVED  or  🔴 STOP LOSS HIT
-    No PENDING left after evaluation (after 9:30 or when path is known).
+    Safe for pandas 2.x (no LossySetitemError on Result/PnL columns).
     """
     past = load_915_past()
     if past is None or past.empty:
-        return past
-    if "Result" not in past.columns:
-        past["Result"] = "PENDING"
-    if "Fail Reason" not in past.columns:
-        past["Fail Reason"] = ""
-    if "PnL %" not in past.columns:
-        past["PnL %"] = None
+        return past if past is not None else pd.DataFrame()
+
     updated = past.copy()
+    # Force dtypes so emoji strings and floats always write
+    for col in ("Result", "Fail Reason", "Signal", "Stock", "List", "Option"):
+        if col not in updated.columns:
+            updated[col] = ""
+        updated[col] = updated[col].astype(object)
+    if "PnL %" not in updated.columns:
+        updated["PnL %"] = pd.NA
+    updated["PnL %"] = pd.to_numeric(updated["PnL %"], errors="coerce")
+
     n = 0
     from datetime import time as _time
     try:
@@ -8940,46 +8944,86 @@ def evaluate_915_past_outcomes(max_rows: int = 200) -> pd.DataFrame:
         now_t = datetime.now().time()
     force_close = now_t >= _time(9, 30)
 
-    for idx in list(updated.index)[:max_rows]:
-        res = str(updated.at[idx, "Result"] if "Result" in updated.columns else "PENDING").upper()
-        # Already final?
-        if "TARGET" in res or "STOP" in res:
-            # normalize labels
-            if "TARGET" in res:
-                updated.at[idx, "Result"] = "🎯 TARGET ACHIEVED"
-            else:
-                updated.at[idx, "Result"] = "🔴 STOP LOSS HIT"
-            continue
-        stock = str(updated.at[idx, "Stock"]).upper()
-        entry = safe_float(
-            updated.at[idx, "Entry (candle)"]
-            if "Entry (candle)" in updated.columns
-            else (updated.at[idx, "Entry"] if "Entry" in updated.columns else None)
-        )
-        target = safe_float(updated.at[idx, "Target"]) if "Target" in updated.columns else 0
-        stop = safe_float(updated.at[idx, "Stop"]) if "Stop" in updated.columns else 0
-        side = str(updated.at[idx, "Signal"] if "Signal" in updated.columns else "CE").upper()
-        if not entry:
-            # cannot resolve — mark as stop (failed data) only after 9:30
-            if force_close:
-                updated.at[idx, "Result"] = "🔴 STOP LOSS HIT"
-                updated.at[idx, "Fail Reason"] = "No entry price to evaluate"
-                updated.at[idx, "PnL %"] = 0.0
-                n += 1
-            continue
+    def _set(idx, result, reason="", pnl=None):
+        nonlocal n
         try:
-            df = stock_history(clean_symbol(stock), interval="1m", period="1d")
+            updated.loc[idx, "Result"] = str(result)
+            updated.loc[idx, "Fail Reason"] = str(reason or "")
+            if pnl is not None:
+                try:
+                    updated.loc[idx, "PnL %"] = float(pnl)
+                except Exception:
+                    updated.loc[idx, "PnL %"] = pd.NA
+            n += 1
+        except Exception:
+            pass
+
+    rows = list(updated.index)[: int(max_rows)]
+    for idx in rows:
+        try:
+            res = str(updated.loc[idx, "Result"] or "PENDING").upper()
+        except Exception:
+            res = "PENDING"
+
+        if "TARGET" in res:
+            _set(idx, "🎯 TARGET ACHIEVED", "")
+            continue
+        if "STOP" in res:
+            _set(idx, "🔴 STOP LOSS HIT", str(updated.loc[idx, "Fail Reason"] or ""))
+            continue
+
+        try:
+            stock = str(updated.loc[idx, "Stock"]).upper()
+        except Exception:
+            continue
+
+        entry = None
+        try:
+            if "Entry (candle)" in updated.columns:
+                entry = safe_float(updated.loc[idx, "Entry (candle)"])
+            if not entry and "Entry" in updated.columns:
+                entry = safe_float(updated.loc[idx, "Entry"])
+        except Exception:
+            entry = None
+        try:
+            target = safe_float(updated.loc[idx, "Target"]) if "Target" in updated.columns else 0
+        except Exception:
+            target = 0
+        try:
+            stop = safe_float(updated.loc[idx, "Stop"]) if "Stop" in updated.columns else 0
+        except Exception:
+            stop = 0
+        try:
+            side = str(updated.loc[idx, "Signal"] if "Signal" in updated.columns else "CE").upper()
+        except Exception:
+            side = "CE"
+
+        if not entry:
+            if force_close:
+                _set(idx, "🔴 STOP LOSS HIT", "No entry price to evaluate", 0.0)
+            continue
+
+        try:
+            df = None
+            try:
+                df = stock_history(clean_symbol(stock), interval="1m", period="1d")
+            except Exception:
+                df = None
             if df is None or len(df) < 2:
-                df = stock_history(clean_symbol(stock), interval="5m", period="5d")
+                try:
+                    df = stock_history(clean_symbol(stock), interval="5m", period="5d")
+                except Exception:
+                    df = None
             if df is None or len(df) < 2:
-                df = stock_history(clean_symbol(stock), interval="1d", period="5d")
+                try:
+                    df = stock_history(clean_symbol(stock), interval="1d", period="5d")
+                except Exception:
+                    df = None
             if df is None or len(df) < 1:
                 if force_close:
-                    updated.at[idx, "Result"] = "🔴 STOP LOSS HIT"
-                    updated.at[idx, "Fail Reason"] = "No bars to evaluate after 9:30"
-                    updated.at[idx, "PnL %"] = 0.0
-                    n += 1
+                    _set(idx, "🔴 STOP LOSS HIT", "No bars to evaluate after 9:30", 0.0)
                 continue
+
             hi = float(pd.to_numeric(df["High"], errors="coerce").max())
             lo = float(pd.to_numeric(df["Low"], errors="coerce").min())
             last = float(pd.to_numeric(df["Close"], errors="coerce").iloc[-1])
@@ -8992,70 +9036,72 @@ def evaluate_915_past_outcomes(max_rows: int = 200) -> pd.DataFrame:
                 hit_s = bool(stop and hi >= stop)
 
             if hit_t and not hit_s:
-                updated.at[idx, "Result"] = "🎯 TARGET ACHIEVED"
-                updated.at[idx, "Fail Reason"] = ""
                 if "CE" in side or "CALL" in side:
                     pnl = ((target / entry) - 1) * 100
                 else:
                     pnl = ((entry / target) - 1) * 100 if target else 0
-                updated.at[idx, "PnL %"] = round(pnl, 2)
-                n += 1
+                _set(idx, "🎯 TARGET ACHIEVED", "", round(pnl, 2))
             elif hit_s:
-                updated.at[idx, "Result"] = "🔴 STOP LOSS HIT"
-                updated.at[idx, "Fail Reason"] = (
-                    f"Stop ₹{stop} hit before target ₹{target}."
-                )
                 if "CE" in side or "CALL" in side:
                     pnl = ((stop / entry) - 1) * 100
                 else:
                     pnl = ((entry / stop) - 1) * 100 if stop else 0
-                updated.at[idx, "PnL %"] = round(pnl, 2)
-                n += 1
-            elif force_close or hit_t or hit_s:
-                # After 9:30: classify by PnL vs entry (no PENDING)
+                _set(
+                    idx,
+                    "🔴 STOP LOSS HIT",
+                    f"Stop ₹{stop} hit before target ₹{target}.",
+                    round(pnl, 2),
+                )
+            elif force_close:
                 if "CE" in side or "CALL" in side:
                     pnl = ((last / entry) - 1) * 100
-                    # underlying up helps CE
                     won = last >= entry
                 else:
                     pnl = ((entry / last) - 1) * 100 if last else 0
                     won = last <= entry
                 if won and pnl >= 0:
-                    updated.at[idx, "Result"] = "🎯 TARGET ACHIEVED"
-                    updated.at[idx, "Fail Reason"] = (
-                        f"Closed after 9:30 in profit (path LTP ₹{last:.2f})."
+                    _set(
+                        idx,
+                        "🎯 TARGET ACHIEVED",
+                        f"Closed after 9:30 in profit (LTP ₹{last:.2f}).",
+                        round(pnl, 2),
                     )
                 else:
-                    updated.at[idx, "Result"] = "🔴 STOP LOSS HIT"
-                    updated.at[idx, "Fail Reason"] = (
-                        f"Closed after 9:30 without target (path LTP ₹{last:.2f})."
+                    _set(
+                        idx,
+                        "🔴 STOP LOSS HIT",
+                        f"Closed after 9:30 without target (LTP ₹{last:.2f}).",
+                        round(pnl, 2),
                     )
-                updated.at[idx, "PnL %"] = round(pnl, 2)
-                n += 1
         except Exception as e:
             if force_close:
-                updated.at[idx, "Result"] = "🔴 STOP LOSS HIT"
-                updated.at[idx, "Fail Reason"] = f"Eval error after 9:30: {type(e).__name__}"
-                updated.at[idx, "PnL %"] = 0.0
-                n += 1
+                _set(idx, "🔴 STOP LOSS HIT", f"Eval error: {type(e).__name__}", 0.0)
             continue
 
-    # Final pass: anything still pending after 9:30 → STOP
     if force_close:
         for idx in updated.index:
-            res = str(updated.at[idx, "Result"]).upper()
+            try:
+                res = str(updated.loc[idx, "Result"] or "").upper()
+            except Exception:
+                res = ""
             if "TARGET" not in res and "STOP" not in res:
-                updated.at[idx, "Result"] = "🔴 STOP LOSS HIT"
-                if not str(updated.at[idx, "Fail Reason"] or "").strip():
-                    updated.at[idx, "Fail Reason"] = "Session closed — forced stop (was pending)"
-                n += 1
+                _set(idx, "🔴 STOP LOSS HIT", "Session closed — forced stop (was pending)", 0.0)
             elif "TARGET" in res:
-                updated.at[idx, "Result"] = "🎯 TARGET ACHIEVED"
+                try:
+                    updated.loc[idx, "Result"] = "🎯 TARGET ACHIEVED"
+                except Exception:
+                    pass
             elif "STOP" in res:
-                updated.at[idx, "Result"] = "🔴 STOP LOSS HIT"
+                try:
+                    updated.loc[idx, "Result"] = "🔴 STOP LOSS HIT"
+                except Exception:
+                    pass
 
     if n:
-        save_915_past(updated)
+        try:
+            save_915_past(updated)
+        except Exception:
+            pass
     return updated
 
 
@@ -11006,10 +11052,11 @@ def show_915_strategy_desk():
             st.caption(f"Scan: {e}")
 
     past = load_915_past()
-    # Always resolve results first — no PENDING in the book after eval
+    # Always resolve results first — no PENDING after 9:30 (auto on open + GitHub)
     try:
         past = evaluate_915_past_outcomes(max_rows=200)
-    except Exception:
+    except Exception as _e915:
+        st.caption(f"Auto-eval note: {_e915}")
         past = load_915_past()
     if past is None:
         past = load_915_past()
@@ -11022,7 +11069,38 @@ def show_915_strategy_desk():
     m3.metric("🔴 Stop loss hit", money.get("losses", 0))
     m4.metric("Success %", f"{money.get('win_rate', 0)}%")
     m5.metric("Sum PnL %", f"{money.get('sum_pnl', 0):+.1f}%")
-    st.caption("Results show **only Target achieved** or **Stop loss hit** — pending is cleared after 9:30 / Update results.")
+    st.caption(
+        "Auto results (GitHub + open page): **Target achieved** or **Stop loss hit** only. "
+        "No need to press Update after 9:30 — job + page load both evaluate."
+    )
+
+    # Breakdown: top gainer vs top loser lists
+    if past is not None and not past.empty and "List" in past.columns and "Result" in past.columns:
+        try:
+            ru = past["Result"].astype(str).str.upper()
+            closed = past[ru.str.contains("TARGET", na=False) | ru.str.contains("STOP", na=False)].copy()
+            if not closed.empty:
+                rows_br = []
+                for lab, key in (("Top Gainer", "GAINER"), ("Top Loser", "LOSER")):
+                    sub = closed[closed["List"].astype(str).str.upper().str.contains(key, na=False)]
+                    if sub.empty:
+                        rows_br.append({"List": lab, "Closed": 0, "Target": 0, "Stop": 0, "Success %": "—"})
+                        continue
+                    su = sub["Result"].astype(str).str.upper()
+                    tw = int(su.str.contains("TARGET", na=False).sum())
+                    ts = int(su.str.contains("STOP", na=False).sum())
+                    tot = tw + ts
+                    rows_br.append({
+                        "List": lab,
+                        "Closed": tot,
+                        "Target": tw,
+                        "Stop": ts,
+                        "Success %": round(100.0 * tw / tot, 1) if tot else 0,
+                    })
+                st.markdown("#### Gainer vs Loser — strategy working?")
+                st.dataframe(pd.DataFrame(rows_br), use_container_width=True, hide_index=True)
+        except Exception:
+            pass
 
     # ----- Filters -----
     st.markdown("### 🔎 Filters")
