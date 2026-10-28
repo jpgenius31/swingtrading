@@ -3493,43 +3493,77 @@ def save_pattern_scan_hits(hits: list, pattern: str = "", tf: str = "") -> int:
     return len(slim)
 
 
-def load_pattern_scan_hits() -> list:
-    """Load last pattern scan (disk first, then GitHub raw) — works when market is closed."""
+def _github_results_base() -> str:
+    """Folder URL for GitHub raw artifacts (latest_results.csv parent)."""
+    base = ""
+    try:
+        base = (st.secrets.get("GITHUB_RESULTS_RAW") if hasattr(st, "secrets") else None) or ""
+    except Exception:
+        base = ""
+    if not base:
+        base = os.environ.get("GITHUB_RESULTS_RAW", "") or ""
+    base = str(base).rstrip("/")
+    if base.endswith(".csv") or base.endswith(".json"):
+        base = base.rsplit("/", 1)[0]
+    return base
+
+
+@st.cache_data(ttl=90, show_spinner=False)
+def _fetch_github_json(url: str) -> list:
+    """Fast GitHub raw JSON fetch (cached ~90s for instant tab switches)."""
+    import urllib.request
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 JPStockModel/1.0",
+            "Accept": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=8) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    return data if isinstance(data, list) else []
+
+
+@st.cache_data(ttl=90, show_spinner=False)
+def _fetch_github_csv_bytes(url: str) -> bytes:
+    import urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 JPStockModel/1.0"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return resp.read()
+
+
+def load_pattern_scan_hits(force: bool = False) -> list:
+    """
+    Instant pattern library: session → disk → GitHub (cached).
+    Tab switches re-use session data with no network wait.
+    """
+    if not force and st.session_state.get("_pattern_lib_cache"):
+        return st.session_state["_pattern_lib_cache"]
+    data = []
     try:
         if PATTERN_SCAN_FILE.exists():
             data = json.loads(PATTERN_SCAN_FILE.read_text(encoding="utf-8"))
-            if isinstance(data, list) and data:
-                return data
+            if not isinstance(data, list):
+                data = []
     except Exception:
-        pass
-    # GitHub raw fallback (same base as latest_results)
-    try:
-        base = ""
+        data = []
+    if not data:
         try:
-            base = (st.secrets.get("GITHUB_RESULTS_RAW") if hasattr(st, "secrets") else None) or ""
+            base = _github_results_base()
+            if base:
+                url = base + "/pattern_scan_results.json"
+                data = _fetch_github_json(url) or []
+                if data:
+                    try:
+                        PATTERN_SCAN_FILE.write_text(json.dumps(data, default=str), encoding="utf-8")
+                    except Exception:
+                        pass
         except Exception:
-            base = ""
-        if not base:
-            base = os.environ.get("GITHUB_RESULTS_RAW", "")
-        if base:
-            base = str(base).rstrip("/")
-            # if points to a csv file, strip to folder
-            if base.endswith(".csv"):
-                base = base.rsplit("/", 1)[0]
-            url = base + "/pattern_scan_results.json"
-            import urllib.request
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Cache-Control": "no-cache"})
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            if isinstance(data, list) and data:
-                try:
-                    PATTERN_SCAN_FILE.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
-                except Exception:
-                    pass
-                return data
-    except Exception:
-        pass
-    return []
+            data = []
+    if data:
+        st.session_state["_pattern_lib_cache"] = data
+        st.session_state["_pattern_lib_ts"] = india_now().strftime("%H:%M:%S IST") if "india_now" in dir() else ""
+    return data if isinstance(data, list) else []
 
 
 def hydrate_pattern_hit_charts(hit: dict) -> dict:
@@ -4077,10 +4111,13 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
         mkt_open = nse_market_open_now()
     except Exception:
         mkt_open = False
-    disk_hits = load_pattern_scan_hits()
+    # Instant: session / disk / GitHub-cache (no spinner)
+    disk_hits = load_pattern_scan_hits(force=False)
     if disk_hits:
         st.session_state["cps_library"] = disk_hits
         st.session_state["cps_from_auto"] = True
+        if not st.session_state.get("_cps_lib_msg_once"):
+            st.session_state["_cps_lib_msg_once"] = True
     elif "cps_library" not in st.session_state:
         st.session_state["cps_library"] = []
 
@@ -4105,14 +4142,18 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
     b1, b2, b3 = st.columns([1, 1, 1])
     with b1:
         if st.button("⚡ Load last scan (disk / GitHub)", type="primary", use_container_width=True, key="cps_show_auto"):
-            disk_hits = load_pattern_scan_hits()
+            disk_hits = load_pattern_scan_hits(force=True)
+            try:
+                _fetch_github_json.clear()
+            except Exception:
+                pass
             if disk_hits:
                 st.session_state["cps_library"] = disk_hits
                 st.session_state["cps_from_auto"] = True
                 st.success(f"Loaded **{len(disk_hits)}** last-scanned hits.")
                 st.rerun()
             else:
-                st.warning("No saved library yet — run **Scan ALL patterns** below or wait for GitHub job.")
+                st.warning("No library in cache yet — **Load last scan** pulls GitHub instantly (set `GITHUB_RESULTS_RAW`), or wait for auto job.")
     with b2:
         if st.button("Start over / clear", use_container_width=True, key="cps_clear"):
             for k in ("cps_hits", "cps_library", "cps_from_auto"):
@@ -8656,6 +8697,140 @@ def detect_915_big_candle_1m(df_1m: pd.DataFrame, min_body_pct: float = 55.0, mi
     return out
 
 
+
+def get_near_atm_option_quote(symbol: str, side: str = "CE", spot: float = None) -> dict:
+    """
+    Near-ATM option for a stock (CE/PE only).
+    Returns premium (entry), strike, expiry, bid/ask, underlying.
+    Used by 9:15–9:30 strategy — target/stop are on **option premium**, not stock.
+    """
+    out = {
+        "ok": False, "symbol": str(symbol).upper().replace(".NS", ""),
+        "side": "CE" if str(side).upper() in ("CE", "CALL", "C") else "PE",
+        "strike": None, "expiry": None, "premium": None,
+        "bid": None, "ask": None, "spot": spot, "reason": "",
+    }
+    sym = out["symbol"]
+    try:
+        if not spot or spot <= 0:
+            try:
+                q = live_quote(clean_symbol(sym))
+                if isinstance(q, dict):
+                    spot = safe_float(q.get("price") or q.get("ltp") or q.get("last"))
+                else:
+                    spot = safe_float(q)
+            except Exception:
+                spot = None
+        if not spot or spot <= 0:
+            try:
+                df = stock_history(clean_symbol(sym), interval="1d", period="5d")
+                if df is not None and not df.empty:
+                    spot = safe_float(df["Close"].iloc[-1])
+            except Exception:
+                spot = None
+        out["spot"] = spot
+        if not spot or spot <= 0:
+            out["reason"] = "No underlying spot for ATM"
+            return out
+
+        # Strike step by price band (NSE-style approx)
+        if spot < 100:
+            step = 2.5
+        elif spot < 250:
+            step = 5.0
+        elif spot < 500:
+            step = 5.0
+        elif spot < 1000:
+            step = 10.0
+        elif spot < 2500:
+            step = 20.0
+        else:
+            step = 50.0
+        atm = round(spot / step) * step
+        out["strike"] = float(atm)
+
+        prem = None
+        expiry = None
+        bid = ask = None
+        # Prefer Yahoo option chain
+        try:
+            import yfinance as yf
+            t = yf.Ticker(sym if str(sym).endswith(".NS") else f"{sym}.NS")
+            try:
+                exps = list(t.options or [])
+            except Exception:
+                exps = []
+            if not exps:
+                # try _option_expiries helper
+                try:
+                    exps = _option_expiries(sym) or []
+                except Exception:
+                    exps = []
+            if exps:
+                expiry = str(exps[0])
+                out["expiry"] = expiry
+                try:
+                    chain = t.option_chain(expiry)
+                    table = chain.calls if out["side"] == "CE" else chain.puts
+                except Exception:
+                    table = None
+                if table is not None and not table.empty:
+                    # nearest strike
+                    strikes = pd.to_numeric(table["strike"], errors="coerce")
+                    i = (strikes - atm).abs().idxmin()
+                    row = table.loc[i]
+                    out["strike"] = float(row.get("strike") or atm)
+                    last = safe_float(row.get("lastPrice") or row.get("last"))
+                    bid = safe_float(row.get("bid"))
+                    ask = safe_float(row.get("ask"))
+                    if last and last > 0:
+                        prem = last
+                    elif bid and ask and bid > 0 and ask > 0:
+                        prem = (bid + ask) / 2.0
+                    elif ask and ask > 0:
+                        prem = ask
+                    elif bid and bid > 0:
+                        prem = bid
+        except Exception as e:
+            out["reason"] = f"chain: {type(e).__name__}"
+
+        # Fallback premium estimate from stock range (very rough) if no chain
+        if not prem or prem <= 0:
+            # ~0.4–1.2% of spot as rough near-ATM extrinsic for intraday
+            prem = max(0.5, round(float(spot) * 0.006, 2))
+            out["reason"] = (out.get("reason") or "") + " · estimated ATM premium (chain unavailable)"
+        else:
+            out["reason"] = f"Near-ATM {out['side']} strike {out['strike']} exp {out.get('expiry') or '—'}"
+
+        out["premium"] = round(float(prem), 2)
+        out["bid"] = bid
+        out["ask"] = ask
+        out["ok"] = True
+        # 9:15–9:30 scalp on **option premium** (not stock):
+        # Target +5% to +10% (default +7.5%), Stop −5% to −8% (default −6%)
+        # Example: Buy CE1210 at ₹40 → target ₹42–44 · SL ~₹37–38
+        entry = out["premium"]
+        tgt_pct = 0.075   # 7.5% mid of 5–10%
+        sl_pct = 0.06     # 6% risk on premium
+        out["opt_entry"] = entry
+        out["opt_target"] = round(entry * (1.0 + tgt_pct), 2)
+        out["opt_stop"] = round(max(0.05, entry * (1.0 - sl_pct)), 2)
+        out["tgt_pct"] = round(tgt_pct * 100, 1)
+        out["sl_pct"] = round(sl_pct * 100, 1)
+        k = out.get("strike")
+        side = out["side"]
+        if k is not None:
+            # e.g. Buy CE1210 at ₹40
+            k_txt = str(int(k)) if float(k) == int(float(k)) else str(k)
+            out["opt_label"] = f"Buy {side}{k_txt} at ₹{entry}"
+        else:
+            out["opt_label"] = f"Buy ATM {side} at ₹{entry}"
+        return out
+    except Exception as e:
+        out["reason"] = str(e)
+        return out
+
+
 def scan_915_top20_candle_signals(
     limit: int = 20,
     min_body_pct: float = 55.0,
@@ -8752,21 +8927,50 @@ def scan_915_top20_candle_signals(
                     ltp = safe_float(q)
             except Exception:
                 pass
+            # --- Near-ATM OPTION premium (not stock) for entry / target / stop ---
+            side = sig["signal"]  # CE or PE
+            spot_px = safe_float(ltp) or safe_float(sig.get("candle_close"))
+            opt = get_near_atm_option_quote(sym, side=side, spot=spot_px)
+            if opt.get("ok") and opt.get("opt_entry"):
+                entry_o = opt["opt_entry"]
+                tgt_o = opt["opt_target"]
+                sl_o = opt["opt_stop"]
+                opt_label = opt.get("opt_label") or f"Buy ATM {side} at ₹{entry_o}"
+                reason = (
+                    f"{sig.get('reason') or ''} → **option trade**: **{opt_label}** · "
+                    f"Target ₹{tgt_o} (+{opt.get('tgt_pct', 7.5)}% on premium, band 5–10%) · "
+                    f"SL ₹{sl_o} (−{opt.get('sl_pct', 6)}% on same premium) · "
+                    f"exp {opt.get('expiry') or 'near'}"
+                )
+            else:
+                base = max(0.5, round(float(spot_px or 1) * 0.006, 2))
+                entry_o = base
+                tgt_o = round(base * 1.075, 2)
+                sl_o = round(base * 0.94, 2)
+                k_est = round(float(spot_px or 0) / 10) * 10 if spot_px else None
+                opt_label = (
+                    f"Buy {side}{int(k_est)} at ₹{entry_o} (est.)" if k_est else f"Buy ATM {side} at ₹{entry_o} (est.)"
+                )
+                reason = f"{sig.get('reason')} · {opt_label} · tgt +7.5% · SL −6% (chain offline)"
             rows.append({
                 "Stock": sym,
                 "List": tag,
                 "Day %": move,
-                "Signal": sig["signal"],
-                "Option": sig["option"],
-                "Entry (candle)": sig["entry_price"],
-                "Stop": sig["stop_hint"],
-                "Target": sig["target_hint"],
-                "LTP": round(safe_float(ltp), 2) if ltp else None,
+                "Signal": side,
+                "Option": opt_label,
+                "Strike": opt.get("strike"),
+                "Expiry": opt.get("expiry"),
+                "Entry (candle)": entry_o,  # option premium entry
+                "Stop": sl_o,
+                "Target": tgt_o,
+                "Underlying LTP": round(safe_float(spot_px), 2) if spot_px else None,
+                "LTP": entry_o,
                 "Candle": sig.get("color"),
                 "Body %": sig.get("body_pct"),
-                "Reason": sig.get("reason"),
+                "Reason": reason,
                 "Strategy": STRATEGY_915_CANDLE_NAME,
-                "Call Source": "INTRADAY_915_CANDLE",
+                "Call Source": "INTRADAY_915_CANDLE_OPT",
+                "Instrument": "OPTION_ATM",
                 "Prediction Date": india_now().strftime("%Y-%m-%d %H:%M"),
                 "Result": "PENDING",
                 "Fail Reason": "",
@@ -9024,16 +9228,33 @@ def evaluate_915_past_outcomes(max_rows: int = 200) -> pd.DataFrame:
                     _set(idx, "🔴 STOP LOSS HIT", "No bars to evaluate after 9:30", 0.0)
                 continue
 
-            hi = float(pd.to_numeric(df["High"], errors="coerce").max())
-            lo = float(pd.to_numeric(df["Low"], errors="coerce").min())
-            last = float(pd.to_numeric(df["Close"], errors="coerce").iloc[-1])
+            # Prefer current near-ATM option premium for hit detection
+            last = hi = lo = None
+            try:
+                oq = get_near_atm_option_quote(stock, side=side)
+                if oq.get("ok") and oq.get("premium"):
+                    last = float(oq["premium"])
+                    # without option OHLC: treat last vs target/stop; expand band ±5% for hi/lo proxy
+                    hi = last * 1.05
+                    lo = last * 0.95
+            except Exception:
+                pass
+            if last is None:
+                last = float(pd.to_numeric(df["Close"], errors="coerce").iloc[-1])
+                # map underlying move to rough option PnL proxy only if targets look like stock prices
+                hi = float(pd.to_numeric(df["High"], errors="coerce").max())
+                lo = float(pd.to_numeric(df["Low"], errors="coerce").min())
             hit_t = hit_s = False
-            if "CE" in side or "CALL" in side:
-                hit_t = bool(target and hi >= target)
-                hit_s = bool(stop and lo <= stop)
+            # Option premium: target above entry, stop below entry (both CE/PE long)
+            if target and stop and entry and target > entry and stop < entry:
+                hit_t = bool(last >= target or (hi is not None and hi >= target))
+                hit_s = bool(last <= stop or (lo is not None and lo <= stop))
+            elif "CE" in side or "CALL" in side:
+                hit_t = bool(target and hi is not None and hi >= target)
+                hit_s = bool(stop and lo is not None and lo <= stop)
             else:
-                hit_t = bool(target and lo <= target)
-                hit_s = bool(stop and hi >= stop)
+                hit_t = bool(target and lo is not None and lo <= target)
+                hit_s = bool(stop and hi is not None and hi >= stop)
 
             if hit_t and not hit_s:
                 if "CE" in side or "CALL" in side:
@@ -11193,19 +11414,64 @@ def show_915_strategy_desk():
             st.info("No rows match filters (Target / Stop only).")
         else:
             st.dataframe(show, use_container_width=True, hide_index=True, height=320)
-            stocks = show["Stock"].astype(str).unique().tolist()
-            pick = st.selectbox(
-                "Select stock for **1-minute chart** (9:15–9:30 window)",
-                stocks,
-                key="desk915_pick",
-            )
-            row = show[show["Stock"] == pick].iloc[0] if pick else None
-            if row is not None:
-                action = str(row.get("Action", ""))
-                st.markdown(
-                    f"#### {pick} · **{action}** @ **₹{row.get('Entry ₹')}** · "
-                    f"SL ₹{row.get('Stop ₹')} · Target ₹{row.get('Target ₹')} · **{row.get('Result')}**"
-                )
+            st.markdown("**📈 Open 1-minute chart + trade details** — tap a stock button")
+            # One button per closed trade (up to 24)
+            _bt_rows = list(show.reset_index(drop=True).iterrows())[:24]
+            for _bi in range(0, len(_bt_rows), 3):
+                _cols = st.columns(3)
+                for _j, _col in enumerate(_cols):
+                    if _bi + _j >= len(_bt_rows):
+                        break
+                    _ix, _rr = _bt_rows[_bi + _j]
+                    _stk = str(_rr.get("Stock") or "")
+                    _act = str(_rr.get("Action") or "")
+                    _res = str(_rr.get("Result") or "")
+                    _lbl = f"📈 {_stk}"
+                    with _col:
+                        if st.button(
+                            _lbl,
+                            key=f"desk915_btn_{_stk}_{_bi}_{_j}",
+                            use_container_width=True,
+                            help=f"{_act} · {_res}",
+                        ):
+                            st.session_state["desk915_detail"] = {
+                                "Stock": _stk,
+                                "Action": _act,
+                                "Entry ₹": _rr.get("Entry ₹"),
+                                "Stop ₹": _rr.get("Stop ₹"),
+                                "Target ₹": _rr.get("Target ₹"),
+                                "List": _rr.get("List"),
+                                "Result": _res,
+                                "PnL %": _rr.get("PnL %"),
+                                "Fail Reason": _rr.get("Fail Reason"),
+                                "Time": _rr.get("Time"),
+                            }
+            # Detail + 1m chart panel
+            det = st.session_state.get("desk915_detail")
+            if det and str(det.get("Stock")):
+                pick = str(det.get("Stock"))
+                action = str(det.get("Action") or "")
+                entry = safe_float(det.get("Entry ₹"))
+                stop = safe_float(det.get("Stop ₹"))
+                tgt = safe_float(det.get("Target ₹"))
+                res = str(det.get("Result") or "")
+                st.markdown("---")
+                st.markdown(f"### 📊 {pick} · 1-minute chart")
+                c_a, c_b, c_c, c_d = st.columns(4)
+                c_a.metric("Action", action)
+                c_b.metric("Entry ₹", f"{entry}" if entry else "—")
+                c_c.metric("Target ₹", f"{tgt}" if tgt else "—")
+                c_d.metric("Stop ₹", f"{stop}" if stop else "—")
+                c_e, c_f, c_g = st.columns(3)
+                c_e.metric("Result", res)
+                try:
+                    c_f.metric("PnL %", f"{float(det.get('PnL %') or 0):+.2f}")
+                except Exception:
+                    c_f.metric("PnL %", str(det.get("PnL %") or "—"))
+                c_g.metric("List", str(det.get("List") or "—"))
+                if det.get("Fail Reason"):
+                    st.caption(f"Note: {det.get('Fail Reason')}")
+                st.caption(f"Signal time: {det.get('Time') or '—'} · timeframe **1 minute** · window focus 9:15–9:30 IST")
                 df1 = None
                 try:
                     df1 = stock_history(clean_symbol(pick), interval="1m", period="1d")
@@ -11215,7 +11481,9 @@ def show_915_strategy_desk():
                     df1 = None
                 if df1 is not None and not df1.empty:
                     try:
+                        import plotly.graph_objects as go
                         d = df1.copy()
+                        # Prefer morning window if timestamps allow
                         try:
                             idx = pd.to_datetime(d.index)
                             if getattr(idx, "tz", None) is not None:
@@ -11223,35 +11491,60 @@ def show_915_strategy_desk():
                                     idx = idx.tz_convert("Asia/Kolkata")
                                 except Exception:
                                     idx = idx.tz_localize(None)
+                            d = d.copy()
                             d.index = idx
-                            mask = (d.index.hour == 9) & (d.index.minute >= 15) & (d.index.minute <= 45)
-                            if mask.any():
-                                d = d.loc[mask]
-                            else:
-                                d = d.tail(30)
+                            try:
+                                hours = d.index.hour
+                                mins = d.index.minute
+                                mask = (hours == 9) & (mins >= 15) & (mins <= 45)
+                                if mask.any():
+                                    d = d.loc[mask]
+                            except Exception:
+                                pass
                         except Exception:
-                            d = df1.tail(30)
-                        import plotly.graph_objects as go
-                        fig = go.Figure(data=[go.Candlestick(
-                            x=list(d.index),
-                            open=d["Open"], high=d["High"], low=d["Low"], close=d["Close"],
-                            name="1m",
-                            increasing_line_color="#22c55e", decreasing_line_color="#ef4444",
-                        )])
-                        entry = safe_float(row.get("Entry ₹"))
-                        stop = safe_float(row.get("Stop ₹"))
-                        tgt = safe_float(row.get("Target ₹"))
-                        if entry:
-                            fig.add_hline(y=entry, line_dash="solid", line_color="#38bdf8",
-                                          annotation_text=f"{action} @ {entry}")
-                        if stop:
-                            fig.add_hline(y=stop, line_dash="dot", line_color="#ef4444",
-                                          annotation_text=f"SL {stop}")
-                        if tgt:
-                            fig.add_hline(y=tgt, line_dash="dot", line_color="#22c55e",
-                                          annotation_text=f"TGT {tgt}")
+                            pass
+                        if d is None or d.empty:
+                            d = df1.tail(90)
+                        xs = list(range(len(d)))
+                        fig = go.Figure(
+                            data=[
+                                go.Candlestick(
+                                    x=xs,
+                                    open=d["Open"],
+                                    high=d["High"],
+                                    low=d["Low"],
+                                    close=d["Close"],
+                                    name="1m",
+                                    increasing_line_color="#22c55e",
+                                    decreasing_line_color="#ef4444",
+                                )
+                            ]
+                        )
+                        # Only draw entry/SL/TGT on chart when levels sit near underlying (stock trade).
+                        # Option-premium entries (e.g. ₹40) are shown in metrics, not forced on stock axis.
+                        try:
+                            _ymin = float(pd.to_numeric(d["Low"], errors="coerce").min())
+                            _ymax = float(pd.to_numeric(d["High"], errors="coerce").max())
+                            _pad = max((_ymax - _ymin) * 0.15, 1.0)
+                        except Exception:
+                            _ymin, _ymax, _pad = 0, 1e12, 1
+                        def _on_chart(px):
+                            if not px:
+                                return False
+                            return (_ymin - _pad) <= float(px) <= (_ymax + _pad)
+                        if _on_chart(entry):
+                            fig.add_hline(y=entry, line_dash="solid", line_color="#38bdf8", annotation_text=f"Entry {entry}")
+                        if _on_chart(stop):
+                            fig.add_hline(y=stop, line_dash="dot", line_color="#f87171", annotation_text=f"SL {stop}")
+                        if _on_chart(tgt):
+                            fig.add_hline(y=tgt, line_dash="dot", line_color="#4ade80", annotation_text=f"TGT {tgt}")
+                        if entry and not _on_chart(entry):
+                            st.caption(
+                                f"Option premium levels — Entry ₹{entry} · Target ₹{tgt} · SL ₹{stop} "
+                                f"(shown in metrics; chart is **underlying** 1m)."
+                            )
                         fig.update_layout(
-                            title=f"{pick} · 1-minute · 9:15–9:30 · {row.get('Result')}",
+                            title=f"{pick} · 1-minute · {action} · {res}",
                             height=480,
                             xaxis_rangeslider_visible=False,
                             paper_bgcolor="rgba(0,0,0,0)",
@@ -11260,10 +11553,15 @@ def show_915_strategy_desk():
                             margin=dict(l=10, r=10, t=40, b=10),
                         )
                         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
+                        with st.expander("OHLC table (1m)", expanded=False):
+                            st.dataframe(d.tail(60), use_container_width=True, height=220)
                     except Exception as e:
                         st.caption(f"Chart: {e}")
                 else:
                     st.warning("1-minute bars not available for this symbol right now.")
+                if st.button("Close detail", key="desk915_close_det"):
+                    st.session_state.pop("desk915_detail", None)
+                    st.rerun()
 
     # Full past book — closed only + same filters
     st.markdown("### 📚 Closed past book (Target / Stop only)")
@@ -27568,6 +27866,20 @@ def refresh_live_prices_all_books(max_per_book: int = 80) -> dict:
 
 def apply_realtime_sync(force: bool = False, refresh_prices: bool = True) -> bool:
     """
+    # Fast path: tab switch — no network price batch
+    if st.session_state.pop("_light_nav", False) and not force:
+        refresh_prices = False
+    try:
+        last = float(st.session_state.get("_last_sync_ts") or 0)
+    except Exception:
+        last = 0
+    import time as _time_mod
+    now_ts = _time_mod.time()
+    if not force and refresh_prices and (now_ts - last) < 25:
+        return False
+    if force or refresh_prices:
+        st.session_state["_last_sync_ts"] = now_ts
+
     Reload shared files when version advances; optionally refresh live prices every time.
     """
     remote = read_sync_version()
@@ -27932,6 +28244,14 @@ def auto_load_latest_scan(silent: bool = True) -> int:
     2) Optionally pull from GitHub raw if configured
     3) Load into session — user does NOT need to press Reload scan
     """
+    # Instant path — session already has scan (tab switch)
+    try:
+        r = st.session_state.get("results")
+        if r is not None and not getattr(r, "empty", True):
+            return int(len(r))
+    except Exception:
+        pass
+
     # Throttle to once per 45s per session
     try:
         now = time.time()
@@ -28590,6 +28910,7 @@ def nav_go(page_key: str):
     """Hub card / in-page link → open page at TOP, record history, close mobile menu."""
     _nav_push(page_key)
     st.session_state["_force_scroll_top"] = True
+    st.session_state["_light_nav"] = True  # skip heavy price refresh on tab switch
     st.rerun()
 
 

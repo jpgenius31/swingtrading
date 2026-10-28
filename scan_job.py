@@ -321,26 +321,84 @@ def _big_candle_signal(o, h, l, c, min_body_pct=55.0, min_range_pct=0.15):
     if c > o:
         return {
             "Signal": "CE",
-            "Option": "BUY CALL",
-            "Entry (candle)": round(h, 2),
+            "Option": "BUY ATM CALL",
+            "Entry (candle)": round(h, 2),  # stock ref; overwritten by ATM premium in run
             "Stop": round(l, 2),
             "Target": round(h + (h - l), 2),
             "Candle": "GREEN",
             "Body %": round(body_pct, 1),
-            "Reason": f"Big GREEN 1m · CALL at top ₹{h:.2f}",
+            "spot_ref": round(c, 2),
+            "Reason": f"Big GREEN 1m · ATM CE on option premium",
         }
     if c < o:
         return {
             "Signal": "PE",
-            "Option": "BUY PUT",
+            "Option": "BUY ATM PUT",
             "Entry (candle)": round(l, 2),
             "Stop": round(h, 2),
             "Target": round(l - (h - l), 2),
             "Candle": "RED",
             "Body %": round(body_pct, 1),
-            "Reason": f"Big RED 1m · PUT at bottom ₹{l:.2f}",
+            "spot_ref": round(c, 2),
+            "Reason": f"Big RED 1m · ATM PE on option premium",
         }
     return None
+
+
+
+def near_atm_option_premium(symbol: str, side: str, spot: float = None) -> dict:
+    """Near-ATM CE/PE premium for GitHub 9:15 job."""
+    import yfinance as yf
+    sym = str(symbol).upper().replace(".NS", "")
+    out = {"premium": None, "strike": None, "expiry": None, "entry": None, "target": None, "stop": None}
+    try:
+        if not spot or spot <= 0:
+            h = yf.Ticker(f"{sym}.NS").history(period="5d", interval="1d")
+            if h is not None and not h.empty:
+                spot = float(h["Close"].iloc[-1])
+        if not spot:
+            return out
+        if spot < 250:
+            step = 5.0
+        elif spot < 1000:
+            step = 10.0
+        elif spot < 2500:
+            step = 20.0
+        else:
+            step = 50.0
+        atm = round(spot / step) * step
+        t = yf.Ticker(f"{sym}.NS")
+        exps = list(t.options or [])
+        prem = None
+        if exps:
+            out["expiry"] = str(exps[0])
+            chain = t.option_chain(exps[0])
+            table = chain.calls if str(side).upper() in ("CE", "CALL") else chain.puts
+            if table is not None and not table.empty:
+                strikes = table["strike"].astype(float)
+                i = (strikes - atm).abs().idxmin()
+                row = table.loc[i]
+                out["strike"] = float(row["strike"])
+                last = float(row.get("lastPrice") or 0)
+                bid = float(row.get("bid") or 0)
+                ask = float(row.get("ask") or 0)
+                if last > 0:
+                    prem = last
+                elif bid > 0 and ask > 0:
+                    prem = (bid + ask) / 2
+                elif ask > 0:
+                    prem = ask
+        if not prem or prem <= 0:
+            prem = max(0.5, round(float(spot) * 0.006, 2))
+        out["premium"] = round(float(prem), 2)
+        out["entry"] = out["premium"]
+        out["target"] = round(out["premium"] * 1.075, 2)  # +7.5% (5–10% band)
+        out["stop"] = round(max(0.05, out["premium"] * 0.94), 2)  # −6%
+    except Exception:
+        if spot:
+            prem = max(0.5, round(float(spot) * 0.006, 2))
+            out.update({"premium": prem, "entry": prem, "target": round(prem * 1.075, 2), "stop": round(prem * 0.94, 2)})
+    return out
 
 
 def run_915_open_strategy(limit: int = 20, list_mode: str = "both") -> pd.DataFrame:
@@ -431,14 +489,34 @@ def run_915_open_strategy(limit: int = 20, list_mode: str = "both") -> pd.DataFr
                 continue
             if tag == "GAINER" and sig.get("Signal") != "CE":
                 continue
+            spot = float(h["Close"].iloc[-1])
+            side = sig.get("Signal") or "CE"
+            opt = near_atm_option_premium(sym, side, spot=spot)
+            entry = opt.get("entry") or max(0.5, round(spot * 0.006, 2))
+            tgt = opt.get("target") or round(entry * 1.075, 2)
+            sl = opt.get("stop") or round(entry * 0.94, 2)
             out_rows.append({
                 "Stock": sym,
                 "List": tag,
                 "Day %": None,
-                **sig,
-                "LTP": round(float(h["Close"].iloc[-1]), 2),
-                "Strategy": "9:15–9:30 · Big 1-min candle (Top 20 G/L)",
-                "Call Source": "INTRADAY_915_CANDLE",
+                "Signal": side,
+                "Option": (
+                    f"Buy {side}{int(opt['strike']) if opt.get('strike') and float(opt['strike'])==int(float(opt['strike'])) else opt.get('strike')} at ₹{entry}"
+                    if opt.get("strike") else f"Buy ATM {side} at ₹{entry}"
+                ),
+                "Strike": opt.get("strike"),
+                "Expiry": opt.get("expiry"),
+                "Entry (candle)": entry,
+                "Stop": sl,
+                "Target": tgt,
+                "Candle": sig.get("Candle"),
+                "Body %": sig.get("Body %"),
+                "Reason": f"{sig.get('Reason')} · option premium entry ₹{entry} · tgt ₹{tgt} · SL ₹{sl}",
+                "Underlying LTP": round(spot, 2),
+                "LTP": entry,
+                "Instrument": "OPTION_ATM",
+                "Strategy": "9:15–9:30 · Big 1-min · near-ATM option",
+                "Call Source": "INTRADAY_915_CANDLE_OPT",
                 "Prediction Date": now.strftime("%Y-%m-%d %H:%M"),
                 "Result": "PENDING",
                 "Fail Reason": "",
