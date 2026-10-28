@@ -690,7 +690,7 @@ def run_915_open_strategy(limit: int = 20, list_mode: str = "both") -> pd.DataFr
 
 
 
-def run_all_pattern_scan(limit_stocks: int = 60, min_fit: float = 65.0, completed_within: int = 25) -> int:
+def run_all_pattern_scan(limit_stocks: int = 60, min_fit: float = 55.0, completed_within: int = 45) -> int:
     """
     Scan ALL structure patterns on Nifty50+bank universe (daily).
     Writes pattern_scan_results.json for instant dashboard filter.
@@ -938,7 +938,7 @@ def main():
         except Exception as _ev:
             print(f"915 eval: {_ev}")
         try:
-            run_all_pattern_scan(limit_stocks=min(80, max(args.limit, 50)), min_fit=62.0, completed_within=30)
+            run_all_pattern_scan(limit_stocks=min(80, max(args.limit, 50)), min_fit=55.0, completed_within=45)
         except Exception as e:
             print(f"pattern scan: {e}")
         raise SystemExit(0)
@@ -962,7 +962,7 @@ def main():
     print(f"OK wrote {len(df)} rows → {OUT_CSV}")
     _write_strategy_and_index(df)
     try:
-        run_all_pattern_scan(limit_stocks=min(80, max(args.limit, 50)), min_fit=62.0, completed_within=30)
+        run_all_pattern_scan(limit_stocks=min(80, max(args.limit, 50)), min_fit=55.0, completed_within=45)
     except Exception as e:
         print(f"pattern scan after market: {e}")
     try:

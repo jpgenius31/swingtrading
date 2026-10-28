@@ -3539,30 +3539,93 @@ def load_pattern_scan_hits(force: bool = False) -> list:
     """
     if not force and st.session_state.get("_pattern_lib_cache"):
         return st.session_state["_pattern_lib_cache"]
+
+    status = {"source": None, "error": None, "urls_tried": [], "rows": 0}
     data = []
+
+    # 1) Local disk
     try:
         if PATTERN_SCAN_FILE.exists():
-            data = json.loads(PATTERN_SCAN_FILE.read_text(encoding="utf-8"))
-            if not isinstance(data, list):
-                data = []
-    except Exception:
-        data = []
+            raw = PATTERN_SCAN_FILE.read_text(encoding="utf-8").strip()
+            if raw:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict) and "hits" in parsed:
+                    parsed = parsed.get("hits") or []
+                if isinstance(parsed, list) and parsed:
+                    data = parsed
+                    status["source"] = "disk"
+    except Exception as e:
+        status["error"] = f"disk: {type(e).__name__}: {e}"
+
+    # 2) GitHub raw — try several URL shapes
     if not data:
-        try:
-            base = _github_results_base()
-            if base:
-                url = base + "/pattern_scan_results.json"
-                data = _fetch_github_json(url) or []
-                if data:
+        bases = []
+        b0 = _github_results_base()
+        if b0:
+            bases.append(b0)
+        # Also try secrets that point at the json file itself
+        for key in ("GITHUB_PATTERN_JSON", "GITHUB_RESULTS_RAW"):
+            try:
+                u = (st.secrets.get(key) if hasattr(st, "secrets") else None) or os.environ.get(key)
+            except Exception:
+                u = os.environ.get(key)
+            if u:
+                u = str(u).rstrip("/")
+                bases.append(u)
+                if u.endswith(".json"):
+                    bases.append(u.rsplit("/", 1)[0])
+                if u.endswith(".csv"):
+                    bases.append(u.rsplit("/", 1)[0])
+        # de-dupe
+        seen_b = set()
+        url_list = []
+        for b in bases:
+            if not b or b in seen_b:
+                continue
+            seen_b.add(b)
+            if b.endswith("pattern_scan_results.json"):
+                url_list.append(b)
+            else:
+                url_list.append(b + "/pattern_scan_results.json")
+                # common branch mistake: main vs master
+                if "/main/" in b:
+                    url_list.append(b.replace("/main/", "/master/") + "/pattern_scan_results.json")
+                if "/master/" in b:
+                    url_list.append(b.replace("/master/", "/main/") + "/pattern_scan_results.json")
+
+        for url in url_list:
+            status["urls_tried"].append(url)
+            try:
+                if force:
+                    try:
+                        _fetch_github_json.clear()
+                    except Exception:
+                        pass
+                got = _fetch_github_json(url)
+                if isinstance(got, dict) and "hits" in got:
+                    got = got.get("hits") or []
+                if isinstance(got, list) and got:
+                    data = got
+                    status["source"] = url
                     try:
                         PATTERN_SCAN_FILE.write_text(json.dumps(data, default=str), encoding="utf-8")
                     except Exception:
                         pass
-        except Exception:
-            data = []
+                    break
+            except Exception as e:
+                status["error"] = f"{type(e).__name__}: {e}"
+                continue
+
+    status["rows"] = len(data) if isinstance(data, list) else 0
+    st.session_state["_pattern_lib_status"] = status
     if data:
         st.session_state["_pattern_lib_cache"] = data
-        st.session_state["_pattern_lib_ts"] = india_now().strftime("%H:%M:%S IST") if "india_now" in dir() else ""
+        try:
+            st.session_state["_pattern_lib_ts"] = india_now().strftime("%H:%M:%S IST")
+        except Exception:
+            st.session_state["_pattern_lib_ts"] = ""
+    elif force:
+        st.session_state.pop("_pattern_lib_cache", None)
     return data if isinstance(data, list) else []
 
 
@@ -4130,9 +4193,8 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
 
     if not mkt_open:
         st.info(
-            f"**Market closed** — showing **last scanned** pattern library "
-            f"({meta.get('rows', len(disk_hits or []))} hits · saved {meta.get('saved_at_ist', '—')}). "
-            "Filters still work instantly."
+            f"**Market closed** — pattern library: **{len(disk_hits or [])} hits** · saved {meta.get('saved_at_ist', '—')}. "
+            + ("Filters ready." if disk_hits else "Click **Load last scan** or run GitHub pattern job.")
         )
     elif disk_hits:
         st.success(
@@ -4153,7 +4215,24 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
                 st.success(f"Loaded **{len(disk_hits)}** last-scanned hits.")
                 st.rerun()
             else:
-                st.warning("No library in cache yet — **Load last scan** pulls GitHub instantly (set `GITHUB_RESULTS_RAW`), or wait for auto job.")
+                st.warning(
+                    "No library yet. Set Streamlit secret **GITHUB_RESULTS_RAW** to your repo raw folder "
+                    "(the folder that has `pattern_scan_results.json`), then click **Load last scan**. "
+                    "Or run GitHub Action **Market Scan** / **patterns** so the JSON is committed."
+                )
+                st_status = st.session_state.get("_pattern_lib_status") or {}
+                if st_status:
+                    with st.expander("Why 0 hits? (diagnostics)", expanded=True):
+                        st.write("**Source:**", st_status.get("source") or "none")
+                        st.write("**Rows:**", st_status.get("rows"))
+                        st.write("**Last error:**", st_status.get("error") or "—")
+                        urls = st_status.get("urls_tried") or []
+                        if urls:
+                            st.write("**URLs tried:**")
+                            for u in urls[:8]:
+                                st.code(u, language=None)
+                        else:
+                            st.info("No GITHUB_RESULTS_RAW secret — add it in Streamlit Cloud → Settings → Secrets.")
     with b2:
         if st.button("Start over / clear", use_container_width=True, key="cps_clear"):
             for k in ("cps_hits", "cps_library", "cps_from_auto"):
