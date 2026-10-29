@@ -4282,7 +4282,15 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
                 save_pattern_scan_hits(all_hits, pattern="MULTI", tf=tf_label)
             except Exception:
                 pass
-        st.success(f"**ALL patterns** scan done · **{len(all_hits)}** hits saved — pick any pattern for instant filter (market open or closed).")
+        # Instant filters on this device / Cloud instance
+        st.session_state["cps_library"] = all_hits
+        st.session_state["_pattern_lib_cache"] = all_hits
+        st.session_state["cps_from_auto"] = True
+        st.success(
+            f"**ALL patterns** done · **{len(all_hits)}** hits saved on this app. "
+            "Filters work now. For **all devices**, run GitHub Action **patterns_only** "
+            "(Streamlit cannot push to GitHub without a token — Actions write the shared file)."
+        )
         st.rerun()
 
     library = st.session_state.get("cps_library") or []
@@ -9060,6 +9068,65 @@ def scan_915_top20_candle_signals(
 
 
 
+
+# Approx NSE F&O lot sizes (update as exchange changes). Default used if unknown.
+NSE_OPTION_LOT_SIZE = {
+    "RELIANCE": 250, "TCS": 150, "INFY": 400, "HDFCBANK": 550, "ICICIBANK": 700,
+    "SBIN": 750, "AXISBANK": 625, "KOTAKBANK": 400, "ITC": 1600, "LT": 150,
+    "BHARTIARTL": 475, "BAJFINANCE": 125, "ASIANPAINT": 150, "MARUTI": 50,
+    "TITAN": 300, "SUNPHARMA": 350, "NTPC": 1500, "POWERGRID": 1900,
+    "COALINDIA": 1350, "TATASTEEL": 550, "HINDALCO": 1400, "BEL": 1900,
+    "TATAMOTORS": 550, "WIPRO": 1500, "HCLTECH": 350, "TECHM": 600,
+    "M&M": 200, "ONGC": 1925, "BPCL": 1000, "ADANIENT": 300, "ADANIPORTS": 500,
+}
+
+
+def option_lot_size(symbol: str) -> int:
+    s = str(symbol or "").upper().replace(".NS", "").strip()
+    return int(NSE_OPTION_LOT_SIZE.get(s, 50))
+
+
+def calc_915_trade_money(entry, stop, target, pnl_pct, lots: int, lot_size: int) -> dict:
+    """Investment and ₹ PnL for min/manual lots on option premium."""
+    try:
+        entry = float(entry or 0)
+    except Exception:
+        entry = 0.0
+    try:
+        lots = max(1, int(lots))
+    except Exception:
+        lots = 1
+    try:
+        lot_size = max(1, int(lot_size))
+    except Exception:
+        lot_size = 50
+    qty = lots * lot_size
+    invest = round(entry * qty, 2)
+    try:
+        pct = float(pnl_pct) if pnl_pct is not None and str(pnl_pct) not in ("", "nan", "None") else None
+    except Exception:
+        pct = None
+    pnl_rs = round(invest * (pct / 100.0), 2) if pct is not None else None
+    # theoretical if target/stop hit
+    try:
+        t = float(target or 0)
+        s = float(stop or 0)
+        tgt_rs = round((t - entry) * qty, 2) if t and entry else None
+        sl_rs = round((s - entry) * qty, 2) if s and entry else None
+    except Exception:
+        tgt_rs = sl_rs = None
+    return {
+        "lots": lots,
+        "lot_size": lot_size,
+        "qty": qty,
+        "investment": invest,
+        "pnl_rs": pnl_rs,
+        "target_rs": tgt_rs,
+        "stop_rs": sl_rs,
+        "pnl_pct": pct,
+    }
+
+
 def auto_paper_915_min_capital(live: pd.DataFrame, capital_per_trade: float = 5000.0) -> int:
     """
     Paper-buy each 915 signal with small fixed capital (no broker).
@@ -9078,8 +9145,14 @@ def auto_paper_915_min_capital(live: pd.DataFrame, capital_per_trade: float = 50
             side = str(r.get("Signal") or "CE").upper()
             if not stock or not entry or entry <= 0:
                 continue
-            # qty from min capital
-            qty = max(1, int(float(capital_per_trade) // entry))
+            # Min 1 lot (NSE lot size); fall back to capital if premium huge
+            ls = option_lot_size(stock)
+            lots = 1
+            invest = entry * ls * lots
+            if invest > float(capital_per_trade) * 3 and entry > 0:
+                # still 1 lot — record note only
+                pass
+            qty = ls * lots
             tag = f"STRAT_915_AUTO_{side}"
             # one auto entry per stock per day
             flag = f"_915_auto_paper_{today}_{stock}_{side}"
@@ -11493,8 +11566,28 @@ def show_915_strategy_desk():
             st.info("No rows match filters (Target / Stop only).")
         else:
             st.dataframe(show, use_container_width=True, hide_index=True, height=320)
-            st.markdown("**📈 Open 1-minute chart + trade details** — tap a stock button")
-            # One button per closed trade (up to 24)
+            # Success ratio + ₹ P&L at **minimum 1 lot**
+            try:
+                _wins = int(show["Result"].astype(str).str.upper().str.contains("TARGET", na=False).sum())
+                _loss = int(show["Result"].astype(str).str.upper().str.contains("STOP", na=False).sum())
+                _tot = _wins + _loss
+                _sum_rs = 0.0
+                for _, _rr0 in show.iterrows():
+                    _m0 = calc_915_trade_money(
+                        _rr0.get("Entry ₹"), _rr0.get("Stop ₹"), _rr0.get("Target ₹"),
+                        _rr0.get("PnL %"), lots=1, lot_size=option_lot_size(_rr0.get("Stock")),
+                    )
+                    if _m0.get("pnl_rs") is not None:
+                        _sum_rs += float(_m0["pnl_rs"])
+                st.markdown(
+                    f"**Success ratio (closed):** {_wins}/{_tot} "
+                    f"({(100.0*_wins/_tot) if _tot else 0:.1f}%) · "
+                    f"**Net P&L @ 1 lot each:** ₹{_sum_rs:+,.0f}"
+                )
+            except Exception:
+                pass
+
+            st.markdown("**Open chart + details** — blue button = stock name")
             _bt_rows = list(show.reset_index(drop=True).iterrows())[:24]
             for _bi in range(0, len(_bt_rows), 3):
                 _cols = st.columns(3)
@@ -11505,13 +11598,18 @@ def show_915_strategy_desk():
                     _stk = str(_rr.get("Stock") or "")
                     _act = str(_rr.get("Action") or "")
                     _res = str(_rr.get("Result") or "")
-                    _lbl = f"📈 {_stk}"
+                    _m = calc_915_trade_money(
+                        _rr.get("Entry ₹"), _rr.get("Stop ₹"), _rr.get("Target ₹"),
+                        _rr.get("PnL %"), lots=1, lot_size=option_lot_size(_stk),
+                    )
+                    _lbl = f"{_stk}"
                     with _col:
                         if st.button(
                             _lbl,
+                            type="primary",
                             key=f"desk915_btn_{_stk}_{_bi}_{_j}",
                             use_container_width=True,
-                            help=f"{_act} · {_res}",
+                            help=f"{_act} · {_res} · 1 lot invest ₹{_m.get('investment')} · PnL ₹{_m.get('pnl_rs')}",
                         ):
                             st.session_state["desk915_detail"] = {
                                 "Stock": _stk,
@@ -11524,6 +11622,7 @@ def show_915_strategy_desk():
                                 "PnL %": _rr.get("PnL %"),
                                 "Fail Reason": _rr.get("Fail Reason"),
                                 "Time": _rr.get("Time"),
+                                "lots": 1,
                             }
             # Detail + 1m chart panel
             det = st.session_state.get("desk915_detail")
@@ -11536,18 +11635,55 @@ def show_915_strategy_desk():
                 res = str(det.get("Result") or "")
                 st.markdown("---")
                 st.markdown(f"### 📊 {pick} · 1-minute chart")
+                ls = option_lot_size(pick)
+                lots_manual = st.number_input(
+                    "Lots (1 = minimum auto size)",
+                    min_value=1,
+                    max_value=50,
+                    value=int(det.get("lots") or 1),
+                    key=f"desk915_lots_{pick}",
+                    help="Change lots for ₹ investment / P&L. Auto paper uses 1 lot if you don't buy manually.",
+                )
+                money = calc_915_trade_money(entry, stop, tgt, det.get("PnL %"), lots=lots_manual, lot_size=ls)
                 c_a, c_b, c_c, c_d = st.columns(4)
                 c_a.metric("Action", action)
-                c_b.metric("Entry ₹", f"{entry}" if entry else "—")
+                c_b.metric("Entry (premium) ₹", f"{entry}" if entry else "—")
                 c_c.metric("Target ₹", f"{tgt}" if tgt else "—")
                 c_d.metric("Stop ₹", f"{stop}" if stop else "—")
-                c_e, c_f, c_g = st.columns(3)
+                c_e, c_f, c_g, c_h = st.columns(4)
                 c_e.metric("Result", res)
                 try:
                     c_f.metric("PnL %", f"{float(det.get('PnL %') or 0):+.2f}")
                 except Exception:
                     c_f.metric("PnL %", str(det.get("PnL %") or "—"))
-                c_g.metric("List", str(det.get("List") or "—"))
+                c_g.metric("Lot size", f"{ls}")
+                c_h.metric("Lots", f"{money['lots']}")
+                c_i, c_j, c_k = st.columns(3)
+                c_i.metric("Investment ₹", f"{money['investment']:,.0f}")
+                c_j.metric(
+                    "Final P&L ₹",
+                    f"{money['pnl_rs']:+,.0f}" if money.get("pnl_rs") is not None else "—",
+                )
+                c_k.metric("List", str(det.get("List") or "—"))
+                st.caption(
+                    f"Qty = {money['qty']} (lots × lot size). "
+                    f"If target hit ≈ ₹{money.get('target_rs')} · if stop ≈ ₹{money.get('stop_rs')}. "
+                    "No manual buy → **auto paper 1 lot** when signals refresh."
+                )
+                if st.button("📝 Paper buy this lot size now", key=f"desk915_manual_{pick}"):
+                    try:
+                        execute_paper_order(
+                            display_symbol(pick),
+                            "BUY",
+                            entry=entry,
+                            target=tgt,
+                            stop=stop,
+                            source=f"915_MANUAL_{action}",
+                            force=True,
+                        )
+                        st.success(f"Paper BUY {pick} · {lots_manual} lot(s) · invest ₹{money['investment']:,.0f}")
+                    except Exception as e:
+                        st.warning(f"Paper: {e}")
                 if det.get("Fail Reason"):
                     st.caption(f"Note: {det.get('Fail Reason')}")
                 st.caption(f"Signal time: {det.get('Time') or '—'} · timeframe **1 minute** · window focus 9:15–9:30 IST")
