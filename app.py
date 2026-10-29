@@ -25822,6 +25822,62 @@ def filter_df_by_index(df: pd.DataFrame, index_choice: str, stock_col: str = "St
     return df.loc[syms.isin(members)].copy()
 
 
+
+def mark_repeated_calls(df: pd.DataFrame, stock_col: str = "Stock", date_col: str = "Prediction Date") -> pd.DataFrame:
+    """
+    For each stock, number calls in time order: Call #1, #2, …
+    Adds columns: Call #, Call mark, Times called.
+    """
+    if df is None or getattr(df, "empty", True):
+        return df
+    out = df.copy()
+    if stock_col not in out.columns:
+        return out
+    # sort for stable numbering
+    try:
+        if date_col in out.columns:
+            out["_dt"] = pd.to_datetime(out[date_col], errors="coerce")
+            out = out.sort_values([stock_col, "_dt"], ascending=[True, True])
+        else:
+            out = out.sort_values([stock_col])
+    except Exception:
+        pass
+    # per-stock rank
+    try:
+        grp = out.groupby(out[stock_col].astype(str).str.upper().str.strip(), sort=False)
+        out["Call #"] = grp.cumcount() + 1
+        out["Times called"] = grp[stock_col].transform("count")
+    except Exception:
+        out["Call #"] = 1
+        out["Times called"] = 1
+    # human mark
+    def _mark(row):
+        n = int(row.get("Call #") or 1)
+        total = int(row.get("Times called") or 1)
+        dt = row.get(date_col) or ""
+        try:
+            if hasattr(dt, "strftime"):
+                ds = dt.strftime("%d %b %Y")
+            else:
+                ds = str(dt)[:16]
+        except Exception:
+            ds = str(dt)[:16]
+        if total <= 1:
+            return f"#{n} · {ds}"
+        return f"#{n} of {total} · {ds}"
+    try:
+        out["Call mark"] = out.apply(_mark, axis=1)
+    except Exception:
+        out["Call mark"] = out.get("Call #", 1).astype(str)
+    # Drop helper
+    if "_dt" in out.columns:
+        try:
+            out = out.drop(columns=["_dt"])
+        except Exception:
+            pass
+    return out
+
+
 def show_history():
     try:
         force_scroll_top()
@@ -26041,15 +26097,34 @@ def show_history():
     )
 
     show = view
+    # Mark repeated calls on same stock with # and date (across full filtered view, not just head)
+    try:
+        show = mark_repeated_calls(show, stock_col="Stock", date_col="Prediction Date")
+    except Exception:
+        pass
     if hist_rows != "ALL":
-        show = view.head(int(hist_rows))
+        try:
+            show = show.head(int(hist_rows))
+        except Exception:
+            show = view.head(int(hist_rows)) if hist_rows != "ALL" else view
 
     show_cols = [
         c for c in [
-            "Prediction Date", "Stock", "Index", "Call", "Call Source", "Entry", "Target", "Stop Loss",
+            "Stock", "Call mark", "Call #", "Times called", "Prediction Date", "Index",
+            "Call", "Call Source", "Entry", "Target", "Stop Loss",
             "R:R", "Current Price", "Result", "Return %", "Exit Date", "Exit Price", "Hold Days",
         ] if c in show.columns
     ]
+    # Caption how many repeats
+    try:
+        n_rep = int((show["Times called"] > 1).sum()) if "Times called" in show.columns else 0
+        if n_rep:
+            st.caption(
+                f"**Repeated calls:** {n_rep} rows are re-entries on the same stock "
+                f"(see **Call mark** = `#n of total · date`)."
+            )
+    except Exception:
+        pass
     st.markdown("##### All predictions (filtered)")
     if show is None or show.empty:
         st.warning("No rows for this filter combination.")
