@@ -1,6 +1,6 @@
 {
   "rows": 92,
-  "saved_at_ist": "2026-10-29 19:31:56 IST",
+  "saved_at_ist": "2026-10-29 21:52:18 IST",
   "source": "scan_job.py / GitHub Actions",
   "note": "App auto-loads this file; set Streamlit secret GITHUB_RESULTS_RAW to raw.githubusercontent.com/.../latest_results.csv for live pull without redeploy"
 }
