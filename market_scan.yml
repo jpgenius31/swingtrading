@@ -1,19 +1,21 @@
 name: Market Scan
 
 # Times are UTC. IST = UTC+5:30
-# 09:15 IST → 03:45 UTC  ← 9:15–9:30 strategy (open)
-# 09:18 IST → 03:48 UTC  ← second pass in the 15-min window
+# 09:15 IST → 03:45 UTC  ← 9:15–9:30 strategy
+# 09:18 IST → 03:48 UTC
 # 09:20 IST → 03:50 UTC  ← full market scan
-# 12:30 IST → 07:00 UTC
-# 15:00 IST → 09:30 UTC
+# 12:30 IST → 07:00 UTC  ← full scan + pattern library
+# 15:30 IST → 10:00 UTC  ← pattern library (3:30 PM)
+# 15:00 IST → 09:30 UTC  ← full scan (optional close)
 # Weekdays only (Mon–Fri)
 on:
   schedule:
     - cron: "45 3 * * 1-5"   # 09:15 IST — 9:15 strategy
     - cron: "48 3 * * 1-5"   # 09:18 IST — 9:15 strategy refresh
     - cron: "50 3 * * 1-5"   # 09:20 IST — full scan
-    - cron: "0 7 * * 1-5"    # 12:30 IST
-    - cron: "30 9 * * 1-5"   # 15:00 IST
+    - cron: "0 7 * * 1-5"    # 12:30 IST — full scan + patterns
+    - cron: "0 10 * * 1-5"   # 15:30 IST (3:30 PM) — patterns auto
+    - cron: "30 9 * * 1-5"   # 15:00 IST — full scan
   workflow_dispatch:
     inputs:
       job_type:
@@ -35,7 +37,6 @@ jobs:
     name: 9:15–9:30 open strategy
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    # Run on 9:15 / 9:18 schedules, or manual when selected
     if: |
       github.event_name == 'schedule' && (github.event.schedule == '45 3 * * 1-5' || github.event.schedule == '48 3 * * 1-5')
       || (github.event_name == 'workflow_dispatch' && (github.event.inputs.job_type == 'strategy_915' || github.event.inputs.job_type == 'both'))
@@ -103,12 +104,14 @@ jobs:
           git commit -m "chore: market scan $(date -u +%Y-%m-%dT%H:%MZ) IST-schedule"
           git push
 
-  patterns_only_job:
-    name: Chart pattern library
+  patterns_auto:
+    name: Chart pattern library (auto 12:30 & 15:30 IST)
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 90
+    # 12:30 IST (0 7 UTC) and 3:30 PM IST (0 10 UTC) + manual patterns_only
     if: |
-      github.event_name == 'workflow_dispatch' && github.event.inputs.job_type == 'patterns_only'
+      github.event_name == 'schedule' && (github.event.schedule == '0 7 * * 1-5' || github.event.schedule == '0 10 * * 1-5')
+      || (github.event_name == 'workflow_dispatch' && github.event.inputs.job_type == 'patterns_only')
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -118,17 +121,18 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install pandas numpy yfinance requests
-      - name: Scan all patterns
-        run: python scan_job.py --patterns-only --limit 80
+      - name: Scan all patterns × stocks × timeframes
+        run: python scan_job.py --patterns-only --limit 150
       - name: Commit pattern library
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add pattern_scan_results.json pattern_scan_meta.json pattern_lib.py || true
           ls -la pattern_scan_results.json pattern_scan_meta.json 2>/dev/null || true
+          wc -c pattern_scan_results.json 2>/dev/null || true
           if git diff --staged --quiet; then
             echo "No pattern file changes"
             exit 0
           fi
-          git commit -m "chore: pattern library $(date -u +%Y-%m-%dT%H:%MZ)"
+          git commit -m "chore: pattern library auto $(date -u +%Y-%m-%dT%H:%MZ)"
           git push

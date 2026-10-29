@@ -3604,14 +3604,23 @@ def load_pattern_scan_hits(force: bool = False) -> list:
                 got = _fetch_github_json(url)
                 if isinstance(got, dict) and "hits" in got:
                     got = got.get("hits") or []
-                if isinstance(got, list) and got:
-                    data = got
-                    status["source"] = url
-                    try:
-                        PATTERN_SCAN_FILE.write_text(json.dumps(data, default=str), encoding="utf-8")
-                    except Exception:
-                        pass
-                    break
+                if isinstance(got, list):
+                    if got:
+                        data = got
+                        status["source"] = url
+                        try:
+                            PATTERN_SCAN_FILE.write_text(json.dumps(data, default=str), encoding="utf-8")
+                        except Exception:
+                            pass
+                        break
+                    else:
+                        status["source"] = url + " (file exists but EMPTY [])"
+                        status["error"] = (
+                            "pattern_scan_results.json is [] — upload filled JSON or run "
+                            "GitHub Action job_type=patterns_only"
+                        )
+                        # keep trying other URLs
+                        continue
             except Exception as e:
                 status["error"] = f"{type(e).__name__}: {e}"
                 continue
@@ -4265,7 +4274,7 @@ def show_chart_pattern_scanner(results: pd.DataFrame = None):
         # ALL structure patterns in one run
         pat_list = list(CHART_STRUCTURE_PATTERNS.keys())
         with st.spinner(
-            f"Scanning **ALL {len(pat_list)} patterns** × {min(max_chk, len(universe))} stocks — "
+            f"Scanning **ALL patterns** × stocks × current TF (GitHub job does Daily+Weekly+1h+30m+15m) — "
             "please wait; results are saved for instant use (works when market is closed too)…"
         ):
             for pn in pat_list:

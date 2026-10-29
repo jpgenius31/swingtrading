@@ -690,10 +690,16 @@ def run_915_open_strategy(limit: int = 20, list_mode: str = "both") -> pd.DataFr
 
 
 
-def run_all_pattern_scan(limit_stocks: int = 60, min_fit: float = 55.0, completed_within: int = 45) -> int:
+def run_all_pattern_scan(
+    limit_stocks: int = 200,
+    min_fit: float = 55.0,
+    completed_within: int = 45,
+    timeframes: list = None,
+) -> int:
     """
-    Scan ALL structure patterns on Nifty50+bank universe (daily).
+    Scan ALL structure patterns × ALL stocks (universe) × multiple timeframes.
     Writes pattern_scan_results.json for instant dashboard filter.
+    Timeframes: Daily, Weekly, 1h, 30m, 15m (Yahoo-supported).
     """
     import yfinance as yf
     from datetime import datetime, timezone, timedelta
@@ -703,82 +709,109 @@ def run_all_pattern_scan(limit_stocks: int = 60, min_fit: float = 55.0, complete
         print(f"pattern_lib import failed: {e}")
         return 0
 
+    # interval → (history period, max bars, label, sessions_ago max)
+    TF_SPECS = timeframes or [
+        ("1d", "1y", 180, "Daily", 45),
+        ("1wk", "2y", 120, "Weekly", 26),
+        ("1h", "60d", 160, "1 Hour", 40),
+        ("30m", "30d", 160, "30 Min", 48),
+        ("15m", "15d", 160, "15 Min", 48),
+    ]
+
     ist = timezone(timedelta(hours=5, minutes=30))
     now = datetime.now(ist)
-    symbols = list(dict.fromkeys(NIFTY50 + EXTRA[:20]))[: max(20, int(limit_stocks))]
+    # Full liquid universe — Nifty50 + EXTRA (cap by limit)
+    symbols = list(dict.fromkeys(list(NIFTY50) + list(EXTRA)))
+    if limit_stocks and limit_stocks > 0:
+        symbols = symbols[: max(30, int(limit_stocks))]
     patterns = list(CHART_STRUCTURE_PATTERNS.keys())
-    print(f"Pattern auto-scan · {len(symbols)} stocks × {len(patterns)} patterns · {now.strftime('%Y-%m-%d %H:%M IST')}")
+    print(
+        f"Pattern FULL scan · {len(symbols)} stocks × {len(patterns)} patterns × "
+        f"{len(TF_SPECS)} TFs · {now.strftime('%Y-%m-%d %H:%M IST')}"
+    )
 
     all_hits = []
     for si, sym in enumerate(symbols):
+        ticker = None
         try:
-            h = yf.Ticker(yf_sym(sym)).history(period="1y", interval="1d", auto_adjust=True)
-            if h is None or len(h) < 50:
-                continue
-            df = h.tail(180).copy()
-            for col in ("Open", "High", "Low", "Close"):
-                if col not in df.columns:
-                    continue
-            live = float(df["Close"].iloc[-1])
-            for pn in patterns:
-                try:
-                    hit = detect_structure_pattern(df, pn, swing_order=3, min_fit=float(min_fit))
-                    if not hit:
-                        continue
-                    if int(hit.get("sessions_ago") or 99) > int(completed_within):
-                        continue
-                    pts = hit.get("points") or []
-                    slim = {
-                        "stock": sym,
-                        "pattern": hit.get("pattern") or pn,
-                        "direction": hit.get("direction"),
-                        "fit": hit.get("fit"),
-                        "points": pts,
-                        "points_abs": pts,
-                        "start_i": hit.get("start_i"),
-                        "end_i": hit.get("end_i"),
-                        "sessions": hit.get("sessions"),
-                        "sessions_ago": hit.get("sessions_ago"),
-                        "date_range": hit.get("date_range"),
-                        "entry": hit.get("entry"),
-                        "stop": hit.get("stop"),
-                        "target": hit.get("target"),
-                        "explain": hit.get("explain"),
-                        "rules": hit.get("rules") or "",
-                        "timeframe": "Daily",
-                        "interval": "1d",
-                        "live": round(live, 2),
-                        "gap_pct": 0,
-                        "extra_patterns": [],
-                    }
-                    all_hits.append(slim)
-                except Exception:
-                    continue
+            ticker = yf.Ticker(yf_sym(sym))
         except Exception as e:
             print(f"  skip {sym}: {e}")
             continue
-        if (si + 1) % 10 == 0:
+        for interval, period, max_bars, tf_label, tf_within in TF_SPECS:
+            try:
+                h = ticker.history(period=period, interval=interval, auto_adjust=True)
+                if h is None or len(h) < 40:
+                    continue
+                df = h.tail(int(max_bars)).copy()
+                if not all(c in df.columns for c in ("Open", "High", "Low", "Close")):
+                    continue
+                live = float(df["Close"].iloc[-1])
+                within = min(int(completed_within), int(tf_within))
+                for pn in patterns:
+                    try:
+                        hit = detect_structure_pattern(
+                            df, pn, swing_order=3, min_fit=float(min_fit)
+                        )
+                        if not hit:
+                            continue
+                        if int(hit.get("sessions_ago") or 99) > within:
+                            continue
+                        pts = hit.get("points") or []
+                        all_hits.append({
+                            "stock": sym,
+                            "pattern": hit.get("pattern") or pn,
+                            "direction": hit.get("direction"),
+                            "fit": hit.get("fit"),
+                            "points": pts,
+                            "points_abs": pts,
+                            "start_i": hit.get("start_i"),
+                            "end_i": hit.get("end_i"),
+                            "sessions": hit.get("sessions"),
+                            "sessions_ago": hit.get("sessions_ago"),
+                            "date_range": hit.get("date_range"),
+                            "entry": hit.get("entry"),
+                            "stop": hit.get("stop"),
+                            "target": hit.get("target"),
+                            "explain": hit.get("explain"),
+                            "rules": hit.get("rules") or "",
+                            "timeframe": tf_label,
+                            "interval": interval,
+                            "live": round(live, 2),
+                            "gap_pct": 0,
+                            "extra_patterns": [],
+                        })
+                    except Exception:
+                        continue
+            except Exception as e:
+                print(f"  {sym} {interval}: {e}")
+                continue
+        if (si + 1) % 5 == 0:
             print(f"  … {si+1}/{len(symbols)} stocks · {len(all_hits)} hits so far")
-        time.sleep(0.06)
+        time.sleep(0.05)
 
     all_hits.sort(key=lambda x: (x.get("sessions_ago", 99), -float(x.get("fit") or 0)))
     out_p = ROOT / "pattern_scan_results.json"
     meta_p = ROOT / "pattern_scan_meta.json"
     out_p.write_text(json.dumps(all_hits, indent=2, default=str), encoding="utf-8")
-    # per-pattern counts
     from collections import Counter
     counts = Counter(str(h.get("pattern")) for h in all_hits)
+    tf_counts = Counter(str(h.get("timeframe")) for h in all_hits)
     meta_p.write_text(json.dumps({
         "rows": len(all_hits),
         "pattern": "ALL",
-        "timeframe": "Daily",
+        "timeframe": "ALL",
+        "timeframes": dict(tf_counts),
         "patterns_covered": len(counts),
         "counts": dict(counts),
         "stocks": len(symbols),
         "saved_at_ist": now.strftime("%Y-%m-%d %H:%M:%S IST"),
-        "source": "scan_job.run_all_pattern_scan",
+        "source": "scan_job.run_all_pattern_scan_multi_tf",
     }, indent=2), encoding="utf-8")
-    print(f"OK pattern_scan_results.json · {len(all_hits)} hits · {len(counts)} pattern types")
+    print(
+        f"OK pattern_scan_results.json · {len(all_hits)} hits · "
+        f"{len(counts)} pattern types · TFs={dict(tf_counts)}"
+    )
     return len(all_hits)
 
 
@@ -925,7 +958,7 @@ def main():
     ap.add_argument("--patterns-only", action="store_true", help="Only run full pattern library scan")
     args = ap.parse_args()
     if getattr(args, 'patterns_only', False):
-        n = run_all_pattern_scan(limit_stocks=min(100, max(args.limit, 60)))
+        n = run_all_pattern_scan(limit_stocks=max(args.limit, 80), min_fit=55.0, completed_within=45)
         raise SystemExit(0 if n >= 0 else 1)
     if args.mode_915:
         print("Starting 9:15–9:30 open strategy job…")
@@ -938,7 +971,7 @@ def main():
         except Exception as _ev:
             print(f"915 eval: {_ev}")
         try:
-            run_all_pattern_scan(limit_stocks=min(80, max(args.limit, 50)), min_fit=55.0, completed_within=45)
+            run_all_pattern_scan(limit_stocks=max(args.limit, 80), min_fit=55.0, completed_within=45)
         except Exception as e:
             print(f"pattern scan: {e}")
         raise SystemExit(0)
@@ -962,7 +995,7 @@ def main():
     print(f"OK wrote {len(df)} rows → {OUT_CSV}")
     _write_strategy_and_index(df)
     try:
-        run_all_pattern_scan(limit_stocks=min(80, max(args.limit, 50)), min_fit=55.0, completed_within=45)
+        run_all_pattern_scan(limit_stocks=max(args.limit, 80), min_fit=55.0, completed_within=45)
     except Exception as e:
         print(f"pattern scan after market: {e}")
     try:
