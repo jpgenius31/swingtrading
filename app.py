@@ -14603,10 +14603,32 @@ My Strategy is **price vs RSI divergence** — it also applies to **index future
             live_df = st.session_state.get("live_strat_df", pd.DataFrame())
         if live_df is not None and not live_df.empty:
             only_new = st.checkbox("Show only newly added stocks", value=False, key="strat_only_new")
-            view_live = strategy_new_only(live_df) if only_new else live_df
-            if only_new:
-                st.caption(f"**{len(view_live)}** new stocks since last shared update (of {len(live_df)} total).")
-                live_df = view_live if not view_live.empty else live_df
+            strat_idx = st.selectbox(
+                "Index filter",
+                ["ALL", "Nifty 50", "BankNifty", "Nifty 200", "Sensex"],
+                index=0,
+                key="strat_idx_filter",
+                help="Show only strategy stocks that are in Nifty 50 / BankNifty / Nifty 200 / Sensex",
+            )
+            view_live = strategy_new_only(live_df) if only_new else live_df.copy()
+            try:
+                view_live = filter_df_by_index(view_live, strat_idx, stock_col="Stock")
+            except Exception:
+                pass
+            try:
+                _sets = index_membership_sets()
+                if "Stock" in view_live.columns:
+                    view_live = view_live.copy()
+                    view_live["Index"] = view_live["Stock"].map(lambda s: stock_index_labels(s, _sets))
+            except Exception:
+                pass
+            if only_new or (strat_idx and strat_idx != "ALL"):
+                st.caption(
+                    f"Showing **{len(view_live)}** of {len(live_df)} strategy rows"
+                    + (f" · index **{strat_idx}**" if strat_idx != "ALL" else "")
+                    + (" · new only" if only_new else "")
+                )
+            live_df = view_live if not view_live.empty else view_live
             if st.button("💾 Save these strategy signals to Past Predictions", key="strat_resave"):
                 special = []
                 for _, lr in live_df.iterrows():
@@ -14812,8 +14834,27 @@ My Strategy is **price vs RSI divergence** — it also applies to **index future
             if isinstance(big, pd.DataFrame) and not big.empty:
                 st.success(f"**{len(big)}** raw strategy–stock rows → merged into unique stock cards below")
                 names = ["ALL"] + sorted(big["Strategy"].astype(str).unique().tolist())
-                pick_name = st.selectbox("Filter map by strategy (optional)", names, key="all_map_filter")
+                cfa, cfb = st.columns(2)
+                with cfa:
+                    pick_name = st.selectbox("Filter map by strategy (optional)", names, key="all_map_filter")
+                with cfb:
+                    map_idx = st.selectbox(
+                        "Index filter",
+                        ["ALL", "Nifty 50", "BankNifty", "Nifty 200", "Sensex"],
+                        key="all_map_idx_filter",
+                    )
                 view = big if pick_name == "ALL" else big[big["Strategy"].astype(str) == pick_name]
+                try:
+                    view = filter_df_by_index(view, map_idx, stock_col="Stock")
+                except Exception:
+                    pass
+                try:
+                    _sets = index_membership_sets()
+                    if "Stock" in view.columns:
+                        view = view.copy()
+                        view["Index"] = view["Stock"].map(lambda s: stock_index_labels(s, _sets))
+                except Exception:
+                    pass
                 st.subheader("📋 Unique stocks — all strategies on one card")
                 render_unique_strategy_stock_cards(view, max_cards=15, key_prefix="all_usc")
                 with st.expander("Raw multi-row table + CSV", expanded=False):
@@ -25712,6 +25753,75 @@ def _success_from_df(df: pd.DataFrame) -> dict:
     }
 
 
+
+def index_membership_sets() -> dict:
+    """Nifty 50 / BankNifty / Nifty 200 / Sensex symbol sets for filters."""
+    try:
+        lists = load_index_symbol_lists() if "load_index_symbol_lists" in dir() else {}
+    except Exception:
+        lists = {}
+    if not lists:
+        try:
+            lists = get_index_lists() if "get_index_lists" in dir() else {}
+        except Exception:
+            lists = {}
+    def _norm(xs):
+        out = set()
+        for s in xs or []:
+            out.add(str(s).upper().replace(".NS", "").replace(".BO", "").strip())
+        return out
+    n50 = _norm(lists.get("nifty50") or _FALLBACK_NIFTY50)
+    bn = _norm(lists.get("banknifty") or _FALLBACK_BANKNIFTY)
+    n200 = _norm(lists.get("nifty200") or (list(_FALLBACK_NIFTY50) + list(_FALLBACK_NIFTY200_EXTRA)))
+    if not n200:
+        n200 = set(n50) | _norm(_FALLBACK_NIFTY200_EXTRA)
+    sx = _norm(lists.get("sensex") or _FALLBACK_SENSEX)
+    return {"NIFTY50": n50, "BANKNIFTY": bn, "NIFTY200": n200, "SENSEX": sx}
+
+
+def stock_index_labels(symbol: str, sets: dict = None) -> str:
+    """e.g. 'Nifty 50 · BankNifty · Sensex'."""
+    s = str(symbol or "").upper().replace(".NS", "").replace(".BO", "").strip()
+    sets = sets or index_membership_sets()
+    tags = []
+    if s in sets.get("NIFTY50", set()):
+        tags.append("Nifty 50")
+    if s in sets.get("BANKNIFTY", set()):
+        tags.append("BankNifty")
+    if s in sets.get("NIFTY200", set()):
+        tags.append("Nifty 200")
+    if s in sets.get("SENSEX", set()):
+        tags.append("Sensex")
+    return " · ".join(tags) if tags else "Other"
+
+
+def filter_df_by_index(df: pd.DataFrame, index_choice: str, stock_col: str = "Stock") -> pd.DataFrame:
+    """Filter dataframe by index membership."""
+    if df is None or getattr(df, "empty", True):
+        return df
+    if not index_choice or index_choice in ("ALL", "All indices", "All"):
+        return df
+    sets = index_membership_sets()
+    key = {
+        "Nifty 50": "NIFTY50",
+        "BankNifty": "BANKNIFTY",
+        "Nifty 200": "NIFTY200",
+        "Sensex": "SENSEX",
+        "NIFTY50": "NIFTY50",
+        "BANKNIFTY": "BANKNIFTY",
+        "NIFTY200": "NIFTY200",
+        "SENSEX": "SENSEX",
+    }.get(index_choice, index_choice.upper().replace(" ", ""))
+    members = sets.get(key) or sets.get(index_choice.upper()) or set()
+    if not members:
+        return df
+    col = stock_col if stock_col in df.columns else ("Symbol" if "Symbol" in df.columns else None)
+    if not col:
+        return df
+    syms = df[col].astype(str).str.upper().str.replace(".NS", "", regex=False).str.replace(".BO", "", regex=False).str.strip()
+    return df.loc[syms.isin(members)].copy()
+
+
 def show_history():
     try:
         force_scroll_top()
@@ -25846,7 +25956,7 @@ def show_history():
 
     # ---- Filters: show ALL by default ----
     st.subheader("🔎 Filters (table + success on filtered set)")
-    f1, f2, f3, f4, f5 = st.columns(5)
+    f1, f2, f3, f4, f5, f6 = st.columns(6)
     with f1:
         hist_src = st.selectbox(
             "Source",
@@ -25870,9 +25980,28 @@ def show_history():
     with f4:
         hist_call = st.selectbox("Call", ["ALL", "BUY", "SELL"], key="hist_call_v1")
     with f5:
+        hist_idx = st.selectbox(
+            "Index",
+            ["ALL", "Nifty 50", "BankNifty", "Nifty 200", "Sensex"],
+            index=0,
+            key="hist_idx_v1",
+            help="Show only stocks that belong to this index basket",
+        )
+    with f6:
         hist_rows = st.selectbox("Rows", [50, 100, 200, 500, "ALL"], index=2, key="hist_rows_v1")
 
     view = history.copy()
+    try:
+        view = filter_df_by_index(view, hist_idx, stock_col="Stock")
+    except Exception:
+        pass
+    try:
+        _sets = index_membership_sets()
+        if "Stock" in view.columns:
+            view = view.copy()
+            view["Index"] = view["Stock"].map(lambda s: stock_index_labels(s, _sets))
+    except Exception:
+        pass
     src_u = view["Call Source"].astype(str).str.upper() if "Call Source" in view.columns else pd.Series([""] * len(view))
     qpat = QUALITY_SOURCE_PATTERN
     if hist_src.startswith("Strategy"):
@@ -25917,7 +26046,7 @@ def show_history():
 
     show_cols = [
         c for c in [
-            "Prediction Date", "Stock", "Call", "Call Source", "Entry", "Target", "Stop Loss",
+            "Prediction Date", "Stock", "Index", "Call", "Call Source", "Entry", "Target", "Stop Loss",
             "R:R", "Current Price", "Result", "Return %", "Exit Date", "Exit Price", "Hold Days",
         ] if c in show.columns
     ]
@@ -28678,43 +28807,223 @@ def load_scan_from_disk(force: bool = False) -> int:
 
 
 
+
+def reload_all_app_data(force: bool = True) -> dict:
+    """
+    One-shot reload for ALL pages:
+      Past predictions · Strategy · Chart patterns · Intraday 9:15 · Scan results · Index
+    After this, tab switches use session/disk only — no long network waits.
+    """
+    report = {
+        "scan": 0,
+        "history": 0,
+        "strategy": 0,
+        "patterns": 0,
+        "915_past": 0,
+        "915_live": 0,
+        "index": False,
+        "errors": [],
+    }
+
+    # Clear short-lived network caches so force pull is fresh, keep heavy data in session after fill
+    for clearer in (
+        lambda: _fetch_github_json.clear(),
+        lambda: _fetch_github_csv_bytes.clear(),
+    ):
+        try:
+            clearer()
+        except Exception:
+            pass
+    st.session_state.pop("_pattern_lib_cache", None)
+    st.session_state.pop("_auto_scan_check_ts", None)
+    st.session_state["_light_nav"] = False
+
+    # --- 1) Market scan results (GitHub + disk) ---
+    try:
+        try:
+            pull_scan_from_github(force=True)
+        except Exception as e:
+            report["errors"].append(f"github_scan:{type(e).__name__}")
+        n = int(load_scan_from_disk(force=True) or 0)
+        if n <= 0:
+            try:
+                n = int(auto_load_latest_scan(silent=True) or 0)
+            except Exception:
+                n = 0
+        report["scan"] = n
+    except Exception as e:
+        report["errors"].append(f"scan:{type(e).__name__}")
+
+    # --- 2) Past predictions / history ---
+    try:
+        hist = None
+        try:
+            hist = load_history()
+        except Exception:
+            hist = None
+        if hist is not None and not getattr(hist, "empty", True):
+            st.session_state["_history_df"] = hist
+            st.session_state["_history_cache"] = hist
+            report["history"] = int(len(hist))
+        # also try GitHub history if helper exists
+        try:
+            base = _github_results_base()
+            if base and (hist is None or getattr(hist, "empty", True)):
+                for name in ("prediction_history.csv", "past_predictions.csv", "history.csv"):
+                    try:
+                        raw = _fetch_github_csv_bytes(base + "/" + name)
+                        if raw:
+                            import io
+                            hdf = pd.read_csv(io.BytesIO(raw))
+                            if hdf is not None and not hdf.empty:
+                                st.session_state["_history_df"] = hdf
+                                report["history"] = int(len(hdf))
+                                break
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+    except Exception as e:
+        report["errors"].append(f"history:{type(e).__name__}")
+
+    # --- 3) Strategy snapshot ---
+    try:
+        sdf = load_strategy_snapshot(force=True)
+        if sdf is not None and not getattr(sdf, "empty", True):
+            st.session_state["live_strat_df"] = sdf
+            report["strategy"] = int(len(sdf))
+        else:
+            # GitHub strategy file
+            try:
+                base = _github_results_base()
+                if base:
+                    for name in ("strategy_live_signals.csv", "strategy_live.csv"):
+                        try:
+                            raw = _fetch_github_csv_bytes(base + "/" + name)
+                            if raw:
+                                import io
+                                sdf = pd.read_csv(io.BytesIO(raw))
+                                if sdf is not None and not sdf.empty:
+                                    st.session_state["live_strat_df"] = sdf
+                                    report["strategy"] = int(len(sdf))
+                                    try:
+                                        STRATEGY_LIVE_FILE.write_bytes(raw)
+                                    except Exception:
+                                        pass
+                                    break
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+    except Exception as e:
+        report["errors"].append(f"strategy:{type(e).__name__}")
+
+    # --- 4) Chart patterns (all TF library) ---
+    try:
+        hits = load_pattern_scan_hits(force=True)
+        if hits:
+            st.session_state["_pattern_lib_cache"] = hits
+            st.session_state["cps_library"] = hits
+            st.session_state["cps_from_auto"] = True
+            report["patterns"] = int(len(hits))
+    except Exception as e:
+        report["errors"].append(f"patterns:{type(e).__name__}")
+
+    # --- 5) Intraday 9:15 desk ---
+    try:
+        base = ""
+        try:
+            base = _github_results_base()
+        except Exception:
+            base = ""
+        for attr, key, col in (
+            ("strategy_915_candle_past.csv", "c915_past", "915_past"),
+            ("strategy_915_candle_live.csv", "c915_live", "915_live"),
+        ):
+            df915 = None
+            try:
+                p = APP_DIR / attr
+                if p.exists():
+                    df915 = pd.read_csv(p)
+            except Exception:
+                df915 = None
+            if (df915 is None or getattr(df915, "empty", True)) and base:
+                try:
+                    raw = _fetch_github_csv_bytes(base + "/" + attr)
+                    if raw:
+                        import io
+                        df915 = pd.read_csv(io.BytesIO(raw))
+                        try:
+                            (APP_DIR / attr).write_bytes(raw)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+            if df915 is not None and not getattr(df915, "empty", True):
+                st.session_state[key] = df915
+                report[col] = int(len(df915))
+        try:
+            evaluate_915_past_outcomes(max_rows=200)
+        except Exception:
+            pass
+    except Exception as e:
+        report["errors"].append(f"915:{type(e).__name__}")
+
+    # --- 6) Index snap ---
+    try:
+        idx_p = APP_DIR / "index_market_snap.json"
+        if idx_p.exists():
+            snap = json.loads(idx_p.read_text(encoding="utf-8"))
+            if isinstance(snap, dict) and snap:
+                st.session_state["_index_market_snap"] = snap
+                st.session_state["_index_market_snap_ts"] = time.time()
+                report["index"] = True
+        else:
+            try:
+                base = _github_results_base()
+                if base:
+                    raw = _fetch_github_json(base + "/index_market_snap.json")
+                    # _fetch returns list — use urllib for dict
+            except Exception:
+                pass
+            try:
+                refresh_index_market_once(force=False)
+                report["index"] = bool(st.session_state.get("_index_market_snap"))
+            except Exception:
+                pass
+    except Exception as e:
+        report["errors"].append(f"index:{type(e).__name__}")
+
+    # --- 7) Mark session ready → pages skip heavy work ---
+    import time as _t
+    st.session_state["_all_data_ready"] = True
+    st.session_state["_all_data_ready_ts"] = _t.time()
+    st.session_state["_last_full_reload_ist"] = (
+        india_now().strftime("%Y-%m-%d %H:%M:%S IST") if "india_now" in dir() else ""
+    )
+    # Stop price spam on next navigations
+    st.session_state["_last_sync_ts"] = _t.time()
+    st.session_state["_light_nav"] = True
+    return report
+
+
 def ensure_scan_on_reload() -> int:
     """
-    Reload scan fix:
-    0) Pull from GitHub raw if configured
-    1) Load latest_results.csv / history if present
-    2) If still empty → run a light Nifty 50 scan and save CSV
-    Returns number of rows available in session.
+    Full app reload: scan + past predictions + strategy + patterns + 9:15 + index.
+    After return, every page reads from session — no wait on tab switch.
     """
-    n = 0
+    report = {}
     try:
-        pull_scan_from_github(force=True)
-    except Exception:
-        pass
-    try:
-        n = int(load_scan_from_disk(force=True) or 0)
-    except Exception:
-        n = 0
+        report = reload_all_app_data(force=True)
+        st.session_state["_last_reload_report"] = report
+    except Exception as e:
+        st.session_state["_last_reload_report"] = {"errors": [str(e)]}
+        report = {}
+    n = int(report.get("scan") or 0)
     if n > 0:
-        # Fast reload: use disk/GitHub data only — do NOT rebuild strategies or
-        # re-fetch every index on every Reload (that made the page feel stuck).
-        try:
-            # Index snap from file if present; else one light refresh
-            idx_p = APP_DIR / "index_market_snap.json"
-            if idx_p.exists():
-                snap = json.loads(idx_p.read_text(encoding="utf-8"))
-                if isinstance(snap, dict) and snap:
-                    st.session_state["_index_market_snap"] = snap
-                    st.session_state["_index_market_snap_ts"] = time.time()
-            else:
-                refresh_index_market_once(force=False)
-        except Exception:
-            pass
-        try:
-            load_strategy_snapshot(force=True)
-        except Exception:
-            pass
         return n
+    # fallback light nifty if still empty
+    n = 0
 
     # Light scan so Reload is never a dead button when network works
     try:
@@ -29643,13 +29952,15 @@ def render_header_nav():
                     st.rerun()
 
                 if st.button("📥 Reload scan", use_container_width=True, key="hdr_reload"):
-                    with st.spinner("Reloading scan (file → or light Nifty50)…"):
+                    with st.spinner("Reloading ALL pages: scan · past · strategy · patterns · intraday…"):
                         n_load = ensure_scan_on_reload()
                     if n_load > 0:
                         src = st.session_state.get("_scan_source_file", "latest_results.csv")
+                        rep = st.session_state.get("_last_reload_report") or {}
                         st.session_state["_scan_done_msg"] = (
-                            f"Reload complete · **{n_load}** stocks loaded · "
-                            f"source `{Path(str(src)).name}` · you can use Dashboard / Strategy now."
+                            f"Reload complete · scan **{n_load}** · patterns **{rep.get('patterns',0)}** · "
+                            f"strategy **{rep.get('strategy',0)}** · past **{rep.get('history',0)}** · "
+                            f"9:15 **{rep.get('915_past',0)}** · all pages ready (no wait on switch)"
                         )
                         st.balloons()
                         st.rerun()
