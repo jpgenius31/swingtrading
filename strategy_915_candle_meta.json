@@ -1,5 +1,6 @@
 {
-  "rows": 0,
-  "saved_at_ist": "2026-10-29 11:09:43 IST",
-  "source": "placeholder \u2014 run GitHub Action strategy_915"
+  "rows": 18,
+  "saved_at_ist": "2026-10-29 15:57:09 IST",
+  "source": "scan_job.py --915",
+  "list_mode": "both"
 }
