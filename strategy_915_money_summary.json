@@ -1,8 +1,8 @@
 {
-  "wins": 10,
-  "losses": 8,
-  "total_closed": 18,
-  "win_rate": 55.6,
-  "updated_at_ist": "2026-10-29 15:57:35 IST",
+  "wins": 18,
+  "losses": 22,
+  "total_closed": 40,
+  "win_rate": 45.0,
+  "updated_at_ist": "2026-10-30 15:59:27 IST",
   "source": "github_eval"
 }
