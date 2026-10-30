@@ -508,7 +508,7 @@
       [
         "B",
         154,
-        314.6000061035156
+        314.29998779296875
       ],
       [
         "C",
@@ -525,7 +525,7 @@
       [
         "B",
         154,
-        314.6000061035156
+        314.29998779296875
       ],
       [
         "C",
@@ -538,10 +538,10 @@
     "sessions": 8,
     "sessions_ago": 3,
     "date_range": "30-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 314.6,
+    "entry": 314.3,
     "stop": 321.08,
-    "target": 311.3,
-    "explain": "Double top at ~\u20b9317.9. Neckline \u20b9314.6. Wait for close below neckline.",
+    "target": 310.7,
+    "explain": "Double top at ~\u20b9317.9. Neckline \u20b9314.3. Wait for close below neckline.",
     "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
     "timeframe": "15 Min",
     "interval": "15m",
@@ -3398,7 +3398,7 @@
       [
         "P1",
         135,
-        9829.0
+        9825.0
       ],
       [
         "P2",
@@ -3415,7 +3415,7 @@
       [
         "P1",
         135,
-        9829.0
+        9825.0
       ],
       [
         "P2",
@@ -3928,10 +3928,10 @@
     "sessions": 19,
     "sessions_ago": 3,
     "date_range": "30-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 4415.1,
+    "entry": 4416.1,
     "stop": 4530.86,
-    "target": 4344.2,
-    "explain": "Triple top resistance ~\u20b94486.0. Break \u20b94415.1 confirms.",
+    "target": 4346.2,
+    "explain": "Triple top resistance ~\u20b94486.0. Break \u20b94416.1 confirms.",
     "rules": "Three peaks at resistance; break below intervening lows.",
     "timeframe": "15 Min",
     "interval": "15m",
@@ -6486,7 +6486,7 @@
     "sessions_ago": 3,
     "date_range": "29-Oct-2026 \u2192 30-Oct-2026",
     "entry": 317.3,
-    "stop": 311.45,
+    "stop": 311.16,
     "target": 323.8,
     "explain": "Ascending triangle \u2014 flat top ~\u20b9317.3, rising lows. Buy break of top.",
     "rules": "Flat resistance, rising lows; buy break of flat top.",
@@ -7310,7 +7310,7 @@
     "date_range": "19-Jan-2026 \u2192 05-Oct-2026",
     "entry": 38465.0,
     "stop": 33660.0,
-    "target": 45275.14,
+    "target": 45275.15,
     "explain": "Ascending triangle \u2014 flat top ~\u20b938465.0, rising lows. Buy break of top.",
     "rules": "Flat resistance, rising lows; buy break of flat top.",
     "timeframe": "Weekly",
@@ -8024,9 +8024,9 @@
     "sessions": 37,
     "sessions_ago": 3,
     "date_range": "29-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 314.6,
+    "entry": 314.3,
     "stop": 320.47,
-    "target": 308.1,
+    "target": 307.8,
     "explain": "Rising wedge (higher highs & lows, converging) \u2014 bias break lower.",
     "rules": "Rising highs & lows, converging; usually bearish on break of lower line.",
     "timeframe": "15 Min",
@@ -8541,7 +8541,7 @@
     "date_range": "19-Jan-2026 \u2192 05-Oct-2026",
     "entry": 34000.0,
     "stop": 38849.65,
-    "target": 27189.86,
+    "target": 27189.85,
     "explain": "Rising wedge (higher highs & lows, converging) \u2014 bias break lower.",
     "rules": "Rising highs & lows, converging; usually bearish on break of lower line.",
     "timeframe": "Weekly",
@@ -8761,7 +8761,7 @@
       [
         "P1",
         135,
-        1800.699951171875
+        1799.0
       ],
       [
         "P2",
@@ -8778,7 +8778,7 @@
       [
         "P1",
         135,
-        1800.699951171875
+        1799.0
       ],
       [
         "P2",
@@ -9169,7 +9169,7 @@
       [
         "T1",
         135,
-        1800.699951171875
+        1799.0
       ],
       [
         "T2",
@@ -9186,7 +9186,7 @@
       [
         "T1",
         135,
-        1800.699951171875
+        1799.0
       ],
       [
         "T2",
@@ -9206,7 +9206,7 @@
     "date_range": "30-Oct-2026 \u2192 30-Oct-2026",
     "entry": 1834.17,
     "stop": 1889.75,
-    "target": 1826.7,
+    "target": 1825.85,
     "explain": "Resistance trendline 3 touches near \u20b91852.7. Rejection or break decides.",
     "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
     "timeframe": "15 Min",
@@ -10714,9 +10714,9 @@
     "sessions_ago": 3,
     "date_range": "29-Oct-2026 \u2192 30-Oct-2026",
     "entry": 1771.37,
-    "stop": 1840.66,
-    "target": 1720.3,
-    "explain": "Rectangle after advance \u2014 support \u20b91771.4, resistance \u20b91822.4.",
+    "stop": 1840.09,
+    "target": 1720.87,
+    "explain": "Rectangle after advance \u2014 support \u20b91771.4, resistance \u20b91821.9.",
     "rules": "Sideways after up-move; break of support is bearish continuation/reversal.",
     "timeframe": "15 Min",
     "interval": "15m",
@@ -10893,9 +10893,9 @@
     "sessions_ago": 3,
     "date_range": "29-Oct-2026 \u2192 30-Oct-2026",
     "entry": 9600.67,
-    "stop": 9944.63,
-    "target": 9355.17,
-    "explain": "Rectangle after advance \u2014 support \u20b99600.7, resistance \u20b99846.2.",
+    "stop": 9943.28,
+    "target": 9356.5,
+    "explain": "Rectangle after advance \u2014 support \u20b99600.7, resistance \u20b99844.8.",
     "rules": "Sideways after up-move; break of support is bearish continuation/reversal.",
     "timeframe": "15 Min",
     "interval": "15m",
@@ -10915,10 +10915,10 @@
     "sessions": 30,
     "sessions_ago": 3,
     "date_range": "29-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 9846.17,
+    "entry": 9844.83,
     "stop": 9504.66,
-    "target": 10091.67,
-    "explain": "Rectangle after decline \u2014 resistance \u20b99846.2. Buy break up.",
+    "target": 10089.0,
+    "explain": "Rectangle after decline \u2014 resistance \u20b99844.8. Buy break up.",
     "rules": "Sideways after down-move; break of resistance is bullish.",
     "timeframe": "15 Min",
     "interval": "15m",
@@ -13037,7 +13037,7 @@
       [
         "A",
         140,
-        166.57000732421875
+        166.60000610351562
       ],
       [
         "B",
@@ -13054,7 +13054,7 @@
       [
         "A",
         140,
-        166.57000732421875
+        166.60000610351562
       ],
       [
         "B",
@@ -13073,8 +13073,8 @@
     "sessions_ago": 4,
     "date_range": "30-Oct-2026 \u2192 30-Oct-2026",
     "entry": 169.25,
-    "stop": 164.9,
-    "target": 171.93,
+    "stop": 164.93,
+    "target": 171.9,
     "explain": "Double bottom at ~\u20b9166.6. Neckline \u20b9169.2. Wait for close above neckline.",
     "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
     "timeframe": "15 Min",
@@ -16841,7 +16841,7 @@
       [
         "S2",
         140,
-        166.57000732421875
+        166.60000610351562
       ],
       [
         "S3",
@@ -16858,7 +16858,7 @@
       [
         "S2",
         140,
-        166.57000732421875
+        166.60000610351562
       ],
       [
         "S3",
@@ -17831,7 +17831,7 @@
       [
         "V2",
         140,
-        166.57000732421875
+        166.60000610351562
       ],
       [
         "V3",
@@ -17848,7 +17848,7 @@
       [
         "V2",
         140,
-        166.57000732421875
+        166.60000610351562
       ],
       [
         "V3",
@@ -21528,7 +21528,7 @@
       [
         "T2",
         140,
-        166.57000732421875
+        166.60000610351562
       ],
       [
         "T3",
@@ -21545,7 +21545,7 @@
       [
         "T2",
         140,
-        166.57000732421875
+        166.60000610351562
       ],
       [
         "T3",
@@ -29305,6 +29305,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "NTPC",
+    "pattern": "Inverse H&S",
+    "direction": "BULLISH",
+    "fit": 86.0,
+    "points": [
+      [
+        "LS",
+        131,
+        309.75
+      ],
+      [
+        "H",
+        138,
+        308.1499938964844
+      ],
+      [
+        "RS",
+        154,
+        314.29998779296875
+      ]
+    ],
+    "points_abs": [
+      [
+        "LS",
+        131,
+        309.75
+      ],
+      [
+        "H",
+        138,
+        308.1499938964844
+      ],
+      [
+        "RS",
+        154,
+        314.29998779296875
+      ]
+    ],
+    "start_i": 131,
+    "end_i": 154,
+    "sessions": 23,
+    "sessions_ago": 5,
+    "date_range": "29-Oct-2026 \u2192 30-Oct-2026",
+    "entry": 317.9,
+    "stop": 306.65,
+    "target": 327.65,
+    "explain": "Inverse H&S head \u20b9308.1, neckline ~\u20b9317.9. Bullish on break above neckline.",
+    "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
+    "timeframe": "15 Min",
+    "interval": "15m",
+    "live": 316.25,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "ONGC",
     "pattern": "Triple Bottom",
     "direction": "BULLISH",
@@ -29775,61 +29830,6 @@
     "timeframe": "30 Min",
     "interval": "30m",
     "live": 11397.0,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "NTPC",
-    "pattern": "Inverse H&S",
-    "direction": "BULLISH",
-    "fit": 85.0,
-    "points": [
-      [
-        "LS",
-        131,
-        309.75
-      ],
-      [
-        "H",
-        138,
-        308.1499938964844
-      ],
-      [
-        "RS",
-        154,
-        314.6000061035156
-      ]
-    ],
-    "points_abs": [
-      [
-        "LS",
-        131,
-        309.75
-      ],
-      [
-        "H",
-        138,
-        308.1499938964844
-      ],
-      [
-        "RS",
-        154,
-        314.6000061035156
-      ]
-    ],
-    "start_i": 131,
-    "end_i": 154,
-    "sessions": 23,
-    "sessions_ago": 5,
-    "date_range": "29-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 317.9,
-    "stop": 306.65,
-    "target": 327.65,
-    "explain": "Inverse H&S head \u20b9308.1, neckline ~\u20b9317.9. Bullish on break above neckline.",
-    "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
-    "timeframe": "15 Min",
-    "interval": "15m",
-    "live": 316.25,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -30824,6 +30824,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "NTPC",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 84.0,
+    "points": [
+      [
+        "A",
+        138,
+        308.1499938964844
+      ],
+      [
+        "B",
+        148,
+        317.8999938964844
+      ],
+      [
+        "C",
+        154,
+        314.29998779296875
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        138,
+        308.1499938964844
+      ],
+      [
+        "B",
+        148,
+        317.8999938964844
+      ],
+      [
+        "C",
+        154,
+        314.29998779296875
+      ]
+    ],
+    "start_i": 138,
+    "end_i": 154,
+    "sessions": 16,
+    "sessions_ago": 5,
+    "date_range": "30-Oct-2026 \u2192 30-Oct-2026",
+    "entry": 317.9,
+    "stop": 305.07,
+    "target": 327.65,
+    "explain": "Double bottom at ~\u20b9308.1. Neckline \u20b9317.9. Wait for close above neckline.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "15 Min",
+    "interval": "15m",
+    "live": 316.25,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "JSWSTEEL",
     "pattern": "Double Bottom",
     "direction": "BULLISH",
@@ -31777,61 +31832,6 @@
     "timeframe": "Weekly",
     "interval": "1wk",
     "live": 4436.5,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "NTPC",
-    "pattern": "Double Bottom",
-    "direction": "BULLISH",
-    "fit": 83.0,
-    "points": [
-      [
-        "A",
-        138,
-        308.1499938964844
-      ],
-      [
-        "B",
-        148,
-        317.8999938964844
-      ],
-      [
-        "C",
-        154,
-        314.6000061035156
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        138,
-        308.1499938964844
-      ],
-      [
-        "B",
-        148,
-        317.8999938964844
-      ],
-      [
-        "C",
-        154,
-        314.6000061035156
-      ]
-    ],
-    "start_i": 138,
-    "end_i": 154,
-    "sessions": 16,
-    "sessions_ago": 5,
-    "date_range": "30-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 317.9,
-    "stop": 305.07,
-    "target": 327.65,
-    "explain": "Double bottom at ~\u20b9308.1. Neckline \u20b9317.9. Wait for close above neckline.",
-    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
-    "timeframe": "15 Min",
-    "interval": "15m",
-    "live": 316.25,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -35845,7 +35845,7 @@
       [
         "S3",
         154,
-        314.6000061035156
+        314.29998779296875
       ]
     ],
     "points_abs": [
@@ -35862,7 +35862,7 @@
       [
         "S3",
         154,
-        314.6000061035156
+        314.29998779296875
       ]
     ],
     "start_i": 131,
@@ -42884,7 +42884,7 @@
       [
         "B",
         150,
-        166.57000732421875
+        166.60000610351562
       ],
       [
         "C",
@@ -42901,7 +42901,7 @@
       [
         "B",
         150,
-        166.57000732421875
+        166.60000610351562
       ],
       [
         "C",
@@ -42914,9 +42914,9 @@
     "sessions": 5,
     "sessions_ago": 6,
     "date_range": "30-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 166.57,
+    "entry": 166.6,
     "stop": 170.99,
-    "target": 163.84,
+    "target": 163.9,
     "explain": "Double top at ~\u20b9169.3. Neckline \u20b9166.6. Wait for close below neckline.",
     "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
     "timeframe": "30 Min",
@@ -43032,61 +43032,6 @@
     "timeframe": "1 Hour",
     "interval": "1h",
     "live": 389.0,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "DIVISLAB",
-    "pattern": "Double Top",
-    "direction": "BEARISH",
-    "fit": 99.0,
-    "points": [
-      [
-        "A",
-        147,
-        9829.0
-      ],
-      [
-        "B",
-        147,
-        9632.0
-      ],
-      [
-        "C",
-        153,
-        9845.5
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        147,
-        9829.0
-      ],
-      [
-        "B",
-        147,
-        9632.0
-      ],
-      [
-        "C",
-        153,
-        9845.5
-      ]
-    ],
-    "start_i": 147,
-    "end_i": 153,
-    "sessions": 6,
-    "sessions_ago": 6,
-    "date_range": "30-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 9632.0,
-    "stop": 9943.95,
-    "target": 9418.5,
-    "explain": "Double top at ~\u20b99845.5. Neckline \u20b99632.0. Wait for close below neckline.",
-    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
-    "timeframe": "30 Min",
-    "interval": "30m",
-    "live": 9780.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -43857,6 +43802,61 @@
     "timeframe": "15 Min",
     "interval": "15m",
     "live": 1378.9,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "DIVISLAB",
+    "pattern": "Double Top",
+    "direction": "BEARISH",
+    "fit": 98.0,
+    "points": [
+      [
+        "A",
+        147,
+        9825.0
+      ],
+      [
+        "B",
+        147,
+        9632.0
+      ],
+      [
+        "C",
+        153,
+        9845.5
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        147,
+        9825.0
+      ],
+      [
+        "B",
+        147,
+        9632.0
+      ],
+      [
+        "C",
+        153,
+        9845.5
+      ]
+    ],
+    "start_i": 147,
+    "end_i": 153,
+    "sessions": 6,
+    "sessions_ago": 6,
+    "date_range": "30-Oct-2026 \u2192 30-Oct-2026",
+    "entry": 9632.0,
+    "stop": 9943.95,
+    "target": 9418.5,
+    "explain": "Double top at ~\u20b99845.5. Neckline \u20b99632.0. Wait for close below neckline.",
+    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
+    "timeframe": "30 Min",
+    "interval": "30m",
+    "live": 9780.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -50369,10 +50369,10 @@
     "sessions": 18,
     "sessions_ago": 6,
     "date_range": "30-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 1863.9,
+    "entry": 1863.2,
     "stop": 1797.05,
-    "target": 1912.6,
-    "explain": "Triple bottom support ~\u20b91815.2. Break \u20b91863.9 confirms.",
+    "target": 1911.2,
+    "explain": "Triple bottom support ~\u20b91815.2. Break \u20b91863.2 confirms.",
     "rules": "Three troughs at support; break above intervening highs.",
     "timeframe": "15 Min",
     "interval": "15m",
@@ -51521,6 +51521,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "DIVISLAB",
+    "pattern": "Triple Top",
+    "direction": "BEARISH",
+    "fit": 81.0,
+    "points": [
+      [
+        "P1",
+        137,
+        9682.5
+      ],
+      [
+        "P2",
+        147,
+        9825.0
+      ],
+      [
+        "P3",
+        153,
+        9845.5
+      ]
+    ],
+    "points_abs": [
+      [
+        "P1",
+        137,
+        9682.5
+      ],
+      [
+        "P2",
+        147,
+        9825.0
+      ],
+      [
+        "P3",
+        153,
+        9845.5
+      ]
+    ],
+    "start_i": 137,
+    "end_i": 153,
+    "sessions": 16,
+    "sessions_ago": 6,
+    "date_range": "29-Oct-2026 \u2192 30-Oct-2026",
+    "entry": 9534.0,
+    "stop": 9943.95,
+    "target": 9222.5,
+    "explain": "Triple top resistance ~\u20b99845.5. Break \u20b99534.0 confirms.",
+    "rules": "Three peaks at resistance; break below intervening lows.",
+    "timeframe": "30 Min",
+    "interval": "30m",
+    "live": 9780.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "BAJAJ-AUTO",
     "pattern": "Three Rising Valleys",
     "direction": "BULLISH",
@@ -52343,61 +52398,6 @@
     "timeframe": "30 Min",
     "interval": "30m",
     "live": 1352.0,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "DIVISLAB",
-    "pattern": "Triple Top",
-    "direction": "BEARISH",
-    "fit": 80.0,
-    "points": [
-      [
-        "P1",
-        137,
-        9682.5
-      ],
-      [
-        "P2",
-        147,
-        9829.0
-      ],
-      [
-        "P3",
-        153,
-        9845.5
-      ]
-    ],
-    "points_abs": [
-      [
-        "P1",
-        137,
-        9682.5
-      ],
-      [
-        "P2",
-        147,
-        9829.0
-      ],
-      [
-        "P3",
-        153,
-        9845.5
-      ]
-    ],
-    "start_i": 137,
-    "end_i": 153,
-    "sessions": 16,
-    "sessions_ago": 6,
-    "date_range": "29-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 9534.0,
-    "stop": 9943.95,
-    "target": 9222.5,
-    "explain": "Triple top resistance ~\u20b99845.5. Break \u20b99534.0 confirms.",
-    "rules": "Three peaks at resistance; break below intervening lows.",
-    "timeframe": "30 Min",
-    "interval": "30m",
-    "live": 9780.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -61891,7 +61891,7 @@
       [
         "V2",
         85,
-        1299.2152198543001
+        1299.2153362437036
       ],
       [
         "V3",
@@ -61908,7 +61908,7 @@
       [
         "V2",
         85,
-        1299.2152198543001
+        1299.2153362437036
       ],
       [
         "V3",
@@ -62051,7 +62051,7 @@
       [
         "A",
         140,
-        4415.10009765625
+        4416.10009765625
       ],
       [
         "B",
@@ -62068,7 +62068,7 @@
       [
         "A",
         140,
-        4415.10009765625
+        4416.10009765625
       ],
       [
         "B",
@@ -62087,9 +62087,9 @@
     "sessions_ago": 7,
     "date_range": "30-Oct-2026 \u2192 30-Oct-2026",
     "entry": 4472.9,
-    "stop": 4370.95,
-    "target": 4530.7,
-    "explain": "Double bottom at ~\u20b94415.1. Neckline \u20b94472.9. Wait for close above neckline.",
+    "stop": 4371.94,
+    "target": 4529.7,
+    "explain": "Double bottom at ~\u20b94416.1. Neckline \u20b94472.9. Wait for close above neckline.",
     "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
     "timeframe": "15 Min",
     "interval": "15m",
@@ -62276,7 +62276,7 @@
       [
         "B",
         147,
-        1863.9000244140625
+        1863.199951171875
       ],
       [
         "C",
@@ -62293,7 +62293,7 @@
       [
         "B",
         147,
-        1863.9000244140625
+        1863.199951171875
       ],
       [
         "C",
@@ -62306,10 +62306,10 @@
     "sessions": 5,
     "sessions_ago": 7,
     "date_range": "30-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 1863.9,
+    "entry": 1863.2,
     "stop": 1797.05,
-    "target": 1912.6,
-    "explain": "Double bottom at ~\u20b91815.2. Neckline \u20b91863.9. Wait for close above neckline.",
+    "target": 1911.2,
+    "explain": "Double bottom at ~\u20b91815.2. Neckline \u20b91863.2. Wait for close above neckline.",
     "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
     "timeframe": "30 Min",
     "interval": "30m",
@@ -64646,7 +64646,7 @@
       [
         "S2",
         140,
-        4415.10009765625
+        4416.10009765625
       ],
       [
         "S3",
@@ -64663,7 +64663,7 @@
       [
         "S2",
         140,
-        4415.10009765625
+        4416.10009765625
       ],
       [
         "S3",
@@ -66116,7 +66116,7 @@
       [
         "V2",
         140,
-        4415.10009765625
+        4416.10009765625
       ],
       [
         "V3",
@@ -66133,7 +66133,7 @@
       [
         "V2",
         140,
-        4415.10009765625
+        4416.10009765625
       ],
       [
         "V3",
@@ -68505,7 +68505,7 @@
       [
         "T2",
         140,
-        4415.10009765625
+        4416.10009765625
       ],
       [
         "T3",
@@ -68522,7 +68522,7 @@
       [
         "T2",
         140,
-        4415.10009765625
+        4416.10009765625
       ],
       [
         "T3",
@@ -73501,9 +73501,9 @@
     "sessions": 15,
     "sessions_ago": 8,
     "date_range": "30-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 166.57,
+    "entry": 166.6,
     "stop": 170.99,
-    "target": 163.84,
+    "target": 163.9,
     "explain": "Triple top resistance ~\u20b9169.3. Break \u20b9166.6 confirms.",
     "rules": "Three peaks at resistance; break below intervening lows.",
     "timeframe": "15 Min",
@@ -76893,9 +76893,9 @@
     "sessions": 15,
     "sessions_ago": 8,
     "date_range": "30-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 166.57,
+    "entry": 166.6,
     "stop": 170.99,
-    "target": 166.27,
+    "target": 166.3,
     "explain": "Three falling peaks \u20b9169.3\u2192\u20b9169.0. Break \u20b9166.6 confirms supply.",
     "rules": "Three lower highs (falling peaks) then break of recent low \u2014 bearish structure shift.",
     "timeframe": "15 Min",
@@ -81622,7 +81622,7 @@
       [
         "P1",
         65,
-        755.9651334232211
+        755.9652108362703
       ],
       [
         "P2",
@@ -81639,7 +81639,7 @@
       [
         "P1",
         65,
-        755.9651334232211
+        755.9652108362703
       ],
       [
         "P2",
@@ -82127,7 +82127,7 @@
       [
         "C",
         150,
-        2494.699951171875
+        2494.89990234375
       ]
     ],
     "points_abs": [
@@ -82144,7 +82144,7 @@
       [
         "C",
         150,
-        2494.699951171875
+        2494.89990234375
       ]
     ],
     "start_i": 140,
@@ -84762,7 +84762,7 @@
       [
         "S3",
         150,
-        2494.699951171875
+        2494.89990234375
       ]
     ],
     "points_abs": [
@@ -84779,7 +84779,7 @@
       [
         "S3",
         150,
-        2494.699951171875
+        2494.89990234375
       ]
     ],
     "start_i": 132,
@@ -84817,7 +84817,7 @@
       [
         "V3",
         150,
-        2494.699951171875
+        2494.89990234375
       ]
     ],
     "points_abs": [
@@ -84834,7 +84834,7 @@
       [
         "V3",
         150,
-        2494.699951171875
+        2494.89990234375
       ]
     ],
     "start_i": 132,
@@ -84844,8 +84844,8 @@
     "date_range": "28-Oct-2026 \u2192 30-Oct-2026",
     "entry": 2525.0,
     "stop": 2418.57,
-    "target": 2576.7,
-    "explain": "Three rising valleys \u20b92443.0\u2192\u20b92494.7. Break \u20b92525.0 confirms demand.",
+    "target": 2576.9,
+    "explain": "Three rising valleys \u20b92443.0\u2192\u20b92494.9. Break \u20b92525.0 confirms demand.",
     "rules": "Three higher lows (rising valleys) then break of recent high \u2014 bullish structure shift.",
     "timeframe": "30 Min",
     "interval": "30m",
@@ -86313,9 +86313,9 @@
     "sessions": 24,
     "sessions_ago": 9,
     "date_range": "28-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 2494.7,
+    "entry": 2494.9,
     "stop": 2550.25,
-    "target": 2441.6,
+    "target": 2441.8,
     "explain": "Rising wedge (higher highs & lows, converging) \u2014 bias break lower.",
     "rules": "Rising highs & lows, converging; usually bearish on break of lower line.",
     "timeframe": "30 Min",
@@ -86825,7 +86825,7 @@
       [
         "T3",
         150,
-        2494.699951171875
+        2494.89990234375
       ]
     ],
     "points_abs": [
@@ -86842,7 +86842,7 @@
       [
         "T3",
         150,
-        2494.699951171875
+        2494.89990234375
       ]
     ],
     "start_i": 132,
@@ -86850,10 +86850,10 @@
     "sessions": 18,
     "sessions_ago": 9,
     "date_range": "28-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 2519.65,
-    "stop": 2444.81,
-    "target": 2520.55,
-    "explain": "Support trendline 3 touches near \u20b92494.7. Bounce or break decides.",
+    "entry": 2519.85,
+    "stop": 2445.0,
+    "target": 2520.85,
+    "explain": "Support trendline 3 touches near \u20b92494.9. Bounce or break decides.",
     "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
     "timeframe": "30 Min",
     "interval": "30m",
@@ -90023,7 +90023,7 @@
       [
         "C",
         140,
-        4415.10009765625
+        4416.10009765625
       ],
       [
         "D",
@@ -90050,7 +90050,7 @@
       [
         "C",
         140,
-        4415.10009765625
+        4416.10009765625
       ],
       [
         "D",
@@ -101777,7 +101777,7 @@
       [
         "A",
         140,
-        2494.699951171875
+        2494.89990234375
       ],
       [
         "B",
@@ -101794,7 +101794,7 @@
       [
         "A",
         140,
-        2494.699951171875
+        2494.89990234375
       ],
       [
         "B",
@@ -101813,9 +101813,9 @@
     "sessions_ago": 11,
     "date_range": "30-Oct-2026 \u2192 30-Oct-2026",
     "entry": 2522.5,
-    "stop": 2469.75,
-    "target": 2550.3,
-    "explain": "Double bottom at ~\u20b92494.7. Neckline \u20b92522.5. Wait for close above neckline.",
+    "stop": 2469.95,
+    "target": 2550.1,
+    "explain": "Double bottom at ~\u20b92494.9. Neckline \u20b92522.5. Wait for close above neckline.",
     "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
     "timeframe": "15 Min",
     "interval": "15m",
@@ -103497,7 +103497,7 @@
       [
         "B",
         140,
-        2494.699951171875
+        2494.89990234375
       ],
       [
         "C",
@@ -103524,7 +103524,7 @@
       [
         "B",
         140,
-        2494.699951171875
+        2494.89990234375
       ],
       [
         "C",
@@ -105848,7 +105848,7 @@
       [
         "S2",
         140,
-        2494.699951171875
+        2494.89990234375
       ],
       [
         "S3",
@@ -105865,7 +105865,7 @@
       [
         "S2",
         140,
-        2494.699951171875
+        2494.89990234375
       ],
       [
         "S3",
@@ -105903,7 +105903,7 @@
       [
         "V2",
         140,
-        2494.699951171875
+        2494.89990234375
       ],
       [
         "V3",
@@ -105920,7 +105920,7 @@
       [
         "V2",
         140,
-        2494.699951171875
+        2494.89990234375
       ],
       [
         "V3",
@@ -106630,7 +106630,7 @@
       [
         "T2",
         140,
-        2494.699951171875
+        2494.89990234375
       ],
       [
         "T3",
@@ -106647,7 +106647,7 @@
       [
         "T2",
         140,
-        2494.699951171875
+        2494.89990234375
       ],
       [
         "T3",
@@ -108263,7 +108263,7 @@
       [
         "B",
         140,
-        2494.699951171875
+        2494.89990234375
       ],
       [
         "C",
@@ -108280,7 +108280,7 @@
       [
         "B",
         140,
-        2494.699951171875
+        2494.89990234375
       ],
       [
         "C",
@@ -108293,10 +108293,10 @@
     "sessions": 11,
     "sessions_ago": 12,
     "date_range": "30-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 2494.7,
+    "entry": 2494.9,
     "stop": 2550.25,
-    "target": 2464.4,
-    "explain": "Double top at ~\u20b92525.0. Neckline \u20b92494.7. Wait for close below neckline.",
+    "target": 2464.8,
+    "explain": "Double top at ~\u20b92525.0. Neckline \u20b92494.9. Wait for close below neckline.",
     "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
     "timeframe": "15 Min",
     "interval": "15m",
@@ -111450,6 +111450,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "SUNPHARMA",
+    "pattern": "Double Top",
+    "direction": "BEARISH",
+    "fit": 88.0,
+    "points": [
+      [
+        "A",
+        137,
+        1771.5
+      ],
+      [
+        "B",
+        142,
+        1755.300048828125
+      ],
+      [
+        "C",
+        147,
+        1799.0
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        137,
+        1771.5
+      ],
+      [
+        "B",
+        142,
+        1755.300048828125
+      ],
+      [
+        "C",
+        147,
+        1799.0
+      ]
+    ],
+    "start_i": 137,
+    "end_i": 147,
+    "sessions": 10,
+    "sessions_ago": 12,
+    "date_range": "29-Oct-2026 \u2192 30-Oct-2026",
+    "entry": 1755.3,
+    "stop": 1816.99,
+    "target": 1711.6,
+    "explain": "Double top at ~\u20b91799.0. Neckline \u20b91755.3. Wait for close below neckline.",
+    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
+    "timeframe": "30 Min",
+    "interval": "30m",
+    "live": 1777.7,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "CIPLA",
     "pattern": "Triple Top",
     "direction": "BEARISH",
@@ -111790,61 +111845,6 @@
     "timeframe": "15 Min",
     "interval": "15m",
     "live": 2502.6,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "SUNPHARMA",
-    "pattern": "Double Top",
-    "direction": "BEARISH",
-    "fit": 87.0,
-    "points": [
-      [
-        "A",
-        137,
-        1771.5
-      ],
-      [
-        "B",
-        142,
-        1755.300048828125
-      ],
-      [
-        "C",
-        147,
-        1800.699951171875
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        137,
-        1771.5
-      ],
-      [
-        "B",
-        142,
-        1755.300048828125
-      ],
-      [
-        "C",
-        147,
-        1800.699951171875
-      ]
-    ],
-    "start_i": 137,
-    "end_i": 147,
-    "sessions": 10,
-    "sessions_ago": 12,
-    "date_range": "29-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 1755.3,
-    "stop": 1818.71,
-    "target": 1709.9,
-    "explain": "Double top at ~\u20b91800.7. Neckline \u20b91755.3. Wait for close below neckline.",
-    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
-    "timeframe": "30 Min",
-    "interval": "30m",
-    "live": 1777.7,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -113019,7 +113019,7 @@
       [
         "P1",
         77,
-        1136.0452413915457
+        1136.0453699691357
       ],
       [
         "P2",
@@ -113036,7 +113036,7 @@
       [
         "P1",
         77,
-        1136.0452413915457
+        1136.0453699691357
       ],
       [
         "P2",
@@ -114142,7 +114142,7 @@
       [
         "P3",
         147,
-        1800.699951171875
+        1799.0
       ]
     ],
     "points_abs": [
@@ -114159,7 +114159,7 @@
       [
         "P3",
         147,
-        1800.699951171875
+        1799.0
       ]
     ],
     "start_i": 120,
@@ -114168,9 +114168,9 @@
     "sessions_ago": 12,
     "date_range": "27-Oct-2026 \u2192 30-Oct-2026",
     "entry": 1726.4,
-    "stop": 1818.71,
-    "target": 1652.1,
-    "explain": "Triple top resistance ~\u20b91800.7. Break \u20b91726.4 confirms.",
+    "stop": 1816.99,
+    "target": 1653.8,
+    "explain": "Triple top resistance ~\u20b91799.0. Break \u20b91726.4 confirms.",
     "rules": "Three peaks at resistance; break below intervening lows.",
     "timeframe": "30 Min",
     "interval": "30m",
@@ -114190,10 +114190,10 @@
     "sessions": 33,
     "sessions_ago": 12,
     "date_range": "27-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 1800.7,
+    "entry": 1799.0,
     "stop": 1737.75,
-    "target": 1815.2,
-    "explain": "Ascending triangle \u2014 flat top ~\u20b91800.7, rising lows. Buy break of top.",
+    "target": 1813.5,
+    "explain": "Ascending triangle \u2014 flat top ~\u20b91799.0, rising lows. Buy break of top.",
     "rules": "Flat resistance, rising lows; buy break of flat top.",
     "timeframe": "30 Min",
     "interval": "30m",
@@ -114591,7 +114591,7 @@
       [
         "A",
         77,
-        7699.989386037549
+        7699.989907232893
       ],
       [
         "B",
@@ -114608,7 +114608,7 @@
       [
         "A",
         77,
-        7699.989386037549
+        7699.989907232893
       ],
       [
         "B",
@@ -115311,7 +115311,7 @@
       [
         "P1",
         77,
-        1136.0452413915457
+        1136.0453699691357
       ],
       [
         "P2",
@@ -115328,7 +115328,7 @@
       [
         "P1",
         77,
-        1136.0452413915457
+        1136.0453699691357
       ],
       [
         "P2",
@@ -116214,7 +116214,7 @@
       [
         "T1",
         77,
-        1136.0452413915457
+        1136.0453699691357
       ],
       [
         "T2",
@@ -116231,7 +116231,7 @@
       [
         "T1",
         77,
-        1136.0452413915457
+        1136.0453699691357
       ],
       [
         "T2",
@@ -136440,7 +136440,7 @@
       [
         "A",
         77,
-        1136.0452413915457
+        1136.0453699691357
       ],
       [
         "B",
@@ -136457,7 +136457,7 @@
       [
         "A",
         77,
-        1136.0452413915457
+        1136.0453699691357
       ],
       [
         "B",
@@ -139778,7 +139778,7 @@
       [
         "A",
         77,
-        2551.403742749576
+        2551.4040090033286
       ],
       [
         "B",
@@ -139805,7 +139805,7 @@
       [
         "A",
         77,
-        2551.403742749576
+        2551.4040090033286
       ],
       [
         "B",
@@ -145484,7 +145484,7 @@
       [
         "LS",
         65,
-        4661.743456050503
+        4661.743981491966
       ],
       [
         "H",
@@ -145501,7 +145501,7 @@
       [
         "LS",
         65,
-        4661.743456050503
+        4661.743981491966
       ],
       [
         "H",
@@ -146342,12 +146342,12 @@
       [
         "B",
         83,
-        1536.0512985779774
+        1536.051429329394
       ],
       [
         "C",
         85,
-        1299.2152198543001
+        1299.2153362437036
       ]
     ],
     "points_abs": [
@@ -146359,12 +146359,12 @@
       [
         "B",
         83,
-        1536.0512985779774
+        1536.051429329394
       ],
       [
         "C",
         85,
-        1299.2152198543001
+        1299.2153362437036
       ]
     ],
     "start_i": 80,
@@ -147561,7 +147561,7 @@
       [
         "RS",
         140,
-        2494.699951171875
+        2494.89990234375
       ]
     ],
     "points_abs": [
@@ -147578,7 +147578,7 @@
       [
         "RS",
         140,
-        2494.699951171875
+        2494.89990234375
       ]
     ],
     "start_i": 113,
@@ -148316,7 +148316,7 @@
       [
         "A",
         77,
-        1480.2740603320117
+        1480.2741979295645
       ],
       [
         "B",
@@ -148326,12 +148326,12 @@
       [
         "C",
         83,
-        1536.0512985779774
+        1536.051429329394
       ],
       [
         "D",
         85,
-        1299.2152198543001
+        1299.2153362437036
       ]
     ],
     "points_abs": [
@@ -148343,7 +148343,7 @@
       [
         "A",
         77,
-        1480.2740603320117
+        1480.2741979295645
       ],
       [
         "B",
@@ -148353,12 +148353,12 @@
       [
         "C",
         83,
-        1536.0512985779774
+        1536.051429329394
       ],
       [
         "D",
         85,
-        1299.2152198543001
+        1299.2153362437036
       ]
     ],
     "start_i": 71,
@@ -153077,7 +153077,7 @@
       [
         "A",
         65,
-        4661.743456050503
+        4661.743981491966
       ],
       [
         "B",
@@ -153104,7 +153104,7 @@
       [
         "A",
         65,
-        4661.743456050503
+        4661.743981491966
       ],
       [
         "B",
@@ -155874,7 +155874,7 @@
       [
         "V1",
         65,
-        1569.3660195387681
+        1569.365899469983
       ],
       [
         "V2",
@@ -155891,7 +155891,7 @@
       [
         "V1",
         65,
-        1569.3660195387681
+        1569.365899469983
       ],
       [
         "V2",
@@ -155929,7 +155929,7 @@
       [
         "X",
         66,
-        1792.2210544948725
+        1792.2209147835595
       ],
       [
         "A",
@@ -155939,7 +155939,7 @@
       [
         "B",
         77,
-        1480.2740603320117
+        1480.2741979295645
       ],
       [
         "C",
@@ -155949,14 +155949,14 @@
       [
         "D",
         83,
-        1536.0512985779774
+        1536.051429329394
       ]
     ],
     "points_abs": [
       [
         "X",
         66,
-        1792.2210544948725
+        1792.2209147835595
       ],
       [
         "A",
@@ -155966,7 +155966,7 @@
       [
         "B",
         77,
-        1480.2740603320117
+        1480.2741979295645
       ],
       [
         "C",
@@ -155976,7 +155976,7 @@
       [
         "D",
         83,
-        1536.0512985779774
+        1536.051429329394
       ]
     ],
     "start_i": 66,
@@ -156679,7 +156679,7 @@
       [
         "B",
         77,
-        1136.0452413915457
+        1136.0453699691357
       ],
       [
         "C",
@@ -156696,7 +156696,7 @@
       [
         "B",
         77,
-        1136.0452413915457
+        1136.0453699691357
       ],
       [
         "C",
@@ -157044,7 +157044,7 @@
       [
         "LS",
         59,
-        314.9575624862288
+        314.9575922615604
       ],
       [
         "H",
@@ -157061,7 +157061,7 @@
       [
         "LS",
         59,
-        314.9575624862288
+        314.9575922615604
       ],
       [
         "H",
@@ -162607,7 +162607,7 @@
       [
         "LS",
         65,
-        153.1284639327837
+        153.12844905541715
       ],
       [
         "H",
@@ -162624,7 +162624,7 @@
       [
         "LS",
         65,
-        153.1284639327837
+        153.12844905541715
       ],
       [
         "H",
@@ -168766,7 +168766,7 @@
       [
         "X",
         60,
-        390.4567099671703
+        390.45667904561043
       ],
       [
         "A",
@@ -168793,7 +168793,7 @@
       [
         "X",
         60,
-        390.4567099671703
+        390.45667904561043
       ],
       [
         "A",
@@ -170401,7 +170401,7 @@
       [
         "A",
         65,
-        4661.743456050503
+        4661.743981491966
       ],
       [
         "B",
@@ -170418,7 +170418,7 @@
       [
         "A",
         65,
-        4661.743456050503
+        4661.743981491966
       ],
       [
         "B",
