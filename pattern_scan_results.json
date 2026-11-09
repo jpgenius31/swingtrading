@@ -30428,7 +30428,7 @@
     "date_range": "02-Nov-2026 \u2192 09-Nov-2026",
     "entry": 486.45,
     "stop": 464.31,
-    "target": 504.25,
+    "target": 505.25,
     "explain": "Ascending triangle \u2014 flat top ~\u20b9486.5, rising lows. Buy break of top.",
     "rules": "Flat resistance, rising lows; buy break of flat top.",
     "timeframe": "1 Hour",
@@ -30451,7 +30451,7 @@
     "date_range": "19-Jan-2026 \u2192 05-Oct-2026",
     "entry": 38465.0,
     "stop": 33660.0,
-    "target": 45275.15,
+    "target": 45275.14,
     "explain": "Ascending triangle \u2014 flat top ~\u20b938465.0, rising lows. Buy break of top.",
     "rules": "Flat resistance, rising lows; buy break of flat top.",
     "timeframe": "Weekly",
@@ -31278,7 +31278,7 @@
     "date_range": "19-Jan-2026 \u2192 05-Oct-2026",
     "entry": 34000.0,
     "stop": 38849.65,
-    "target": 27189.85,
+    "target": 27189.86,
     "explain": "Rising wedge (higher highs & lows, converging) \u2014 bias break lower.",
     "rules": "Rising highs & lows, converging; usually bearish on break of lower line.",
     "timeframe": "Weekly",
@@ -45919,7 +45919,7 @@
     "date_range": "02-Nov-2026 \u2192 09-Nov-2026",
     "entry": 427.55,
     "stop": 435.01,
-    "target": 411.8,
+    "target": 412.0,
     "explain": "Rising wedge (higher highs & lows, converging) \u2014 bias break lower.",
     "rules": "Rising highs & lows, converging; usually bearish on break of lower line.",
     "timeframe": "30 Min",
@@ -49604,6 +49604,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "HINDCOPPER",
+    "pattern": "Head & Shoulders",
+    "direction": "BEARISH",
+    "fit": 74.0,
+    "points": [
+      [
+        "LS",
+        124,
+        411.8999938964844
+      ],
+      [
+        "H",
+        140,
+        435.1499938964844
+      ],
+      [
+        "RS",
+        153,
+        435.04998779296875
+      ]
+    ],
+    "points_abs": [
+      [
+        "LS",
+        124,
+        411.8999938964844
+      ],
+      [
+        "H",
+        140,
+        435.1499938964844
+      ],
+      [
+        "RS",
+        153,
+        435.04998779296875
+      ]
+    ],
+    "start_i": 124,
+    "end_i": 153,
+    "sessions": 29,
+    "sessions_ago": 6,
+    "date_range": "02-Nov-2026 \u2192 09-Nov-2026",
+    "entry": 393.85,
+    "stop": 439.4,
+    "target": 352.55,
+    "explain": "H&S head \u20b9435.1, neckline ~\u20b9393.9. Bearish on break below neckline.",
+    "rules": "LS, higher head, RS; neckline break down; target = head\u2212neckline.",
+    "timeframe": "1 Hour",
+    "interval": "1h",
+    "live": 430.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "TCS",
     "pattern": "Double Bottom",
     "direction": "BULLISH",
@@ -49934,61 +49989,6 @@
     "extra_patterns": []
   },
   {
-    "stock": "HINDCOPPER",
-    "pattern": "Head & Shoulders",
-    "direction": "BEARISH",
-    "fit": 73.0,
-    "points": [
-      [
-        "LS",
-        124,
-        411.70001220703125
-      ],
-      [
-        "H",
-        140,
-        435.1499938964844
-      ],
-      [
-        "RS",
-        153,
-        435.04998779296875
-      ]
-    ],
-    "points_abs": [
-      [
-        "LS",
-        124,
-        411.70001220703125
-      ],
-      [
-        "H",
-        140,
-        435.1499938964844
-      ],
-      [
-        "RS",
-        153,
-        435.04998779296875
-      ]
-    ],
-    "start_i": 124,
-    "end_i": 153,
-    "sessions": 29,
-    "sessions_ago": 6,
-    "date_range": "02-Nov-2026 \u2192 09-Nov-2026",
-    "entry": 393.85,
-    "stop": 439.4,
-    "target": 352.55,
-    "explain": "H&S head \u20b9435.1, neckline ~\u20b9393.9. Bearish on break below neckline.",
-    "rules": "LS, higher head, RS; neckline break down; target = head\u2212neckline.",
-    "timeframe": "1 Hour",
-    "interval": "1h",
-    "live": 430.0,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
     "stock": "ULTRACEMCO",
     "pattern": "Broadening Top",
     "direction": "BEARISH",
@@ -50300,8 +50300,8 @@
     "sessions_ago": 6,
     "date_range": "02-Nov-2026 \u2192 09-Nov-2026",
     "entry": 400.93,
-    "stop": 435.85,
-    "target": 374.57,
+    "stop": 435.91,
+    "target": 374.5,
     "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
     "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
     "timeframe": "1 Hour",
@@ -77638,7 +77638,7 @@
       [
         "P1",
         76,
-        466.68833140510674
+        466.6883002663387
       ],
       [
         "P2",
@@ -77655,7 +77655,7 @@
       [
         "P1",
         76,
-        466.68833140510674
+        466.6883002663387
       ],
       [
         "P2",
@@ -90751,7 +90751,7 @@
       [
         "P1",
         63,
-        755.9652108362703
+        755.9651334232211
       ],
       [
         "P2",
@@ -90768,7 +90768,7 @@
       [
         "P1",
         63,
-        755.9652108362703
+        755.9651334232211
       ],
       [
         "P2",
@@ -102987,6 +102987,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "HINDCOPPER",
+    "pattern": "Head & Shoulders",
+    "direction": "BEARISH",
+    "fit": 74.0,
+    "points": [
+      [
+        "LS",
+        94,
+        411.8999938964844
+      ],
+      [
+        "H",
+        123,
+        435.1499938964844
+      ],
+      [
+        "RS",
+        147,
+        435.04998779296875
+      ]
+    ],
+    "points_abs": [
+      [
+        "LS",
+        94,
+        411.8999938964844
+      ],
+      [
+        "H",
+        123,
+        435.1499938964844
+      ],
+      [
+        "RS",
+        147,
+        435.04998779296875
+      ]
+    ],
+    "start_i": 94,
+    "end_i": 147,
+    "sessions": 53,
+    "sessions_ago": 12,
+    "date_range": "02-Nov-2026 \u2192 09-Nov-2026",
+    "entry": 393.85,
+    "stop": 439.4,
+    "target": 352.55,
+    "explain": "H&S head \u20b9435.1, neckline ~\u20b9393.9. Bearish on break below neckline.",
+    "rules": "LS, higher head, RS; neckline break down; target = head\u2212neckline.",
+    "timeframe": "30 Min",
+    "interval": "30m",
+    "live": 430.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "MOTHERSON",
     "pattern": "Double Bottom",
     "direction": "BULLISH",
@@ -103148,61 +103203,6 @@
     "timeframe": "1 Hour",
     "interval": "1h",
     "live": 305.15,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "HINDCOPPER",
-    "pattern": "Head & Shoulders",
-    "direction": "BEARISH",
-    "fit": 73.0,
-    "points": [
-      [
-        "LS",
-        94,
-        411.70001220703125
-      ],
-      [
-        "H",
-        123,
-        435.1499938964844
-      ],
-      [
-        "RS",
-        147,
-        435.04998779296875
-      ]
-    ],
-    "points_abs": [
-      [
-        "LS",
-        94,
-        411.70001220703125
-      ],
-      [
-        "H",
-        123,
-        435.1499938964844
-      ],
-      [
-        "RS",
-        147,
-        435.04998779296875
-      ]
-    ],
-    "start_i": 94,
-    "end_i": 147,
-    "sessions": 53,
-    "sessions_ago": 12,
-    "date_range": "02-Nov-2026 \u2192 09-Nov-2026",
-    "entry": 393.85,
-    "stop": 439.4,
-    "target": 352.55,
-    "explain": "H&S head \u20b9435.1, neckline ~\u20b9393.9. Bearish on break below neckline.",
-    "rules": "LS, higher head, RS; neckline break down; target = head\u2212neckline.",
-    "timeframe": "30 Min",
-    "interval": "30m",
-    "live": 430.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -138948,7 +138948,7 @@
       [
         "X",
         72,
-        2290.0165738679734
+        2290.016807598228
       ],
       [
         "A",
@@ -138975,7 +138975,7 @@
       [
         "X",
         72,
-        2290.0165738679734
+        2290.016807598228
       ],
       [
         "A",
@@ -141345,7 +141345,7 @@
       [
         "LS",
         64,
-        372.30528998662965
+        372.3053216511771
       ],
       [
         "H",
@@ -141362,7 +141362,7 @@
       [
         "LS",
         64,
-        372.30528998662965
+        372.3053216511771
       ],
       [
         "H",
@@ -146226,12 +146226,12 @@
       [
         "B",
         81,
-        1536.051429329394
+        1536.0512985779774
       ],
       [
         "C",
         83,
-        1299.2153362437036
+        1299.2152198543001
       ]
     ],
     "points_abs": [
@@ -146243,12 +146243,12 @@
       [
         "B",
         81,
-        1536.051429329394
+        1536.0512985779774
       ],
       [
         "C",
         83,
-        1299.2153362437036
+        1299.2152198543001
       ]
     ],
     "start_i": 78,
@@ -146841,7 +146841,7 @@
       [
         "A",
         75,
-        1480.2741979295645
+        1480.2740603320117
       ],
       [
         "B",
@@ -146851,12 +146851,12 @@
       [
         "C",
         81,
-        1536.051429329394
+        1536.0512985779774
       ],
       [
         "D",
         83,
-        1299.2153362437036
+        1299.2152198543001
       ]
     ],
     "points_abs": [
@@ -146868,7 +146868,7 @@
       [
         "A",
         75,
-        1480.2741979295645
+        1480.2740603320117
       ],
       [
         "B",
@@ -146878,12 +146878,12 @@
       [
         "C",
         81,
-        1536.051429329394
+        1536.0512985779774
       ],
       [
         "D",
         83,
-        1299.2153362437036
+        1299.2152198543001
       ]
     ],
     "start_i": 69,
@@ -149869,7 +149869,7 @@
       [
         "V1",
         63,
-        1569.3660195387681
+        1569.365899469983
       ],
       [
         "V2",
@@ -149886,7 +149886,7 @@
       [
         "V1",
         63,
-        1569.3660195387681
+        1569.365899469983
       ],
       [
         "V2",
@@ -149924,7 +149924,7 @@
       [
         "X",
         64,
-        1792.2209147835595
+        1792.2210544948725
       ],
       [
         "A",
@@ -149934,7 +149934,7 @@
       [
         "B",
         75,
-        1480.2741979295645
+        1480.2740603320117
       ],
       [
         "C",
@@ -149944,14 +149944,14 @@
       [
         "D",
         81,
-        1536.051429329394
+        1536.0512985779774
       ]
     ],
     "points_abs": [
       [
         "X",
         64,
-        1792.2209147835595
+        1792.2210544948725
       ],
       [
         "A",
@@ -149961,7 +149961,7 @@
       [
         "B",
         75,
-        1480.2741979295645
+        1480.2740603320117
       ],
       [
         "C",
@@ -149971,7 +149971,7 @@
       [
         "D",
         81,
-        1536.051429329394
+        1536.0512985779774
       ]
     ],
     "start_i": 64,
@@ -150384,7 +150384,7 @@
       [
         "A",
         76,
-        466.68833140510674
+        466.6883002663387
       ],
       [
         "B",
@@ -150401,7 +150401,7 @@
       [
         "A",
         76,
-        466.68833140510674
+        466.6883002663387
       ],
       [
         "B",
@@ -151369,7 +151369,7 @@
       [
         "H",
         76,
-        466.68833140510674
+        466.6883002663387
       ],
       [
         "RS",
@@ -151386,7 +151386,7 @@
       [
         "H",
         76,
-        466.68833140510674
+        466.6883002663387
       ],
       [
         "RS",
@@ -152236,7 +152236,7 @@
       [
         "B",
         76,
-        466.68833140510674
+        466.6883002663387
       ],
       [
         "C",
@@ -152253,7 +152253,7 @@
       [
         "B",
         76,
-        466.68833140510674
+        466.6883002663387
       ],
       [
         "C",
@@ -156939,7 +156939,7 @@
       [
         "LS",
         63,
-        153.1284639327837
+        153.12844905541715
       ],
       [
         "H",
@@ -156956,7 +156956,7 @@
       [
         "LS",
         63,
-        153.1284639327837
+        153.12844905541715
       ],
       [
         "H",
@@ -160094,7 +160094,7 @@
       [
         "B",
         124,
-        411.70001220703125
+        411.8999938964844
       ],
       [
         "C",
@@ -160111,7 +160111,7 @@
       [
         "B",
         124,
-        411.70001220703125
+        411.8999938964844
       ],
       [
         "C",
@@ -160124,10 +160124,10 @@
     "sessions": 14,
     "sessions_ago": 27,
     "date_range": "02-Nov-2026 \u2192 04-Nov-2026",
-    "entry": 411.7,
+    "entry": 411.9,
     "stop": 389.91,
-    "target": 429.55,
-    "explain": "Double bottom at ~\u20b9393.9. Neckline \u20b9411.7. Breakout above neckline confirmed.",
+    "target": 429.95,
+    "explain": "Double bottom at ~\u20b9393.9. Neckline \u20b9411.9. Breakout above neckline confirmed.",
     "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
     "timeframe": "1 Hour",
     "interval": "1h",
@@ -162466,10 +162466,10 @@
     "sessions": 17,
     "sessions_ago": 28,
     "date_range": "30-Oct-2026 \u2192 03-Nov-2026",
-    "entry": 314.3,
+    "entry": 314.6,
     "stop": 324.77,
-    "target": 300.7,
-    "explain": "H&S head \u20b9327.9, neckline ~\u20b9314.3. Bearish on break below neckline.",
+    "target": 301.3,
+    "explain": "H&S head \u20b9327.9, neckline ~\u20b9314.6. Bearish on break below neckline.",
     "rules": "LS, higher head, RS; neckline break down; target = head\u2212neckline.",
     "timeframe": "1 Hour",
     "interval": "1h",
@@ -182128,7 +182128,7 @@
       [
         "LS",
         124,
-        326.9085370295863
+        326.9085067795057
       ],
       [
         "H",
@@ -182145,7 +182145,7 @@
       [
         "LS",
         124,
-        326.9085370295863
+        326.9085067795057
       ],
       [
         "H",
@@ -184416,7 +184416,7 @@
       [
         "X",
         94,
-        467.0
+        466.0
       ],
       [
         "A",
@@ -184443,7 +184443,7 @@
       [
         "X",
         94,
-        467.0
+        466.0
       ],
       [
         "A",
@@ -184473,8 +184473,8 @@
     "date_range": "02-Nov-2026 \u2192 04-Nov-2026",
     "entry": 479.8,
     "stop": 465.41,
-    "target": 485.68,
-    "explain": "Bat BULLISH at D \u20b9479.8 (XA=15.4, B/XA=0.35, D/XA=0.83).",
+    "target": 486.06,
+    "explain": "Bat BULLISH at D \u20b9479.8 (XA=16.4, B/XA=0.33, D/XA=0.84).",
     "rules": "B<0.618 XA (often 0.382\u20130.50); D=0.886 XA.",
     "timeframe": "30 Min",
     "interval": "30m",
@@ -184546,7 +184546,7 @@
       [
         "X",
         94,
-        467.0
+        466.0
       ],
       [
         "A",
@@ -184573,7 +184573,7 @@
       [
         "X",
         94,
-        467.0
+        466.0
       ],
       [
         "A",
@@ -184603,8 +184603,8 @@
     "date_range": "02-Nov-2026 \u2192 04-Nov-2026",
     "entry": 479.8,
     "stop": 465.41,
-    "target": 485.68,
-    "explain": "Cypher BULLISH at D \u20b9479.8 (XA=15.4, B/XA=0.35, D/XA=0.83).",
+    "target": 486.06,
+    "explain": "Cypher BULLISH at D \u20b9479.8 (XA=16.4, B/XA=0.33, D/XA=0.84).",
     "rules": "B=0.382\u20130.618 XA; C=1.272\u20131.414 XA; D=0.786 XC.",
     "timeframe": "30 Min",
     "interval": "30m",
