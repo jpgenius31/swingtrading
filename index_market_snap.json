@@ -1,14 +1,14 @@
 {
   "NIFTY": {
-    "price": 25030.35,
-    "pct": 2.01
+    "price": 25044.65,
+    "pct": 0.06
   },
   "BANKNIFTY": {
-    "price": 59086.0,
-    "pct": 2.27
+    "price": 59741.25,
+    "pct": 1.11
   },
   "SENSEX": {
-    "price": 81028.02,
-    "pct": 2.17
+    "price": 81106.65,
+    "pct": 0.1
   }
 }
