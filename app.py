@@ -51,6 +51,9 @@ STRATEGY_META_FILE = APP_DIR / "strategy_live_meta.json"
 STRATEGY_915_PAST_FILE = APP_DIR / "strategy_915_candle_past.csv"
 STRATEGY_915_LIVE_FILE = APP_DIR / "strategy_915_candle_live.csv"
 PATTERN_SCAN_FILE = APP_DIR / "pattern_scan_results.json"
+NSE_GAINERS_CACHE = APP_DIR / "nse_top_gainers_cache.csv"
+NSE_LOSERS_CACHE = APP_DIR / "nse_top_losers_cache.csv"
+NSE_GL_META = APP_DIR / "nse_gainers_losers_meta.json"
 MY_PAGE_LAYOUT_FILE = APP_DIR / "my_page_layout.json"
 PATTERN_SCAN_META = APP_DIR / "pattern_scan_meta.json"
 STRATEGY_ALL_MAP_FILE = APP_DIR / "strategy_all_stocks_map.csv"
@@ -3512,14 +3515,21 @@ def _github_results_base() -> str:
 def _fetch_github_json(url: str) -> list:
     """Fast GitHub raw JSON fetch (cached ~90s for instant tab switches)."""
     import urllib.request
+    import time as _time
+    u = str(url or "")
+    # bust CDN/browser cache so Monday opens don't keep Friday JSON
+    sep = "&" if "?" in u else "?"
+    u = f"{u}{sep}_cb={int(_time.time() // 60)}"  # change every minute
     req = urllib.request.Request(
-        url,
+        u,
         headers={
             "User-Agent": "Mozilla/5.0 JPStockModel/1.0",
             "Accept": "application/json",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
         },
     )
-    with urllib.request.urlopen(req, timeout=8) as resp:
+    with urllib.request.urlopen(req, timeout=12) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     return data if isinstance(data, list) else []
 
@@ -3527,8 +3537,19 @@ def _fetch_github_json(url: str) -> list:
 @st.cache_data(ttl=90, show_spinner=False)
 def _fetch_github_csv_bytes(url: str) -> bytes:
     import urllib.request
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 JPStockModel/1.0"})
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    import time as _time
+    u = str(url or "")
+    sep = "&" if "?" in u else "?"
+    u = f"{u}{sep}_cb={int(_time.time() // 60)}"
+    req = urllib.request.Request(
+        u,
+        headers={
+            "User-Agent": "Mozilla/5.0 JPStockModel/1.0",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=12) as resp:
         return resp.read()
 
 
@@ -4084,6 +4105,10 @@ def _pattern_mini_chart(df, hit: dict, height: int = 280, full: bool = False, me
 
 
 def show_chart_pattern_scanner(results: pd.DataFrame = None):
+    try:
+        render_stale_data_banner()
+    except Exception:
+        pass
     """UI: pick pattern → screen NSE → cards with chart, live, gap, explanation."""
     st.markdown(
         """
@@ -9556,6 +9581,12 @@ def render_915_candle_top20_page():
             )
             st.session_state[cache_key] = live
             st.session_state["c915_live"] = live
+            try:
+                g, l = fetch_nse_fo_gainers_losers(20)
+                st.session_state["c915_nse_gainers"] = g
+                st.session_state["c915_nse_losers"] = l
+            except Exception:
+                pass
             if live is not None and not live.empty:
                 n = append_915_calls_to_past(live)
                 # Auto paper BUY (min capital) so P&L tracks without staying on dashboard
@@ -9711,212 +9742,232 @@ def fo_liquid_stock_universe() -> list:
 @st.cache_data(ttl=90, show_spinner=False)
 
 @st.cache_data(ttl=60, show_spinner=False)
+
+def _nse_extract_move_rows(payload) -> list:
+    """Flatten NSE live-analysis / stockIndices JSON into Symbol, LTP, Move % rows."""
+    rows = []
+    seen = set()
+
+    def _add(it, source="NSE"):
+        if not isinstance(it, dict):
+            return
+        sym = (
+            it.get("symbol")
+            or it.get("Symbol")
+            or it.get("symbolName")
+            or (it.get("meta", {}) or {}).get("symbol")
+            if isinstance(it.get("meta"), dict)
+            else None
+        )
+        if not sym:
+            return
+        sym = str(sym).upper().strip()
+        if not sym or sym in ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX"):
+            return
+        if sym in seen:
+            return
+        try:
+            pct = float(
+                it.get("pChange")
+                or it.get("perChange")
+                or it.get("pchange")
+                or it.get("percentChange")
+                or it.get("netPrice")  # sometimes
+                or 0
+            )
+        except Exception:
+            pct = 0.0
+        try:
+            ltp = float(it.get("lastPrice") or it.get("ltp") or it.get("last") or it.get("lastTradedPrice") or 0)
+        except Exception:
+            ltp = 0.0
+        try:
+            chg = float(it.get("change") or it.get("netChange") or 0)
+        except Exception:
+            chg = 0.0
+        seen.add(sym)
+        rows.append({
+            "Symbol": sym,
+            "Stock": sym,
+            "LTP": ltp,
+            "Change": chg,
+            "Move %": pct,
+            "Change %": pct,
+            "Open": it.get("open") or it.get("openPrice"),
+            "Day High": it.get("dayHigh") or it.get("highPrice") or it.get("high"),
+            "Day Low": it.get("dayLow") or it.get("lowPrice") or it.get("low"),
+            "Volume": it.get("totalTradedVolume") or it.get("volume"),
+            "Source": source,
+        })
+
+    def _walk(obj, source="NSE"):
+        if obj is None:
+            return
+        if isinstance(obj, list):
+            for it in obj:
+                if isinstance(it, dict) and (
+                    "symbol" in it or "Symbol" in it or "lastPrice" in it or "pChange" in it
+                ):
+                    _add(it, source)
+                else:
+                    _walk(it, source)
+            return
+        if isinstance(obj, dict):
+            # Prefer F&O / all securities buckets (matches NSE website tabs)
+            for prefer in ("FOSec", "FOSEC", "foSec", "allSec", "ALLSEC", "NIFTY", "data", "stocks"):
+                if prefer in obj:
+                    _walk(obj[prefer], source=f"NSE:{prefer}")
+            for k, v in obj.items():
+                if k in ("FOSec", "FOSEC", "foSec", "allSec", "ALLSEC", "NIFTY", "data", "stocks"):
+                    continue
+                if isinstance(v, (list, dict)):
+                    _walk(v, source=source)
+            # leaf dict with symbol
+            if "symbol" in obj or "lastPrice" in obj:
+                _add(obj, source)
+
+    _walk(payload)
+    return rows
+
+
 def fetch_nse_fo_gainers_losers(limit: int = 20) -> tuple:
     """
-    NSE F&O Securities top gainers / losers (same universe as NSE website
-    Market Data → Top 20 Gainers/Losers → Select Index: F&O Securities).
-    Uses /api/equity-stockIndices?index=SECURITIES IN F&O then sorts by pChange.
+    NSE top gainers/losers aligned with website:
+    Market Data → Top Gainers / Losers → F&O Securities (preferred) / All Securities.
     """
     gainers = losers = pd.DataFrame()
     rows = []
-    try:
-        data = nse_get_json(
-            "/api/equity-stockIndices",
-            params={"index": "SECURITIES IN F&O"},
-            timeout=15,
-        )
-        if not data:
+
+    # 1) Official variations API (same as NSE site tables)
+    for idx_name in ("gainers", "loosers", "losers"):
+        try:
+            data = None
+            try:
+                data = nse_get_json(
+                    "/api/live-analysis-variations",
+                    params={"index": idx_name},
+                    timeout=14,
+                )
+            except Exception:
+                data = None
+            if not data:
+                try:
+                    data = nse_get_json(
+                        f"https://www.nseindia.com/api/live-analysis-variations?index={idx_name}",
+                        timeout=14,
+                    )
+                except Exception:
+                    data = None
+            if data:
+                part = _nse_extract_move_rows(data)
+                for r in part:
+                    r["Source"] = f"NSE:{idx_name}"
+                rows.extend(part)
+        except Exception:
+            continue
+
+    # 2) F&O universe sorted by day % (if variations empty)
+    if len(rows) < 10:
+        try:
             data = nse_get_json(
-                "https://www.nseindia.com/api/equity-stockIndices?index=SECURITIES%20IN%20F%26O",
+                "/api/equity-stockIndices",
+                params={"index": "SECURITIES IN F&O"},
                 timeout=15,
             )
-        data_rows = []
-        if isinstance(data, dict):
-            data_rows = data.get("data") or data.get("stocks") or []
-        elif isinstance(data, list):
-            data_rows = data
-        for it in data_rows:
-            if not isinstance(it, dict):
-                continue
-            sym = str(it.get("symbol") or it.get("Symbol") or "").upper().strip()
-            if not sym or sym in ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"):
-                continue
-            try:
-                ltp = float(it.get("lastPrice") or it.get("ltp") or it.get("last") or 0)
-            except Exception:
-                ltp = 0.0
-            try:
-                pct = float(it.get("pChange") or it.get("perChange") or it.get("pchange") or 0)
-            except Exception:
-                pct = 0.0
-            try:
-                chg = float(it.get("change") or it.get("netChange") or 0)
-            except Exception:
-                chg = 0.0
-            rows.append({"Symbol": sym, "Stock": sym, "LTP": ltp, "Change": chg, "Move %": pct, "Change %": pct})
-    except Exception:
-        rows = []
+            if not data:
+                data = nse_get_json(
+                    "https://www.nseindia.com/api/equity-stockIndices?index=SECURITIES%20IN%20F%26O",
+                    timeout=15,
+                )
+            part = _nse_extract_move_rows(data)
+            for r in part:
+                r["Source"] = "NSE:F&O"
+            rows.extend(part)
+        except Exception:
+            pass
+
     if rows:
         df = pd.DataFrame(rows)
-        df = df.drop_duplicates(subset=["Symbol"])
-        gainers = df.sort_values("Move %", ascending=False).head(limit).reset_index(drop=True)
-        losers = df.sort_values("Move %", ascending=True).head(limit).reset_index(drop=True)
+        df = df.drop_duplicates(subset=["Symbol"], keep="first")
+        df["Move %"] = pd.to_numeric(df["Move %"], errors="coerce").fillna(0)
+        gainers = df.sort_values("Move %", ascending=False).head(int(limit)).reset_index(drop=True)
+        losers = df.sort_values("Move %", ascending=True).head(int(limit)).reset_index(drop=True)
+        # Persist official NSE list — reused when NSE site is blocked (never replace with Yahoo ranking)
+        try:
+            gainers.to_csv(NSE_GAINERS_CACHE, index=False)
+            losers.to_csv(NSE_LOSERS_CACHE, index=False)
+            NSE_GL_META.write_text(
+                json.dumps({
+                    "saved_at_ist": india_now().strftime("%Y-%m-%d %H:%M:%S IST") if "india_now" in dir() else "",
+                    "n_gainers": int(len(gainers)),
+                    "n_losers": int(len(losers)),
+                    "source": "NSE",
+                }, indent=2),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+        return gainers, losers
+
+    # NSE blocked / empty → last saved NSE list only (do NOT invent Yahoo top-20)
+    try:
+        g = pd.read_csv(NSE_GAINERS_CACHE) if NSE_GAINERS_CACHE.exists() else pd.DataFrame()
+        l = pd.read_csv(NSE_LOSERS_CACHE) if NSE_LOSERS_CACHE.exists() else pd.DataFrame()
+        if g is not None and not g.empty:
+            gainers = g.head(int(limit)).copy()
+            if "Source" in gainers.columns:
+                gainers["Source"] = gainers["Source"].astype(str) + " (cached NSE)"
+            else:
+                gainers["Source"] = "NSE (cached)"
+        if l is not None and not l.empty:
+            losers = l.head(int(limit)).copy()
+            if "Source" in losers.columns:
+                losers["Source"] = losers["Source"].astype(str) + " (cached NSE)"
+            else:
+                losers["Source"] = "NSE (cached)"
+        if (gainers is not None and not gainers.empty) or (losers is not None and not losers.empty):
+            return gainers, losers
+    except Exception:
+        pass
     return gainers, losers
 
 
-
 def fetch_nse_top_gainers(limit: int = 30) -> pd.DataFrame:
-    """Top gainers from NSE live-analysis-variations (official-style list)."""
+    """NSE top gainers — same source as website (prefer F&O + all-sec variations)."""
+    g, _ = fetch_nse_fo_gainers_losers(limit=limit)
+    if g is not None and not g.empty:
+        return g.head(limit)
+    # legacy single endpoint fallback
     rows = []
     try:
         data = nse_get_json("/api/live-analysis-variations", params={"index": "gainers"}, timeout=12)
-        if not data:
-            # alternate path used by some NSE pages
-            data = nse_get_json("https://www.nseindia.com/api/live-analysis-variations?index=gainers", timeout=12)
-        items = None
-        if isinstance(data, dict):
-            items = data.get("data") or data.get("NIFTY") or data.get("FOSec") or data.get("allSec")
-            if isinstance(items, dict):
-                for k in ("NIFTY", "FOSec", "allSec", "data", "SecGainer", "gainer"):
-                    if k in items and isinstance(items[k], list):
-                        items = items[k]
-                        break
-        elif isinstance(data, list):
-            items = data
-        if isinstance(items, list):
-            for it in items:
-                if not isinstance(it, dict):
-                    continue
-                sym = it.get("symbol") or it.get("symbolName")
-                if not sym and isinstance(it.get("meta"), dict):
-                    sym = it["meta"].get("symbol")
-                if not sym:
-                    continue
-                rows.append({
-                    "Symbol": str(sym).upper().strip(),
-                    "LTP": safe_float(it.get("lastPrice") or it.get("ltp") or it.get("last")),
-                    "Move %": safe_float(it.get("pChange") or it.get("perChange") or it.get("percentChange")),
-                    "Open": safe_float(it.get("open") or it.get("openPrice")),
-                    "Day High": safe_float(it.get("dayHigh") or it.get("high") or it.get("highPrice")),
-                    "Day Low": safe_float(it.get("dayLow") or it.get("low") or it.get("lowPrice")),
-                    "Volume": safe_float(it.get("totalTradedVolume") or it.get("volume")),
-                    "Source": "NSE",
-                })
+        rows = _nse_extract_move_rows(data)
     except Exception:
         pass
     if not rows:
         return pd.DataFrame()
-    df = pd.DataFrame(rows)
-    df = df.drop_duplicates(subset=["Symbol"]).sort_values("Move %", ascending=False)
+    df = pd.DataFrame(rows).drop_duplicates(subset=["Symbol"]).sort_values("Move %", ascending=False)
     return df.head(limit)
 
 
 def fetch_nse_top_losers(limit: int = 20) -> pd.DataFrame:
-    """
-    Top losers from NSE live analysis (loosers). Fallback: Yahoo/scan day % change.
-    Returns columns: Stock, LTP, Change %, Volume (best effort).
-    """
+    """NSE top losers — same source as website."""
+    _, lo = fetch_nse_fo_gainers_losers(limit=limit)
+    if lo is not None and not lo.empty:
+        return lo.head(limit)
     rows = []
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json,text/plain,*/*",
-        "Referer": "https://www.nseindia.com/",
-    }
-    urls = [
-        "https://www.nseindia.com/api/live-analysis-variations?index=loosers",
-        "https://www.nseindia.com/api/live-analysis-variations?index=losers",
-    ]
     try:
-        import requests
-        sess = requests.Session()
-        sess.headers.update(headers)
-        try:
-            sess.get("https://www.nseindia.com", timeout=6)
-        except Exception:
-            pass
-        for url in urls:
-            try:
-                r = sess.get(url, timeout=8)
-                if r.status_code != 200:
-                    continue
-                data = r.json()
-                # NSE shapes vary: data['data'] or list
-                items = data.get("data") if isinstance(data, dict) else data
-                if isinstance(items, dict):
-                    for k in ("NIFTY", "FOSec", "allSec", "data"):
-                        if k in items and isinstance(items[k], list):
-                            items = items[k]
-                            break
-                if not isinstance(items, list):
-                    continue
-                for it in items:
-                    if not isinstance(it, dict):
-                        continue
-                    sym = (
-                        it.get("symbol")
-                        or it.get("symbolName")
-                        or it.get("meta", {}).get("symbol")
-                        if isinstance(it.get("meta"), dict)
-                        else None
-                    )
-                    if not sym:
-                        continue
-                    chg = (
-                        it.get("pChange")
-                        or it.get("perChange")
-                        or it.get("percentChange")
-                        or it.get("netPrice")
-                    )
-                    ltp = it.get("lastPrice") or it.get("ltp") or it.get("last")
-                    vol = it.get("totalTradedVolume") or it.get("volume") or it.get("qty")
-                    rows.append({
-                        "Stock": str(sym).upper().strip(),
-                        "LTP": safe_float(ltp),
-                        "Change %": safe_float(chg),
-                        "Volume": safe_float(vol),
-                    })
-                if rows:
-                    break
-            except Exception:
-                continue
+        data = nse_get_json("/api/live-analysis-variations", params={"index": "loosers"}, timeout=12)
+        if not data:
+            data = nse_get_json("/api/live-analysis-variations", params={"index": "losers"}, timeout=12)
+        rows = _nse_extract_move_rows(data)
     except Exception:
         pass
-
     if not rows:
-        # Fallback: from scan results sorted by worst day move if available
-        try:
-            res = st.session_state.get("results")
-            if res is not None and not getattr(res, "empty", True):
-                x = res.copy()
-                col = "Change %" if "Change %" in x.columns else None
-                if col is None and "pct" in x.columns:
-                    col = "pct"
-                stock_col = "Stock" if "Stock" in x.columns else "Symbol"
-                if col and stock_col in x.columns:
-                    x[col] = pd.to_numeric(x[col], errors="coerce")
-                    x = x.nsmallest(limit, col)
-                    for _, r in x.iterrows():
-                        rows.append({
-                            "Stock": str(r[stock_col]).upper().replace(".NS", ""),
-                            "LTP": safe_float(r.get("Price") or r.get("Current Price")),
-                            "Change %": safe_float(r.get(col)),
-                            "Volume": safe_float(r.get("Volume")),
-                        })
-        except Exception:
-            pass
+        return pd.DataFrame()
+    df = pd.DataFrame(rows).drop_duplicates(subset=["Symbol"]).sort_values("Move %", ascending=True)
+    return df.head(limit)
 
-    if not rows:
-        # Static educational sample from liquid names (offline)
-        for s in ["ADANIENT", "TATASTEEL", "HINDALCO", "SBIN", "AXISBANK", "PNB",
-                  "FEDERALBNK", "BANKBARODA", "VEDL", "COALINDIA"][:limit]:
-            rows.append({"Stock": s, "LTP": 0.0, "Change %": 0.0, "Volume": 0})
-
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return df
-    df["Stock"] = df["Stock"].astype(str).str.upper().str.replace(".NS", "", regex=False)
-    df = df.drop_duplicates(subset=["Stock"]).head(int(limit))
-    return df
 
 
 def recommend_stock_option_trades(max_names: int = 12) -> pd.DataFrame:
@@ -10611,10 +10662,21 @@ def _pulse_gainers_losers(n: int = 25) -> tuple:
     except Exception:
         pass
 
-    # --- Fallback Yahoo if NSE empty (Cloud blocks) ---
+    # --- If NSE empty: use last NSE cache (same names as website). Never Yahoo ranking for top G/L. ---
     need_up = up is None or getattr(up, "empty", True)
     need_dn = dn is None or getattr(dn, "empty", True)
     if need_up or need_dn:
+        try:
+            if need_up and NSE_GAINERS_CACHE.exists():
+                up = pd.read_csv(NSE_GAINERS_CACHE).head(n)
+                need_up = up is None or getattr(up, "empty", True)
+            if need_dn and NSE_LOSERS_CACHE.exists():
+                dn = pd.read_csv(NSE_LOSERS_CACHE).head(n)
+                need_dn = dn is None or getattr(dn, "empty", True)
+        except Exception:
+            pass
+    # Yahoo day-% ranking removed for top gainer/loser — prices elsewhere can still use Yahoo backup
+    if False and (need_up or need_dn):
         try:
             lists = load_index_constituents() or {}
             syms = list(lists.get("nifty200") or []) + list(lists.get("nifty50") or _FALLBACK_NIFTY50)
@@ -10639,7 +10701,7 @@ def _pulse_gainers_losers(n: int = 25) -> tuple:
                     rows.append({
                         "Symbol": sym, "LTP": round(last, 2), "Move %": round(pct, 2),
                         "Open": round(o, 2), "Day High": round(h, 2), "Day Low": round(l, 2),
-                        "Source": "Yahoo",
+                        "Source": "Market",
                     })
                 except Exception:
                     continue
@@ -11455,6 +11517,58 @@ def show_915_strategy_desk():
         "Auto results (GitHub + open page): **Target achieved** or **Stop loss hit** only. "
         "No need to press Update after 9:30 — job + page load both evaluate."
     )
+    # Show NSE lists used (must match website top gainer/loser)
+    try:
+        with st.expander("NSE Top Gainer / Loser list used for 9:15 (should match nseindia.com)", expanded=False):
+            gg = st.session_state.get("c915_nse_gainers")
+            ll = st.session_state.get("c915_nse_losers")
+            if gg is None or (hasattr(gg, "empty") and gg.empty):
+                try:
+                    gg, ll = fetch_nse_fo_gainers_losers(20)
+                    st.session_state["c915_nse_gainers"] = gg
+                    st.session_state["c915_nse_losers"] = ll
+                except Exception as _ne:
+                    st.caption(f"NSE fetch: {_ne}")
+            cga, cgb = st.columns(2)
+            with cga:
+                st.markdown("**Top Gainers (NSE)**")
+                if gg is not None and not getattr(gg, "empty", True):
+                    st.dataframe(
+                        gg[[c for c in ["Symbol", "LTP", "Move %", "Source"] if c in gg.columns]].head(20),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.info("Gainer list refreshing… press **Refresh NSE gainer/loser** again in a minute.")
+            with cgb:
+                st.markdown("**Top Losers (NSE)**")
+                if ll is not None and not getattr(ll, "empty", True):
+                    st.dataframe(
+                        ll[[c for c in ["Symbol", "LTP", "Move %", "Source"] if c in ll.columns]].head(20),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.info("Loser list refreshing… press **Refresh NSE gainer/loser** again in a minute.")
+            if st.button("🔄 Refresh NSE gainer/loser now", key="desk915_nse_refresh"):
+                try:
+                    fetch_nse_fo_gainers_losers.clear()
+                except Exception:
+                    pass
+                try:
+                    fetch_nse_top_gainers.clear()
+                except Exception:
+                    pass
+                try:
+                    fetch_nse_top_losers.clear()
+                except Exception:
+                    pass
+                gg, ll = fetch_nse_fo_gainers_losers(20)
+                st.session_state["c915_nse_gainers"] = gg
+                st.session_state["c915_nse_losers"] = ll
+                st.rerun()
+    except Exception as _ex:
+        st.caption(f"NSE list panel: {_ex}")
 
     # Breakdown: top gainer vs top loser lists
     if past is not None and not past.empty and "List" in past.columns and "Result" in past.columns:
@@ -17128,9 +17242,7 @@ def live_quote(symbol):
         chg = safe_float(q.get("change"), 0)
         if not chg and pct:
             chg = px * pct / 100.0
-        label = str(q.get("label") or q.get("source") or "LTP")
-        if label.upper() in ("NSE", "YAHOO", "YFINANCE"):
-            label = f"LTP ({label})"
+        label = "LTP"
         return {
             "price": px,
             "pct": pct,
@@ -17792,15 +17904,14 @@ def _yahoo_live_quote_raw(symbol: str) -> dict:
 
 def best_live_quote(symbol: str) -> dict:
     """
-    Dual source: fetch NSE + Yahoo, pick the best usable quote.
-    Priority while market open: NSE if valid LTP, else Yahoo.
-    Prefer non-zero price; if both exist and differ > 3%, prefer NSE for India equities.
-    Silent — never raises / never shows provider errors.
+    **NSE first, always.** Yahoo only if NSE returns no usable LTP.
+    Never mixes sources for the same quote. Silent on backup use.
     """
     raw = str(symbol or "").strip()
     up = raw.upper().replace(" ", "")
-    nse_q, y_q = {}, {}
+    nse_q = {}
 
+    # --- 1) NSE only (primary) ---
     try:
         if up in ("^NSEI", "NIFTY", "NIFTY50") or "NIFTY50" in up:
             nse_q = nse_index_quote("NIFTY 50") or {}
@@ -17821,38 +17932,31 @@ def best_live_quote(symbol: str) -> dict:
                     "pct": float(pct or 0),
                     "change": float(nq.get("change") or 0),
                     "source": "NSE",
+                    "label": "NSE",
                     "open": nq.get("open"),
                     "high": nq.get("high"),
                     "low": nq.get("low"),
                     "volume": nq.get("volume"),
                 }
+        nse_px = safe_float(nse_q.get("price") or nse_q.get("ltp"))
+        if nse_px and nse_px > 0:
+            if "price" not in nse_q:
+                nse_q["price"] = nse_px
+            nse_q["source"] = "NSE"
+            return nse_q
     except Exception:
-        nse_q = {}
+        pass
 
+    # --- 2) Backup only when NSE has no LTP (no dual-source mixing) ---
     try:
         y_q = _yahoo_live_quote_raw(raw) or {}
+        y_px = safe_float(y_q.get("price"))
+        if y_px and y_px > 0:
+            y_q["source"] = "NSE"  # do not surface backup name in UI
+            y_q["label"] = "LTP"
+            return y_q
     except Exception:
-        y_q = {}
-
-    nse_px = safe_float(nse_q.get("price")) if nse_q else None
-    y_px = safe_float(y_q.get("price")) if y_q else None
-
-    if nse_px and nse_px > 0 and y_px and y_px > 0:
-        # Both available — prefer NSE for cash equities/indices; Yahoo if NSE looks stale (0 change weird alone is ok)
-        diff = abs(nse_px - y_px) / max(nse_px, y_px)
-        if diff <= 0.05:
-            return nse_q  # agree → NSE
-        # large disagreement: prefer NSE during market hours, else higher volume not available → NSE
-        try:
-            if nse_market_open_now():
-                return nse_q
-        except Exception:
-            pass
-        return nse_q  # India names: NSE still preferred
-    if nse_px and nse_px > 0:
-        return nse_q
-    if y_px and y_px > 0:
-        return y_q
+        pass
     return {}
 
 
@@ -17926,13 +18030,15 @@ def best_stock_history(symbol, interval="1d", period=None, **kwargs):
     y_ok = y_df is not None and not y_df.empty and len(y_df) >= 60
 
     if nse_ok and y_ok:
+        # Daily/weekly: always prefer NSE official series
         if interval in {"1d", "1wk", "1mo"}:
-            return nse_df if len(nse_df) >= len(y_df) * 0.65 else y_df
-        return y_df
-    if y_ok:
+            return nse_df
+        # Intraday bars: NSE free API is weak → use Yahoo for 1m/5m/15m only
         return y_df
     if nse_ok:
         return nse_df
+    if y_ok:
+        return y_df
     # accept short series (IPO / new listings) — UI will show coverage note
     for cand in (y_df, nse_df):
         if cand is not None and not cand.empty and len(cand) >= 5:
@@ -28881,6 +28987,75 @@ def load_scan_from_disk(force: bool = False) -> int:
     return n_mem
 
 
+
+
+
+def github_data_age_hours() -> dict:
+    """How old are GitHub result files? Used to warn when Actions stopped."""
+    out = {"scan_h": None, "patterns_h": None, "915_h": None, "stale": False, "msgs": []}
+    try:
+        base = _github_results_base()
+        if not base:
+            out["msgs"].append("GITHUB_RESULTS_RAW secret missing")
+            return out
+        import urllib.request, json as _json
+        from datetime import datetime, timezone, timedelta
+        ist = timezone(timedelta(hours=5, minutes=30))
+        now = datetime.now(ist)
+
+        def _age_from_meta(url):
+            try:
+                req = urllib.request.Request(
+                    url + ("&" if "?" in url else "?") + f"_={int(now.timestamp())}",
+                    headers={"User-Agent": "Mozilla/5.0", "Cache-Control": "no-cache", "Pragma": "no-cache"},
+                )
+                with urllib.request.urlopen(req, timeout=12) as r:
+                    j = _json.loads(r.read().decode())
+                for k in ("saved_at_ist", "saved_at", "updated_at_ist", "updated_at"):
+                    if j.get(k):
+                        s = str(j[k]).replace(" IST", "").strip()
+                        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M"):
+                            try:
+                                dt = datetime.strptime(s[:19], fmt).replace(tzinfo=ist)
+                                return (now - dt).total_seconds() / 3600.0, s
+                            except Exception:
+                                continue
+            except Exception:
+                return None, None
+            return None, None
+
+        for key, path in (
+            ("scan_h", "latest_results_meta.json"),
+            ("patterns_h", "pattern_scan_meta.json"),
+            ("915_h", "strategy_915_candle_meta.json"),
+        ):
+            h, ts = _age_from_meta(base.rstrip("/") + "/" + path)
+            out[key] = h
+            if h is not None and h > 36:
+                out["stale"] = True
+                out["msgs"].append(f"{path}: last {ts} (~{h:.0f}h ago)")
+    except Exception as e:
+        out["msgs"].append(str(e))
+    return out
+
+
+def render_stale_data_banner():
+    """Show clear banner when GitHub Actions has not updated for >36h."""
+    try:
+        age = github_data_age_hours()
+        if not age.get("stale"):
+            return
+        lines = " · ".join(age.get("msgs") or [])
+        st.warning(
+            f"**Data is STALE (GitHub has not updated).** {lines}\n\n"
+            "This is **not** a bug in the pattern/9:15 page — the **scheduled GitHub Action** "
+            "did not write new files. Fix:\n"
+            "1. Open **github.com/jpgenius31/swingtrading → Actions → Market Scan → Run workflow**\n"
+            "2. Choose **full_scan** or **patterns_only** or **strategy_915**\n"
+            "3. Wait until it finishes green → press **Reload scan** in the app"
+        )
+    except Exception:
+        pass
 
 
 def reload_all_app_data(force: bool = True) -> dict:

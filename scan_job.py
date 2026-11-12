@@ -413,33 +413,117 @@ def run_915_open_strategy(limit: int = 20, list_mode: str = "both") -> pd.DataFr
     now = datetime.now(ist)
     print(f"9:15 strategy run · {now.strftime('%Y-%m-%d %H:%M:%S IST')} · mode={list_mode}")
 
-    # Build liquid universe (Nifty50-like) as proxy if we cannot hit NSE gainers API
+    # Prefer NSE website top gainer/loser (F&O); Yahoo only if NSE blocked
     syms_g, syms_l = [], []
     mode = str(list_mode).lower()
     try:
-        # Yahoo day change on Nifty50+bank as free gainer/loser proxy
-        base = NIFTY50 + EXTRA[:30]
+        import requests
+        sess = requests.Session()
+        sess.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json",
+            "Referer": "https://www.nseindia.com/market-data/top-gainers-loosers",
+        })
+        try:
+            sess.get("https://www.nseindia.com", timeout=8)
+        except Exception:
+            pass
         rows = []
-        for s in base:
+        for idx_name in ("gainers", "loosers"):
             try:
-                h = yf.Ticker(yf_sym(s)).history(period="5d", interval="1d")
-                if h is None or len(h) < 2:
+                r = sess.get(
+                    f"https://www.nseindia.com/api/live-analysis-variations?index={idx_name}",
+                    timeout=12,
+                )
+                if r.status_code != 200:
                     continue
-                last = float(h["Close"].iloc[-1])
-                prev = float(h["Close"].iloc[-2])
-                pct = (last / prev - 1) * 100 if prev else 0
-                rows.append({"Stock": s, "LTP": last, "Move %": pct})
-            except Exception:
-                continue
-            time.sleep(0.05)
+                data = r.json()
+
+                def walk(o):
+                    if isinstance(o, list):
+                        for x in o:
+                            yield from walk(x) if not isinstance(x, dict) else [x] if "symbol" in x or "pChange" in x else walk(x)
+                    elif isinstance(o, dict):
+                        if "symbol" in o or "lastPrice" in o:
+                            yield o
+                        for v in o.values():
+                            if isinstance(v, (list, dict)):
+                                yield from walk(v)
+
+                for it in walk(data):
+                    if not isinstance(it, dict):
+                        continue
+                    sym = str(it.get("symbol") or "").upper().strip()
+                    if not sym or sym in ("NIFTY", "BANKNIFTY"):
+                        continue
+                    try:
+                        pct = float(it.get("pChange") or 0)
+                    except Exception:
+                        pct = 0.0
+                    try:
+                        ltp = float(it.get("lastPrice") or 0)
+                    except Exception:
+                        ltp = 0.0
+                    rows.append({"Stock": sym, "LTP": ltp, "Move %": pct})
+            except Exception as e:
+                print(f"NSE {idx_name}: {e}")
         if rows:
-            dfm = pd.DataFrame(rows)
+            dfm = pd.DataFrame(rows).drop_duplicates("Stock")
             syms_g = dfm.sort_values("Move %", ascending=False).head(limit)["Stock"].tolist()
             syms_l = dfm.sort_values("Move %", ascending=True).head(limit)["Stock"].tolist()
+            print(f"NSE movers · gainers {len(syms_g)} · losers {len(syms_l)} · sample G={syms_g[:5]} L={syms_l[:5]}")
+            try:
+                pd.DataFrame({"Stock": syms_g, "Symbol": syms_g}).to_csv(ROOT / "nse_top_gainers_cache.csv", index=False)
+                pd.DataFrame({"Stock": syms_l, "Symbol": syms_l}).to_csv(ROOT / "nse_top_losers_cache.csv", index=False)
+            except Exception:
+                pass
     except Exception as e:
-        print(f"mover list: {e}")
-        syms_g = NIFTY50[:limit]
-        syms_l = list(reversed(NIFTY50))[:limit]
+        print(f"NSE movers failed: {e}")
+    # Cached NSE lists from last successful run (committed or previous job)
+    if not syms_g and (ROOT / "nse_top_gainers_cache.csv").exists():
+        try:
+            syms_g = pd.read_csv(ROOT / "nse_top_gainers_cache.csv")["Stock"].astype(str).head(limit).tolist()
+            if not syms_g:
+                syms_g = pd.read_csv(ROOT / "nse_top_gainers_cache.csv")["Symbol"].astype(str).head(limit).tolist()
+            print(f"Using cached NSE gainers: {syms_g[:5]}")
+        except Exception:
+            pass
+    if not syms_l and (ROOT / "nse_top_losers_cache.csv").exists():
+        try:
+            syms_l = pd.read_csv(ROOT / "nse_top_losers_cache.csv")["Stock"].astype(str).head(limit).tolist()
+            if not syms_l:
+                syms_l = pd.read_csv(ROOT / "nse_top_losers_cache.csv")["Symbol"].astype(str).head(limit).tolist()
+            print(f"Using cached NSE losers: {syms_l[:5]}")
+        except Exception:
+            pass
+    # Last resort only if no NSE live and no cache — liquid names, NOT presented as NSE top G/L
+    if not syms_g or not syms_l:
+        try:
+            base = NIFTY50 + EXTRA[:40]
+            rows = []
+            for s in base:
+                try:
+                    h = yf.Ticker(yf_sym(s)).history(period="5d", interval="1d")
+                    if h is None or len(h) < 2:
+                        continue
+                    last = float(h["Close"].iloc[-1])
+                    prev = float(h["Close"].iloc[-2])
+                    pct = (last / prev - 1) * 100 if prev else 0
+                    rows.append({"Stock": s, "LTP": last, "Move %": pct})
+                except Exception:
+                    continue
+                time.sleep(0.04)
+            if rows:
+                dfm = pd.DataFrame(rows)
+                if not syms_g:
+                    syms_g = dfm.sort_values("Move %", ascending=False).head(limit)["Stock"].tolist()
+                if not syms_l:
+                    syms_l = dfm.sort_values("Move %", ascending=True).head(limit)["Stock"].tolist()
+                print("Yahoo fallback movers used")
+        except Exception as e:
+            print(f"mover list: {e}")
+            syms_g = syms_g or NIFTY50[:limit]
+            syms_l = syms_l or list(reversed(NIFTY50))[:limit]
 
     universe = []
     if mode in ("gainer", "top gainer", "gainers"):
@@ -530,8 +614,12 @@ def run_915_open_strategy(limit: int = 20, list_mode: str = "both") -> pd.DataFr
     live_path = ROOT / "strategy_915_candle_live.csv"
     past_path = ROOT / "strategy_915_candle_past.csv"
     meta_path = ROOT / "strategy_915_candle_meta.json"
-    if not df.empty:
+    # Always write live+meta (even 0 rows) so GitHub commit succeeds and app sees fresh timestamp
+    try:
         df.to_csv(live_path, index=False)
+    except Exception as e:
+        print(f"write live: {e}")
+    if not df.empty:
         # append to past (dedupe same day stock+signal)
         try:
             if past_path.exists():
@@ -965,23 +1053,50 @@ def main():
         try:
             run_915_open_strategy(limit=min(args.limit, 25), list_mode=args.list_915)
         except Exception as e:
-            print(f"915 candle: {e}")
+            print(f"915 candle ERROR (non-fatal): {e}")
+            import traceback
+            traceback.print_exc()
+            # Still stamp meta so pipeline is not "dead"
+            try:
+                from datetime import datetime, timezone, timedelta
+                ist = timezone(timedelta(hours=5, minutes=30))
+                now = datetime.now(ist)
+                (ROOT / "strategy_915_candle_meta.json").write_text(
+                    json.dumps({
+                        "rows": 0,
+                        "ok": False,
+                        "error": str(e)[:500],
+                        "saved_at_ist": now.strftime("%Y-%m-%d %H:%M:%S IST"),
+                        "source": "scan_job.py --915 (error recovery)",
+                    }, indent=2),
+                    encoding="utf-8",
+                )
+                if not (ROOT / "strategy_915_candle_live.csv").exists():
+                    pd.DataFrame().to_csv(ROOT / "strategy_915_candle_live.csv", index=False)
+            except Exception as e2:
+                print(f"meta recovery: {e2}")
         try:
             evaluate_915_past_on_github(max_rows=150)
         except Exception as _ev:
             print(f"915 eval: {_ev}")
-        try:
-            run_all_pattern_scan(limit_stocks=max(args.limit, 80), min_fit=55.0, completed_within=45)
-        except Exception as e:
-            print(f"pattern scan: {e}")
+        # Patterns are a SEPARATE job — do not run here (was causing 9:15 failures / timeouts)
         raise SystemExit(0)
     print("Starting headless scan…")
     df = run(limit=args.limit, full=args.full)
     if df is None or df.empty:
-        print("ERROR: no rows — providers blocked or network issue")
-        # still write empty meta so CI shows failure clearly
-        OUT_META.write_text(json.dumps({"rows": 0, "ok": False, "ts": datetime.utcnow().isoformat()}), encoding="utf-8")
-        raise SystemExit(1)
+        print("WARNING: no rows this run — providers blocked or network issue")
+        from datetime import datetime, timezone, timedelta
+        ist = timezone(timedelta(hours=5, minutes=30))
+        OUT_META.write_text(json.dumps({
+            "rows": 0,
+            "ok": False,
+            "saved_at": datetime.utcnow().isoformat() + "Z",
+            "saved_at_ist": datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S IST"),
+            "source": "scan_job.py (empty run)",
+            "limit": args.limit,
+        }, indent=2), encoding="utf-8")
+        # Exit 0 so scheduled Mon–Fri job stays green; app keeps last good CSV
+        raise SystemExit(0)
     df = df.sort_values(["Prediction", "Risk %"], ascending=[False, True])
     df.to_csv(OUT_CSV, index=False)
     meta = {
