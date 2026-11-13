@@ -25892,6 +25892,63 @@ def show_expert_trader_box(symbol: str, call_hint: str = ""):
         f"Rev {v.get('revenue_cr')} · Profit {v.get('profit_cr')}"
     )
     st.info(f"**Learning:** {v.get('learning', '')}")
+
+    # ---- My Strategy pattern stage (FORMING / FORMED / FRESH) on this stock ----
+    try:
+        st.markdown("##### 📐 My Strategy pattern (price ↓ · RSI ↑)")
+        df_h = stock_history(clean_symbol(symbol), period="1y", interval="1d")
+        info = detect_my_strategy_divergence(df_h, load_my_strategy_params()) if df_h is not None else {}
+        status = str((info or {}).get("status") or "NONE")
+        stage = str((info or {}).get("stage") or status)
+        daily = str((info or {}).get("daily_note") or "")
+        reason = str((info or {}).get("reason") or "")
+        colors = {
+            "FORMING": ("#f59e0b", "Pattern is **trying to form**"),
+            "PATTERN_FORMED": ("#38bdf8", "Pattern **has formed** — waiting confirmation / window"),
+            "ACTIVE_FRESH": ("#22c55e", "Pattern **has formed** — **fresh buy window** (day 0–2)"),
+            "TOO_LATE": ("#94a3b8", "Pattern formed earlier — **too late** for fresh entry"),
+            "WAIT": ("#a78bfa", "Pattern near — **wait** confirmation"),
+            "RSI_FAILED": ("#ef4444", "Pattern **failed** — RSI line broke"),
+            "NONE": ("#64748b", "No My Strategy pattern on this stock right now"),
+        }
+        col, title = colors.get(status, colors["NONE"])
+        s1 = (info or {}).get("swing1")
+        s2 = (info or {}).get("swing2")
+        r1 = (info or {}).get("rsi1")
+        r2 = (info or {}).get("rsi2")
+        days = (info or {}).get("days_since_setup")
+        bars = (info or {}).get("bars_between")
+        detail_bits = []
+        if s1 is not None:
+            detail_bits.append(f"1st low ₹{s1}")
+        if s2 is not None:
+            detail_bits.append(f"2nd low ₹{s2}")
+        if r1 is not None and r2 is not None:
+            detail_bits.append(f"RSI {r1}→{r2}")
+        elif r1 is not None:
+            detail_bits.append(f"RSI@{r1}")
+        if bars is not None:
+            detail_bits.append(f"{bars} bars apart")
+        if days is not None:
+            detail_bits.append(f"{days}d since setup")
+        st.markdown(
+            f"""
+<div style="border:1px solid {col};border-radius:12px;padding:12px 14px;background:#0b1220;margin:6px 0 10px 0;">
+  <div style="color:{col};font-weight:800;font-size:1.05rem;">{status}</div>
+  <div style="color:#e2e8f0;margin-top:4px;">{title}</div>
+  <div style="color:#94a3b8;font-size:0.88rem;margin-top:6px;">{" · ".join(detail_bits) if detail_bits else "—"}</div>
+  <div style="color:#cbd5e1;font-size:0.9rem;margin-top:8px;">{daily or reason}</div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            "Stages update daily: **FORMING** → **PATTERN_FORMED** → **ACTIVE_FRESH** (buy) · "
+            "or **TOO_LATE** / **RSI_FAILED**. Full list also on **Strategy Lab → My Strategy**."
+        )
+    except Exception as _ms_e:
+        st.caption(f"My Strategy pattern panel: {_ms_e}")
+
     return v
 
 
