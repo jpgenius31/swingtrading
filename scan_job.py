@@ -17,8 +17,8 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from datetime import datetime
 from pathlib import Path
+from datetime import datetime, timezone, timedelta
 
 import numpy as np
 import pandas as pd
@@ -286,7 +286,7 @@ def _write_strategy_and_index(df: pd.DataFrame):
             sdf = pd.DataFrame(rows)
             sdf.to_csv(ROOT / "strategy_live_signals.csv", index=False)
             (ROOT / "strategy_live_meta.json").write_text(
-                json.dumps({"n": len(sdf), "source": "scan_job", "saved_at": datetime.utcnow().isoformat() + "Z"}, indent=2),
+                json.dumps({"n": len(sdf), "source": "scan_job", "saved_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}, indent=2),
                 encoding="utf-8",
             )
             print(f"OK strategy_live_signals.csv · {len(sdf)} rows")
@@ -315,7 +315,6 @@ def _write_strategy_and_index(df: pd.DataFrame):
 
 def _write_sync_and_meta(n_rows: int):
     """So Streamlit app auto-picks new scan without manual Reload."""
-    from datetime import datetime, timezone, timedelta
     ist = timezone(timedelta(hours=5, minutes=30))
     now = datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S IST")
     meta = {
@@ -446,8 +445,7 @@ def run_915_open_strategy(limit: int = 20, list_mode: str = "both") -> pd.DataFr
     Runs on GitHub at ~09:15 IST so the app loads signals without manual scan.
     """
     import yfinance as yf
-    from datetime import datetime, timezone, timedelta
-
+    
     ist = timezone(timedelta(hours=5, minutes=30))
     now = datetime.now(ist)
     print(f"9:15 strategy run · {now.strftime('%Y-%m-%d %H:%M:%S IST')} · mode={list_mode}")
@@ -829,7 +827,6 @@ def run_all_pattern_scan(
     Timeframes: Daily, Weekly, 1h, 30m, 15m (Yahoo-supported).
     """
     import yfinance as yf
-    from datetime import datetime, timezone, timedelta
     try:
         from pattern_lib import detect_structure_pattern, CHART_STRUCTURE_PATTERNS
     except Exception as e:
@@ -945,7 +942,7 @@ def run_all_pattern_scan(
 def evaluate_915_past_on_github(max_rows: int = 120) -> None:
     """Close PENDING 915 rows to TARGET / STOP without Streamlit (GitHub Action)."""
     import yfinance as yf
-    from datetime import datetime, timezone, timedelta, time as _time
+    from datetime import time as _time
     path = ROOT / "strategy_915_candle_past.csv"
     if not path.exists():
         return
@@ -1097,7 +1094,6 @@ def main():
             traceback.print_exc()
             # Still stamp meta so pipeline is not "dead"
             try:
-                from datetime import datetime, timezone, timedelta
                 ist = timezone(timedelta(hours=5, minutes=30))
                 now = datetime.now(ist)
                 (ROOT / "strategy_915_candle_meta.json").write_text(
@@ -1124,12 +1120,11 @@ def main():
     df = run(limit=args.limit, full=args.full)
     if df is None or df.empty:
         print("WARNING: no rows this run — providers blocked or network issue")
-        from datetime import datetime, timezone, timedelta
         ist = timezone(timedelta(hours=5, minutes=30))
         OUT_META.write_text(json.dumps({
             "rows": 0,
             "ok": False,
-            "saved_at": datetime.utcnow().isoformat() + "Z",
+            "saved_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "saved_at_ist": datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S IST"),
             "source": "scan_job.py (empty run)",
             "limit": args.limit,
@@ -1141,7 +1136,7 @@ def main():
     meta = {
         "rows": int(len(df)),
         "ok": True,
-        "saved_at": datetime.utcnow().isoformat() + "Z",
+        "saved_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "source": "scan_job.py",
         "limit": args.limit,
     }
