@@ -100,7 +100,11 @@ jobs:
       - name: Run headless scan
         id: scan
         continue-on-error: true
-        run: python scan_job.py --limit 120
+        run: |
+          set +e
+          python scan_job.py --limit 120
+          echo "scan_job exit=$?"
+          exit 0
       - name: Show result files
         run: |
           ls -la latest_results.csv latest_results_meta.json 2>/dev/null || true
