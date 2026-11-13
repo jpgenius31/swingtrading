@@ -14065,49 +14065,99 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
 
 def _detect_forming_divergence(lows, close, rsi, piv, order, min_bars, min_swing, min_rsi_lift) -> dict:
     """
-    Daily update when full pair is not ready yet:
-    first swing low is in; price still soft / lower-lows developing; RSI not yet confirming HL.
+    PRIOR prediction — before the pattern is complete.
+
+    Stage A (EARLY_FORMING): 1st swing low marked; price still drifting lower / sideways;
+                             RSI holding or starting to make higher troughs → predict pattern may form.
+    Stage B (FORMING):       Price has undercut 1st low (or nearly) while RSI is above 1st-low RSI
+                             → 2nd low is developing; lines not fully locked yet.
+    Full PATTERN_FORMED / ACTIVE_FRESH only after two confirmed pivots + unbroken lines.
     """
     empty = {}
     try:
         n = len(lows)
         if n < 40 or not piv:
             return empty
+
+        # Use last solid pivot as "1st low" candidate (not the last 1–2 bars — still printing)
         i1 = piv[-1]
-        # Prefer a pivot that is not the very last bar (still developing)
         if i1 >= n - 2 and len(piv) >= 2:
             i1 = piv[-2]
+        if i1 >= n - 1:
+            return empty
+
         p1 = float(lows.iloc[i1])
         r1 = float(rsi.iloc[i1])
         if any(np.isnan(x) for x in (p1, r1)):
             return empty
+
         last_low = float(lows.iloc[-1])
         last_close = float(close.iloc[-1])
         last_rsi = float(rsi.iloc[-1]) if pd.notna(rsi.iloc[-1]) else r1
         days_since = int(n - 1 - i1)
-        if days_since < 3:
-            return empty  # too early to call "forming"
-        # Price trying to undercut or press the first low; RSI holding or rising
-        price_pressing = last_low <= p1 * 1.02 or last_close < p1 * 1.03
-        rsi_not_collapsing = last_rsi >= r1 - 5
-        if not (price_pressing and rsi_not_collapsing):
+        if days_since < 2:
             return empty
+
+        # Recent path after 1st low: price soft, RSI not collapsing
+        seg_low = lows.iloc[i1 + 1 :]
+        seg_rsi = rsi.iloc[i1 + 1 :]
+        if seg_low.empty:
+            return empty
+        min_after = float(seg_low.min())
+        rsi_at_min_i = int(seg_low.values.argmin())
+        rsi_at_price_min = float(seg_rsi.iloc[rsi_at_min_i]) if rsi_at_min_i < len(seg_rsi) else last_rsi
+
+        price_making_lower = min_after <= p1 * 1.005  # touching / undercutting 1st low
+        price_pressing = last_low <= p1 * 1.025 or last_close <= p1 * 1.03
+        rsi_holding = last_rsi >= (r1 - 6)
+        rsi_improving = rsi_at_price_min >= (r1 - 2) or last_rsi > r1
+
+        if not (price_pressing or price_making_lower):
+            return empty
+        if not rsi_holding:
+            return empty
+
+        # Stronger prior: price already under 1st low while RSI >= 1st RSI → classic building divergence
+        building_2nd = min_after < p1 and (rsi_at_price_min >= r1 or last_rsi >= r1)
+
+        if building_2nd:
+            status = "FORMING"
+            stage = "FORMING"
+            note = (
+                "PRIOR: pattern is **building** — price already under 1st low while RSI holds/rises. "
+                "Watch for 2nd swing low + unbroken lines → then PATTERN_FORMED."
+            )
+            reason = (
+                f"FORMING (prior): 1st low ₹{p1:.2f} (RSI {r1:.1f}) → price low ₹{min_after:.2f} "
+                f"with RSI ~{rsi_at_price_min:.1f} / last RSI {last_rsi:.1f}. "
+                f"Not complete until 2nd pivot + clean lines."
+            )
+        else:
+            status = "FORMING"
+            stage = "EARLY_FORMING"
+            note = (
+                "PRIOR: pattern **may form** — 1st low set, price still soft, RSI not collapsing. "
+                "No buy yet; track daily until 2nd lower-low + RSI higher-low."
+            )
+            reason = (
+                f"EARLY_FORMING (prior): 1st swing ₹{p1:.2f} (RSI {r1:.1f}), "
+                f"{days_since}d ago · last ₹{last_close:.2f} / RSI {last_rsi:.1f}. "
+                f"Prediction: bullish divergence possible if price LL + RSI HL complete."
+            )
+
         return {
             "ok_for_buy": False,
-            "status": "FORMING",
-            "stage": "FORMING",
+            "status": status,
+            "stage": stage,
             "swing1": round(p1, 2),
-            "swing2": None,
+            "swing2": round(min_after, 2) if building_2nd else None,
             "rsi1": round(r1, 1),
-            "rsi2": round(last_rsi, 1) if last_rsi == last_rsi else None,
+            "rsi2": round(float(last_rsi), 1) if last_rsi == last_rsi else None,
             "days_since_setup": days_since,
             "bars_between": days_since,
-            "reason": (
-                f"FORMING: 1st swing low ₹{p1:.2f} (RSI {r1:.1f}) · "
-                f"price still working lower-lows · RSI {last_rsi:.1f} — "
-                f"waiting for 2nd lower-low + higher RSI low with clean lines."
-            ),
-            "daily_note": "Pattern is trying to form — watch for 2nd lower-low + RSI higher-low.",
+            "reason": reason,
+            "daily_note": note,
+            "prior_prediction": True,
         }
     except Exception:
         return empty
@@ -14177,7 +14227,7 @@ def _row_matches_strategy(df: pd.DataFrame, sid: str) -> bool:
             info = detect_my_strategy_divergence(d)
             stt = str(info.get("status") or "")
             # Daily board: forming + formed + fresh (not NONE)
-            return stt in ("ACTIVE_FRESH", "PATTERN_FORMED", "FORMING", "TOO_LATE", "WAIT")
+            return stt in ("ACTIVE_FRESH", "PATTERN_FORMED", "FORMING", "TOO_LATE", "WAIT")  # EARLY_FORMING uses status FORMING
         if sid == "trend_pullback":
             return price > ema20 and ema20 >= ema50 * 0.995 and 42 <= rsi <= 68
         if sid == "breakout_vol":
@@ -14278,7 +14328,7 @@ def live_strategy_signals(base: pd.DataFrame, sid: str, max_check: int = 35) -> 
                 elif status == "PATTERN_FORMED":
                     remark = daily or "Pattern has formed — waiting confirmation"
                 elif status == "FORMING":
-                    remark = daily or "Pattern is trying to form — watch 2nd low + RSI HL"
+                    remark = daily or "PRIOR — pattern building / may form — not a buy yet"
                 elif status == "TOO_LATE":
                     days = info.get("days_since_setup")
                     remark = daily or f"Pattern formed earlier ({days}d ago) — not a fresh buy"
@@ -25903,7 +25953,7 @@ def show_expert_trader_box(symbol: str, call_hint: str = ""):
         daily = str((info or {}).get("daily_note") or "")
         reason = str((info or {}).get("reason") or "")
         colors = {
-            "FORMING": ("#f59e0b", "Pattern is **trying to form**"),
+            "FORMING": ("#f59e0b", "PRIOR — pattern is **building** (not complete yet)"),
             "PATTERN_FORMED": ("#38bdf8", "Pattern **has formed** — waiting confirmation / window"),
             "ACTIVE_FRESH": ("#22c55e", "Pattern **has formed** — **fresh buy window** (day 0–2)"),
             "TOO_LATE": ("#94a3b8", "Pattern formed earlier — **too late** for fresh entry"),
@@ -25912,6 +25962,8 @@ def show_expert_trader_box(symbol: str, call_hint: str = ""):
             "NONE": ("#64748b", "No My Strategy pattern on this stock right now"),
         }
         col, title = colors.get(status, colors["NONE"])
+        if stage == "EARLY_FORMING":
+            col, title = ("#fbbf24", "PRIOR prediction — pattern **may form** (1st low only)")
         s1 = (info or {}).get("swing1")
         s2 = (info or {}).get("swing2")
         r1 = (info or {}).get("rsi1")
