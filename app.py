@@ -11570,46 +11570,156 @@ def show_915_strategy_desk():
     except Exception as _ex:
         st.caption(f"NSE list panel: {_ex}")
 
-    # Breakdown: top gainer vs top loser lists
-    if past is not None and not past.empty and "List" in past.columns and "Result" in past.columns:
+    # ----- Performance + where strategy goes wrong -----
+    if past is not None and not past.empty and "Result" in past.columns:
         try:
             ru = past["Result"].astype(str).str.upper()
             closed = past[ru.str.contains("TARGET", na=False) | ru.str.contains("STOP", na=False)].copy()
             if not closed.empty:
+                st.markdown("### 📊 Strategy scorecard · Top Gainer vs Top Loser · Profit vs Loss")
                 rows_br = []
-                for lab, key in (("Top Gainer", "GAINER"), ("Top Loser", "LOSER")):
-                    sub = closed[closed["List"].astype(str).str.upper().str.contains(key, na=False)]
-                    if sub.empty:
-                        rows_br.append({"List": lab, "Closed": 0, "Target": 0, "Stop": 0, "Success %": "—"})
+                for lab, key in (("Top Gainer", "GAINER"), ("Top Loser", "LOSER"), ("All lists", "")):
+                    if key:
+                        if "List" not in closed.columns:
+                            continue
+                        sub = closed[closed["List"].astype(str).str.upper().str.contains(key, na=False)]
+                    else:
+                        sub = closed
+                    if sub is None or sub.empty:
+                        rows_br.append({
+                            "List": lab, "Closed": 0, "🎯 Profit": 0, "🔴 Loss": 0,
+                            "Success %": "—", "Avg PnL %": "—",
+                        })
                         continue
                     su = sub["Result"].astype(str).str.upper()
                     tw = int(su.str.contains("TARGET", na=False).sum())
                     ts = int(su.str.contains("STOP", na=False).sum())
                     tot = tw + ts
+                    avg_pnl = "—"
+                    if "PnL %" in sub.columns:
+                        try:
+                            avg_pnl = round(float(pd.to_numeric(sub["PnL %"], errors="coerce").mean()), 2)
+                        except Exception:
+                            pass
                     rows_br.append({
                         "List": lab,
                         "Closed": tot,
-                        "Target": tw,
-                        "Stop": ts,
+                        "🎯 Profit": tw,
+                        "🔴 Loss": ts,
+                        "Success %": round(100.0 * tw / tot, 1) if tot else 0,
+                        "Avg PnL %": avg_pnl,
+                    })
+                st.dataframe(pd.DataFrame(rows_br), use_container_width=True, hide_index=True)
+
+                # CE vs PE
+                rows_ce = []
+                for lab, key in (("BUY CE", "CE"), ("BUY PE", "PE")):
+                    if "Signal" in closed.columns:
+                        sub = closed[closed["Signal"].astype(str).str.upper().str.contains(key, na=False)]
+                    elif "Option" in closed.columns:
+                        sub = closed[closed["Option"].astype(str).str.upper().str.contains(
+                            "CALL" if key == "CE" else "PUT", na=False)]
+                    else:
+                        sub = closed.iloc[0:0]
+                    if sub.empty:
+                        rows_ce.append({"Side": lab, "Closed": 0, "Profit": 0, "Loss": 0, "Success %": "—"})
+                        continue
+                    su = sub["Result"].astype(str).str.upper()
+                    tw = int(su.str.contains("TARGET", na=False).sum())
+                    ts = int(su.str.contains("STOP", na=False).sum())
+                    tot = tw + ts
+                    rows_ce.append({
+                        "Side": lab, "Closed": tot, "Profit": tw, "Loss": ts,
                         "Success %": round(100.0 * tw / tot, 1) if tot else 0,
                     })
-                st.markdown("#### Gainer vs Loser — strategy working?")
-                st.dataframe(pd.DataFrame(rows_br), use_container_width=True, hide_index=True)
-        except Exception:
-            pass
+                c_ce, c_an = st.columns([1, 1])
+                with c_ce:
+                    st.markdown("**CE vs PE**")
+                    st.dataframe(pd.DataFrame(rows_ce), use_container_width=True, hide_index=True)
+
+                # Where strategy goes wrong
+                with c_an:
+                    st.markdown("**Where strategy goes wrong**")
+                    losses = closed[closed["Result"].astype(str).str.upper().str.contains("STOP", na=False)].copy()
+                    insights = []
+                    if not losses.empty:
+                        # By list
+                        if "List" in losses.columns:
+                            for key, lab in (("GAINER", "Top Gainer"), ("LOSER", "Top Loser")):
+                                n = int(losses["List"].astype(str).str.upper().str.contains(key, na=False).sum())
+                                if n:
+                                    insights.append(f"• **{n}** losses from **{lab}** list")
+                        # By CE/PE
+                        if "Signal" in losses.columns:
+                            nce = int(losses["Signal"].astype(str).str.upper().str.contains("CE", na=False).sum())
+                            npe = int(losses["Signal"].astype(str).str.upper().str.contains("PE", na=False).sum())
+                            if nce:
+                                insights.append(f"• **{nce}** losses on **BUY CE**")
+                            if npe:
+                                insights.append(f"• **{npe}** losses on **BUY PE**")
+                        # Fail reasons
+                        if "Fail Reason" in losses.columns:
+                            fr = (
+                                losses["Fail Reason"].astype(str)
+                                .replace("", pd.NA).dropna()
+                            )
+                            fr = fr[~fr.str.upper().isin(["NAN", "NONE", "NAT"])]
+                            if not fr.empty:
+                                top_fr = fr.value_counts().head(5)
+                                insights.append("• Top fail reasons:")
+                                for reason, cnt in top_fr.items():
+                                    insights.append(f"  – {reason} (**{int(cnt)}**)")
+                        # Worst stocks
+                        if "Stock" in losses.columns:
+                            worst = losses["Stock"].astype(str).str.upper().value_counts().head(5)
+                            if not worst.empty:
+                                insights.append("• Most stopped stocks: " + ", ".join(
+                                    f"**{s}**×{int(c)}" for s, c in worst.items()
+                                ))
+                    if not insights:
+                        insights = ["• Not enough closed stop-loss trades yet for diagnosis."]
+                    st.markdown("\n".join(insights))
+
+                # Which side is stronger?
+                try:
+                    g_row = next((r for r in rows_br if r["List"] == "Top Gainer"), None)
+                    l_row = next((r for r in rows_br if r["List"] == "Top Loser"), None)
+                    tips = []
+                    if g_row and l_row and isinstance(g_row.get("Success %"), (int, float)) and isinstance(l_row.get("Success %"), (int, float)):
+                        if g_row["Success %"] > l_row["Success %"] + 5:
+                            tips.append("Top **Gainer** list is outperforming Top Loser — prefer Gainer CE setups.")
+                        elif l_row["Success %"] > g_row["Success %"] + 5:
+                            tips.append("Top **Loser** list is outperforming Top Gainer — prefer Loser PE setups.")
+                        else:
+                            tips.append("Gainer and Loser lists are similar in success rate so far.")
+                    if tips:
+                        st.info(" ".join(tips))
+                except Exception:
+                    pass
+        except Exception as _e_br:
+            st.caption(f"Scorecard: {_e_br}")
 
     # ----- Filters -----
     st.markdown("### 🔎 Filters")
+    st.caption(
+        "Filter **Top Gainer / Top Loser**, then **Profit or Loss**, to audit which side is working."
+    )
     f1, f2, f3, f4 = st.columns(4)
     with f1:
-        f_list = st.selectbox("List", ["All", "GAINER", "LOSER"], key="desk915_f_list")
+        f_list = st.selectbox(
+            "List (NSE)",
+            ["All", "Top Gainer", "Top Loser"],
+            key="desk915_f_list",
+            help="Trades taken from NSE top gainer list vs top loser list",
+        )
     with f2:
         f_sig = st.selectbox("Signal", ["All", "CE", "PE"], key="desk915_f_sig")
     with f3:
         f_res = st.selectbox(
-            "Result",
-            ["All closed", "🎯 TARGET ACHIEVED", "🔴 STOP LOSS HIT"],
+            "Profit / Loss",
+            ["All closed", "🎯 Profit (Target hit)", "🔴 Loss (Stop hit)"],
             key="desk915_f_res",
+            help="See only winning or only losing trades",
         )
     with f4:
         f_day = st.selectbox(
@@ -11626,16 +11736,17 @@ def show_915_strategy_desk():
             ru = v["Result"].astype(str).str.upper()
             v = v[ru.str.contains("TARGET", na=False) | ru.str.contains("STOP", na=False)].copy()
         if f_list != "All" and "List" in v.columns:
-            v = v[v["List"].astype(str).str.upper().str.contains(f_list, na=False)]
+            key = "GAINER" if "GAINER" in f_list.upper() else ("LOSER" if "LOSER" in f_list.upper() else f_list)
+            v = v[v["List"].astype(str).str.upper().str.contains(key, na=False)]
         if f_sig != "All":
             if "Signal" in v.columns:
                 v = v[v["Signal"].astype(str).str.upper().str.contains(f_sig, na=False)]
             elif "Option" in v.columns:
                 key = "CALL" if f_sig == "CE" else "PUT"
                 v = v[v["Option"].astype(str).str.upper().str.contains(key, na=False)]
-        if f_res == "🎯 TARGET ACHIEVED" and "Result" in v.columns:
+        if "Profit" in str(f_res) and "Result" in v.columns:
             v = v[v["Result"].astype(str).str.upper().str.contains("TARGET", na=False)]
-        elif f_res == "🔴 STOP LOSS HIT" and "Result" in v.columns:
+        elif "Loss" in str(f_res) and "Result" in v.columns:
             v = v[v["Result"].astype(str).str.upper().str.contains("STOP", na=False)]
         if f_day == "Today only" and "Prediction Date" in v.columns:
             today = india_now().strftime("%Y-%m-%d")
@@ -11707,6 +11818,31 @@ def show_915_strategy_desk():
                     f"({(100.0*_wins/_tot) if _tot else 0:.1f}%) · "
                     f"**Net P&L @ 1 lot each:** ₹{_sum_rs:+,.0f}"
                 )
+            except Exception:
+                pass
+
+            
+            # Quick split: profit list vs loss list under current filters
+            try:
+                _prof = show[show["Result"].astype(str).str.contains("TARGET", case=False, na=False)]
+                _loss = show[show["Result"].astype(str).str.contains("STOP", case=False, na=False)]
+                pc1, pc2 = st.columns(2)
+                with pc1:
+                    st.markdown(f"#### 🎯 Profit trades ({len(_prof)})")
+                    if _prof.empty:
+                        st.caption("No profit trades in this filter.")
+                    else:
+                        st.dataframe(
+                            _prof[[c for c in ["Stock", "Action", "List", "Entry ₹", "Target ₹", "PnL %", "Time"] if c in _prof.columns]],
+                            use_container_width=True, hide_index=True, height=220,
+                        )
+                with pc2:
+                    st.markdown(f"#### 🔴 Loss trades ({len(_loss)})")
+                    if _loss.empty:
+                        st.caption("No loss trades in this filter.")
+                    else:
+                        cols_l = [c for c in ["Stock", "Action", "List", "Entry ₹", "Stop ₹", "PnL %", "Fail Reason", "Time"] if c in _loss.columns]
+                        st.dataframe(_loss[cols_l], use_container_width=True, hide_index=True, height=220)
             except Exception:
                 pass
 
