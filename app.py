@@ -13567,7 +13567,7 @@ SWING_STRATEGIES = {
         "hold_days": 15,
         "typical_win": "45–55%",
         "typical_exp": "illustrative",
-        "desc": "Price makes lower lows while RSI makes higher lows — bullish divergence.",
+        "desc": "Price lower-lows + RSI higher-lows (no RSI band). Lines unbroken. 1–6 month window.",
         "beginner": "On daily chart draw swing lows on price and on RSI. If price falls but RSI rises, wait for a small confirmation green day. Stop under the swing low.",
         "why": "Momentum often turns before price; divergence flags early accumulation.",
     },
@@ -13626,16 +13626,18 @@ SWING_STRATEGIES = {
 
 def load_my_strategy_params() -> dict:
     default = {
-        "lookback": 130,              # ~6 months trading days on 1D
-        "min_price_swing_pct": 2.5,   # meaningful lower-low depth
+        "lookback": 130,              # ~6 months on daily (patterns may form over 1–6 months)
+        "min_price_swing_pct": 1.5,   # price must make a real lower low
         "rsi_period": 14,
         "require_confirmation": True,
-        "max_days_after_setup": 2,    # next day or next-to-next only
-        "pivot_order": 5,            # stricter swings (less noise)
-        "line_break_tol_pct": 0.15,  # tighter unbroken-line rule
-        "min_rsi_lift": 4.0,         # RSI must rise clearly
-        "min_bars_between": 15,      # not adjacent noise lows
-        "max_rally_after_pct": 3.5,  # if already ran hard, not a fresh call
+        "max_days_after_setup": 2,    # ACTIVE_FRESH only day 0–2 after 2nd low
+        "pivot_order": 4,
+        "line_break_tol_pct": 0.25,  # unbroken price + RSI trendlines
+        "min_rsi_lift": 1.0,         # any RSI rise is enough (NO RSI min/max band)
+        "min_bars_between": 8,       # short (≈1–2 weeks) up to full lookback
+        "max_rally_after_pct": 5.0,  # already exploded off low → LATE, not fresh
+        # RSI min/max intentionally NOT used — user rule: any RSI level OK
+        "notes": "Price lower-lows + RSI higher-lows. Lines unbroken. No RSI min/max.",
     }
     try:
         if MY_STRATEGY_PARAMS_FILE.exists():
@@ -13686,12 +13688,14 @@ def _pivot_low_indices(lows: pd.Series, order: int = 3) -> list:
 
 def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict:
     """
-    My Strategy — strict bullish RSI divergence on 1D (up to ~6 months):
+    My Strategy — bullish RSI divergence on 1D (patterns form over ~1 to 6 months):
 
-    • Price falls (lower low) and RSI rises (higher low) on the same bars
-    • On the 2nd low day, price is lower than the previous day (pattern can set)
-    • Price line and RSI line: NO candle / RSI bar may break the line in between
-    • ACTIVE_FRESH only if 2nd low is day 0–2; TOO_LATE listed with LATE remark
+    ONLY rules (from your TradingView charts):
+    • Price makes lower lows (downtrend line on price)
+    • RSI makes higher lows (uptrend line on RSI) — RSI level has NO min/max
+    • Neither price candles nor RSI bars may break those lines between the two lows
+    • After a clean setup, price often rises hard — we flag ACTIVE_FRESH on day 0–2
+    • Older valid structures still show as TOO_LATE (for learning), not as fresh buys
     """
     out = {
         "ok_for_buy": False,
@@ -13803,37 +13807,34 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
             r1, r2 = float(rsi.iloc[i1]), float(rsi.iloc[i2])
             if any(np.isnan(x) for x in (p1, p2, r1, r2)):
                 continue
-            # Price down, RSI up — core rule
+            # CORE (user charts: HDFC/RELIANCE/TCS/AXIS/TATASTEEL style):
+            # Price lower-low AND RSI higher-low. NO RSI min/max band at any level.
             if not (p2 < p1 and r2 > r1):
                 continue
-            # Pattern frame: on 2nd low day, price MUST fall vs previous day (user rule)
+            # On 2nd low day, price ideally closes down vs prior day (pattern "sets")
             if i2 >= 1:
                 prev_close = float(close.iloc[i2 - 1])
                 day_close = float(close.iloc[i2])
-                if np.isnan(prev_close) or np.isnan(day_close):
-                    continue
-                if not (day_close < prev_close):
-                    continue
+                if not (np.isnan(prev_close) or np.isnan(day_close)):
+                    if day_close >= prev_close:
+                        # allow slight lag if low of day is still the pivot low
+                        if float(lows.iloc[i2]) >= float(lows.iloc[i2 - 1]):
+                            continue
             depth = (p1 - p2) / max(abs(p1), 1e-9) * 100
             if depth < min_swing:
                 continue
             if (r2 - r1) < min_rsi_lift:
                 continue
+            # Trendlines on price and RSI must not be broken between the two lows
             if not _line_unbroken_price(i1, i2, p1, p2):
                 continue
             if not _line_unbroken_rsi(i1, i2, r1, r2):
                 continue
-            # 2nd low must be the structure low (local) AND near recent major low (context)
-            win = lows.iloc[max(0, i2 - 8) : min(n, i2 + 3)]
-            if float(win.min()) < p2 * 0.995:
-                continue  # lower low nearby → out of context
-            # Reject if 2nd low is far above the 60-bar low (not a real accumulation low)
-            major = lows.iloc[max(0, i2 - 60) : i2 + 1]
-            if len(major) >= 20 and p2 > float(major.min()) * 1.06:
-                continue  # not near major low → false / out-of-context (e.g. mid-range noise)
-            # RSI at lows should not be overbought (classic bullish div forms from weak RSI)
-            if r1 > 55 or r2 > 58:
+            # 2nd low should still be a local structure low (no deeper low right next to it)
+            win = lows.iloc[max(0, i2 - 5) : min(n, i2 + 3)]
+            if float(win.min()) < p2 * 0.992:
                 continue
+            # NO RSI min / RSI max filter — RSI can be 20 or 70; only direction matters
             days_since = int(n - 1 - i2)
             candidates.append({
                 "i1": i1, "i2": i2, "p1": p1, "p2": p2, "r1": r1, "r2": r2,
@@ -14242,27 +14243,28 @@ def show_strategy_lab(results: pd.DataFrame):
         p = load_my_strategy_params()
         # Clamp old saved JSON values into widget min/max (fixes StreamlitValueBelowMinError)
         lb0 = max(30, min(200, int(p.get("lookback", 60) or 60)))
-        rmin0 = max(10, min(50, int(p.get("rsi_min", 25) or 25)))
-        rmax0 = max(40, min(70, int(p.get("rsi_max", 58) or 58)))
-        if rmax0 < rmin0:
-            rmax0 = min(70, rmin0 + 5)
-        slope0 = max(-1.0, min(2.0, float(p.get("min_rsi_slope", 0.0) or 0.0)))
-        brk0 = max(0.0, min(5.0, float(p.get("rsi_line_break_tol", 0.5) or 0.5)))
+        brk0 = max(0.0, min(5.0, float(p.get("line_break_tol_pct", p.get("rsi_line_break_tol", 0.25)) or 0.25)))
         tgt0 = max(0.5, min(4.0, float(p.get("atr_target_mult", 1.8) or 1.8)))
         sl0 = max(0.5, min(4.0, float(p.get("atr_stop_mult", 2.2) or 2.2)))
         hold0 = max(5, min(40, int(p.get("hold_bars", 15) or 15)))
+        min_bars0 = max(5, min(60, int(p.get("min_bars_between", 8) or 8)))
+        min_lift0 = max(0.0, min(20.0, float(p.get("min_rsi_lift", 1.0) or 1.0)))
 
+        st.info(
+            "**My Strategy rules (fixed from your charts):** Price **lower lows** + RSI **higher lows**. "
+            "Trendlines on price & RSI **unbroken**. Pattern may form over **1–6 months**. "
+            "**No RSI min / max** — any RSI level is allowed."
+        )
         c1, c2, c3 = st.columns(3)
         with c1:
-            p["lookback"] = int(st.number_input("Lookback bars (months OK on daily)", 30, 200, lb0, key="my_lb"))
-            p["rsi_min"] = int(st.number_input("RSI min", 10, 50, rmin0, key="my_rmin"))
-            p["rsi_max"] = int(st.number_input("RSI max", 40, 70, rmax0, key="my_rmax"))
+            p["lookback"] = int(st.number_input("Lookback bars (~6 months daily)", 40, 200, lb0, key="my_lb"))
+            p["min_bars_between"] = int(st.number_input("Min bars between lows", 5, 60, min_bars0, key="my_mbars"))
+            p["min_rsi_lift"] = float(st.number_input("Min RSI rise (points)", 0.0, 20.0, min_lift0, key="my_rlift"))
         with c2:
-            p["min_rsi_slope"] = float(st.number_input("Min RSI line slope", -1.0, 2.0, slope0, key="my_slope"))
-            p["rsi_line_break_tol"] = float(st.number_input("RSI line break tolerance", 0.0, 5.0, brk0, key="my_brk"))
+            p["line_break_tol_pct"] = float(st.number_input("Line break tolerance %", 0.0, 2.0, float(brk0), key="my_brk"))
             p["atr_target_mult"] = float(st.number_input("Target × ATR", 0.5, 4.0, tgt0, key="my_tgt"))
-        with c3:
             p["atr_stop_mult"] = float(st.number_input("Stop × ATR", 0.5, 4.0, sl0, key="my_sl"))
+        with c3:
             p["hold_bars"] = int(st.number_input("Hold bars/days", 5, 40, hold0, key="my_hold"))
             p["early_signal"] = st.checkbox(
                 "Early signal (as pattern builds)",
@@ -14274,7 +14276,14 @@ def show_strategy_lab(results: pd.DataFrame):
                 value=bool(p.get("require_ema200")),
                 key="my_e200",
             )
-        p["notes"] = st.text_area("Notes", value=str(p.get("notes", "")), key="my_notes")
+        # Explicitly clear any old RSI band so it cannot leak into detection
+        p["rsi_min"] = 0
+        p["rsi_max"] = 100
+        p["notes"] = st.text_area(
+            "Notes",
+            value=str(p.get("notes") or "Price lower-lows. RSI higher-lows unbroken. No RSI min/max."),
+            key="my_notes",
+        )
         if st.button("💾 Save My Strategy", type="primary", key="my_save"):
             save_my_strategy_params(p)
             st.success(f"Saved → `{MY_STRATEGY_PARAMS_FILE.name}`")

@@ -48,6 +48,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: main
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -89,6 +90,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: main
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -97,6 +99,19 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install pandas numpy yfinance requests
+
+      - name: Verify scan_job.py is fixed (no utcnow)
+        run: |
+          echo "=== scan_job.py head ==="
+          head -25 scan_job.py
+          echo "=== must NOT contain utcnow ==="
+          if grep -n "utcnow" scan_job.py; then
+            echo "ERROR: old scan_job.py still has utcnow — push the fixed file to main"
+            exit 1
+          fi
+          echo "OK: no utcnow"
+          grep -n "_now_utc_iso\|import datetime as _dt" scan_job.py | head -5
+
       - name: Run headless scan
         id: scan
         continue-on-error: true
@@ -134,6 +149,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: main
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"

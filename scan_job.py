@@ -40,6 +40,13 @@ try:
     yf.shared._DFS  # noqa: touch module
 except Exception:
     pass
+try:
+    # Reduce console spam from missing symbols on CI
+    if hasattr(yf, "set_tz_cache_location"):
+        pass
+except Exception:
+    pass
+YF_CONFIG_DONE = True
 
 ROOT = Path(__file__).resolve().parent
 OUT_CSV = ROOT / "latest_results.csv"
