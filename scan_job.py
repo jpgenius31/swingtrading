@@ -28,6 +28,18 @@ try:
 except ImportError as e:
     raise SystemExit("Install yfinance: pip install yfinance pandas numpy") from e
 
+import logging
+import contextlib
+import io
+
+# Stop Yahoo 404 / "Failed download" from looking like a crashed job in Actions logs
+for _name in ("yfinance", "yfinance.base", "yfinance.data", "peewee"):
+    logging.getLogger(_name).setLevel(logging.CRITICAL)
+try:
+    yf.shared._DFS  # noqa: touch module
+except Exception:
+    pass
+
 ROOT = Path(__file__).resolve().parent
 OUT_CSV = ROOT / "latest_results.csv"
 OUT_META = ROOT / "latest_results_meta.json"
@@ -178,44 +190,71 @@ def analyse_one(symbol: str, df: pd.DataFrame) -> dict | None:
 
 
 def fetch_history(symbol: str) -> pd.DataFrame:
-    sym = yf_sym(symbol)
-    for period in ("2y", "1y", "6mo"):
-        try:
-            df = yf.download(sym, period=period, interval="1d", progress=False, threads=False, auto_adjust=True)
-            if df is None or df.empty:
-                t = yf.Ticker(sym)
-                df = t.history(period=period, auto_adjust=True)
-            if df is not None and not df.empty:
-                # flatten multiindex if any
+    """Download daily OHLC. Never raises — skip bad/delisted Yahoo symbols (e.g. temporary 404)."""
+    base = str(symbol or "").upper().replace(".NS", "").replace(".BO", "").strip()
+    if not base:
+        return pd.DataFrame()
+    candidates = [f"{base}.NS", base]
+    # Rare Yahoo alias issues
+    aliases = {"TATAMOTORS": ["TATAMOTORS.NS", "TATAMOTORS.BO"], "M&M": ["M&M.NS", "MM.NS"]}
+    if base in aliases:
+        candidates = aliases[base] + candidates
+
+    for sym in candidates:
+        for period in ("1y", "6mo", "2y"):
+            try:
+                buf = io.StringIO()
+                with contextlib.redirect_stderr(buf):
+                    df = yf.download(
+                        sym,
+                        period=period,
+                        interval="1d",
+                        progress=False,
+                        threads=False,
+                        auto_adjust=True,
+                    )
+                if df is None or getattr(df, "empty", True):
+                    with contextlib.redirect_stderr(buf):
+                        df = yf.Ticker(sym).history(period=period, auto_adjust=True)
+                if df is None or getattr(df, "empty", True):
+                    continue
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
-                if "Close" in df.columns and len(df) >= 40:
+                if "Close" in df.columns and len(df.dropna(subset=["Close"])) >= 40:
                     return df
-        except Exception:
-            time.sleep(0.3)
+            except Exception:
+                time.sleep(0.2)
+                continue
+        time.sleep(0.15)
     return pd.DataFrame()
 
 
 def run(limit: int = 120, full: bool = False) -> pd.DataFrame:
     universe = list(dict.fromkeys(NIFTY50 + EXTRA))
     if full:
-        # still capped — true full market needs paid data / local
-        universe = universe  # same list unless you extend
+        universe = universe
     universe = universe[: max(20, int(limit))]
     rows = []
+    skipped = 0
     for i, sym in enumerate(universe):
         try:
             df = fetch_history(sym)
+            if df is None or df.empty:
+                skipped += 1
+                continue
             rec = analyse_one(sym, df)
             if rec:
                 rows.append(rec)
-        except Exception:
-            pass
+        except Exception as e:
+            skipped += 1
+            if skipped <= 5:
+                print(f"  skip {sym}: {type(e).__name__}")
         if (i + 1) % 10 == 0:
-            print(f"… {i+1}/{len(universe)} · usable {len(rows)}")
-            time.sleep(0.4)
+            print(f"… {i+1}/{len(universe)} · usable {len(rows)} · skipped {skipped}")
+            time.sleep(0.35)
         else:
-            time.sleep(0.15)
+            time.sleep(0.12)
+    print(f"Scan done · {len(rows)} rows · skipped {skipped}/{len(universe)}")
     return pd.DataFrame(rows)
 
 
