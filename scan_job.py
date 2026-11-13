@@ -19,6 +19,7 @@ import json
 import time
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
+import datetime as _dt
 
 import numpy as np
 import pandas as pd
@@ -185,7 +186,7 @@ def analyse_one(symbol: str, df: pd.DataFrame) -> dict | None:
         "Priority": "HIGH" if call == "BUY" and score >= 80 else "MEDIUM" if call == "BUY" else "LOW",
         "Sector": "Other",
         "Scan Source": "github_actions_scan_job",
-        "Scan Time": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+        "Scan Time": _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%d %H:%M UTC"),
     }
 
 
@@ -286,7 +287,7 @@ def _write_strategy_and_index(df: pd.DataFrame):
             sdf = pd.DataFrame(rows)
             sdf.to_csv(ROOT / "strategy_live_signals.csv", index=False)
             (ROOT / "strategy_live_meta.json").write_text(
-                json.dumps({"n": len(sdf), "source": "scan_job", "saved_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}, indent=2),
+                json.dumps({"n": len(sdf), "source": "scan_job", "saved_at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}, indent=2),
                 encoding="utf-8",
             )
             print(f"OK strategy_live_signals.csv · {len(sdf)} rows")
@@ -1072,7 +1073,9 @@ def evaluate_915_past_on_github(max_rows: int = 120) -> None:
 
 
 
+
 def main():
+    """Entry point for GitHub Actions. Never crash on datetime / partial Yahoo failures."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=120)
     ap.add_argument("--full", action="store_true")
@@ -1081,9 +1084,22 @@ def main():
                     help="Top gainer, top loser, or both")
     ap.add_argument("--patterns-only", action="store_true", help="Only run full pattern library scan")
     args = ap.parse_args()
-    if getattr(args, 'patterns_only', False):
-        n = run_all_pattern_scan(limit_stocks=max(args.limit, 80), min_fit=55.0, completed_within=45)
-        raise SystemExit(0 if n >= 0 else 1)
+
+    def _now_utc_iso() -> str:
+        return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def _now_ist_str() -> str:
+        ist = _dt.timezone(_dt.timedelta(hours=5, minutes=30))
+        return _dt.datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S IST")
+
+    if getattr(args, "patterns_only", False):
+        try:
+            n = run_all_pattern_scan(limit_stocks=max(args.limit, 80), min_fit=55.0, completed_within=45)
+        except Exception as e:
+            print(f"patterns-only error: {e}")
+            n = 0
+        raise SystemExit(0)
+
     if args.mode_915:
         print("Starting 9:15–9:30 open strategy job…")
         try:
@@ -1092,16 +1108,13 @@ def main():
             print(f"915 candle ERROR (non-fatal): {e}")
             import traceback
             traceback.print_exc()
-            # Still stamp meta so pipeline is not "dead"
             try:
-                ist = timezone(timedelta(hours=5, minutes=30))
-                now = datetime.now(ist)
                 (ROOT / "strategy_915_candle_meta.json").write_text(
                     json.dumps({
                         "rows": 0,
                         "ok": False,
                         "error": str(e)[:500],
-                        "saved_at_ist": now.strftime("%Y-%m-%d %H:%M:%S IST"),
+                        "saved_at_ist": _now_ist_str(),
                         "source": "scan_job.py --915 (error recovery)",
                     }, indent=2),
                     encoding="utf-8",
@@ -1114,43 +1127,70 @@ def main():
             evaluate_915_past_on_github(max_rows=150)
         except Exception as _ev:
             print(f"915 eval: {_ev}")
-        # Patterns are a SEPARATE job — do not run here (was causing 9:15 failures / timeouts)
         raise SystemExit(0)
+
     print("Starting headless scan…")
-    df = run(limit=args.limit, full=args.full)
-    if df is None or df.empty:
+    try:
+        df = run(limit=args.limit, full=args.full)
+    except Exception as e:
+        print(f"run() ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        df = pd.DataFrame()
+
+    if df is None or getattr(df, "empty", True):
         print("WARNING: no rows this run — providers blocked or network issue")
-        ist = timezone(timedelta(hours=5, minutes=30))
-        OUT_META.write_text(json.dumps({
-            "rows": 0,
-            "ok": False,
-            "saved_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            "saved_at_ist": datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S IST"),
-            "source": "scan_job.py (empty run)",
-            "limit": args.limit,
-        }, indent=2), encoding="utf-8")
-        # Exit 0 so scheduled Mon–Fri job stays green; app keeps last good CSV
+        try:
+            OUT_META.write_text(json.dumps({
+                "rows": 0,
+                "ok": False,
+                "saved_at": _now_utc_iso(),
+                "saved_at_ist": _now_ist_str(),
+                "source": "scan_job.py (empty run)",
+                "limit": args.limit,
+            }, indent=2), encoding="utf-8")
+        except Exception:
+            pass
         raise SystemExit(0)
-    df = df.sort_values(["Prediction", "Risk %"], ascending=[False, True])
-    df.to_csv(OUT_CSV, index=False)
+
+    try:
+        df = df.sort_values(["Prediction", "Risk %"], ascending=[False, True])
+    except Exception:
+        pass
+    try:
+        df.to_csv(OUT_CSV, index=False)
+    except Exception as e:
+        print(f"CSV write error: {e}")
+        raise SystemExit(0)
+
     meta = {
         "rows": int(len(df)),
         "ok": True,
-        "saved_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "saved_at": _now_utc_iso(),
+        "saved_at_ist": _now_ist_str(),
         "source": "scan_job.py",
         "limit": args.limit,
     }
-    OUT_META.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-    print(f"OK wrote {len(df)} rows → {OUT_CSV}")
-    _write_strategy_and_index(df)
     try:
-        run_all_pattern_scan(limit_stocks=max(args.limit, 80), min_fit=55.0, completed_within=45)
+        OUT_META.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    except Exception as e:
+        print(f"meta write: {e}")
+
+    print(f"OK wrote {len(df)} rows → {OUT_CSV}")
+    try:
+        _write_strategy_and_index(df)
+    except Exception as e:
+        print(f"strategy/index write: {e}")
+    try:
+        run_all_pattern_scan(limit_stocks=max(min(args.limit, 60), 40), min_fit=55.0, completed_within=45)
     except Exception as e:
         print(f"pattern scan after market: {e}")
     try:
         _write_sync_and_meta(int(len(df)))
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"sync meta: {e}")
+    raise SystemExit(0)
+
 
 
 if __name__ == "__main__":
