@@ -13699,7 +13699,8 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
     """
     out = {
         "ok_for_buy": False,
-        "status": "WAIT",
+        "status": "NONE",
+        "stage": "NONE",  # FORMING | PATTERN_FORMED | ACTIVE_FRESH | TOO_LATE | RSI_FAILED | WAIT
         "reason": "No clear bullish RSI divergence",
         "days_since_setup": None,
         "swing1": None,
@@ -13707,6 +13708,7 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
         "rsi1": None,
         "rsi2": None,
         "bars_between": None,
+        "daily_note": "",
     }
     if df is None or len(df) < 50:
         out["reason"] = "Not enough bars (need daily history)"
@@ -13843,10 +13845,18 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
             })
 
     if not candidates:
+        # --- Daily FORMING: 1st swing low in, still hunting 2nd lower-low + RSI higher-low ---
+        forming = _detect_forming_divergence(lows, close, rsi, piv, order, min_bars, min_swing, min_rsi_lift)
+        if forming:
+            out.update(forming)
+            return out
+        out["status"] = "NONE"
+        out["stage"] = "NONE"
         out["reason"] = (
-            "No clean My Strategy pattern: need strict swing lows, price ↓ + RSI ↑, "
-            "unbroken lines, meaningful depth — noise/out-of-context charts rejected."
+            "No pattern yet: need price lower-lows + RSI higher-lows with unbroken lines "
+            "(1–6 month window)."
         )
+        out["daily_note"] = "Watch — no clear structure today."
         return out
 
     # Prefer: most recent 2nd low, then larger RSI lift + depth
@@ -13862,51 +13872,109 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
 
     last_close = float(close.iloc[-1])
     last_rsi = float(rsi.iloc[-1]) if pd.notna(rsi.iloc[-1]) else best["r2"]
-    # Rally after 2nd low already large → pattern context used up (wrong as "fresh buy")
     rally_pct = (last_close - best["p2"]) / max(best["p2"], 1e-9) * 100
+    base_txt = (
+        f"Price LL ₹{best['p1']:.2f}→₹{best['p2']:.2f} (−{best['depth']:.1f}%) · "
+        f"RSI HL {best['r1']:.1f}→{best['r2']:.1f} (+{best['rsi_lift']:.1f}) · "
+        f"{best['bars_between']} bars · 2nd low {best['days_since']}d ago"
+    )
 
+    # RSI support failed after setup
     if best["days_since"] >= 1 and last_rsi < best["r2"] - 8:
         out["status"] = "RSI_FAILED"
-        out["reason"] = f"RSI failed after 2nd low ({best['r2']:.1f} → {last_rsi:.1f})."
+        out["stage"] = "RSI_FAILED"
+        out["ok_for_buy"] = False
+        out["reason"] = f"RSI_FAILED: RSI broke after 2nd low ({best['r2']:.1f} → {last_rsi:.1f}). {base_txt}"
+        out["daily_note"] = "Pattern had formed — RSI line failed; do not buy."
         return out
 
-    if best["days_since"] > max_days:
+    # Pattern complete but too old / already run
+    if best["days_since"] > max_days or (rally_pct > max_rally and best["days_since"] >= 1):
         out["status"] = "TOO_LATE"
-        out["reason"] = (
-            f"LATE: valid-looking structure but 2nd low was {best['days_since']} day(s) ago "
-            f"(act only on day 1–2). Price LL ₹{best['p1']:.2f}→₹{best['p2']:.2f}, "
-            f"RSI HL {best['r1']:.1f}→{best['r2']:.1f}."
-        )
+        out["stage"] = "PATTERN_FORMED"
+        out["ok_for_buy"] = False
+        if rally_pct > max_rally and best["days_since"] >= 1:
+            out["reason"] = f"TOO_LATE: pattern formed, already +{rally_pct:.1f}% off 2nd low. {base_txt}"
+            out["daily_note"] = "Pattern has formed — move already happened; track only."
+        else:
+            out["reason"] = f"TOO_LATE: pattern formed {best['days_since']}d ago (fresh window is day 0–2). {base_txt}"
+            out["daily_note"] = "Pattern has formed — entry window closed; for learning only."
         return out
 
-    if rally_pct > max_rally and best["days_since"] >= 1:
-        out["status"] = "TOO_LATE"
-        out["reason"] = (
-            f"LATE / extended: already +{rally_pct:.1f}% off 2nd low — not a clean fresh entry."
-        )
-        return out
-
+    # Pattern complete, inside window, waiting confirmation
     if require_conf:
         if last_close < best["p2"] * 0.995:
-            out["status"] = "WAIT"
-            out["reason"] = (
-                f"WAIT confirmation: close ₹{last_close:.2f} still under 2nd low ₹{best['p2']:.2f}."
-            )
+            out["status"] = "PATTERN_FORMED"
+            out["stage"] = "PATTERN_FORMED"
+            out["ok_for_buy"] = False
+            out["reason"] = f"PATTERN_FORMED: waiting close above 2nd low ₹{best['p2']:.2f}. {base_txt}"
+            out["daily_note"] = "Pattern has formed — waiting confirmation candle."
             return out
-        # Prefer a hold: close not making a new aggressive low
         if len(close) >= 2 and last_close < float(close.iloc[-2]) * 0.97:
-            out["status"] = "WAIT"
-            out["reason"] = "WAIT: still selling hard after 2nd low — no confirmation yet."
+            out["status"] = "PATTERN_FORMED"
+            out["stage"] = "PATTERN_FORMED"
+            out["ok_for_buy"] = False
+            out["reason"] = f"PATTERN_FORMED: still weak close after 2nd low. {base_txt}"
+            out["daily_note"] = "Pattern has formed — wait for selling to ease."
             return out
 
+    # Fresh actionable
     out["ok_for_buy"] = True
     out["status"] = "ACTIVE_FRESH"
-    out["reason"] = (
-        f"ACTIVE_FRESH: price ↓ ₹{best['p1']:.2f}→₹{best['p2']:.2f} (−{best['depth']:.1f}%), "
-        f"RSI ↑ {best['r1']:.1f}→{best['r2']:.1f} (+{best['rsi_lift']:.1f}), "
-        f"lines clean, {best['bars_between']} bars apart, 2nd low {best['days_since']}d ago."
-    )
+    out["stage"] = "ACTIVE_FRESH"
+    out["reason"] = f"ACTIVE_FRESH: {base_txt} · lines clean."
+    out["daily_note"] = "Pattern has formed — fresh entry window (day 0–2)."
     return out
+
+
+def _detect_forming_divergence(lows, close, rsi, piv, order, min_bars, min_swing, min_rsi_lift) -> dict:
+    """
+    Daily update when full pair is not ready yet:
+    first swing low is in; price still soft / lower-lows developing; RSI not yet confirming HL.
+    """
+    empty = {}
+    try:
+        n = len(lows)
+        if n < 40 or not piv:
+            return empty
+        i1 = piv[-1]
+        # Prefer a pivot that is not the very last bar (still developing)
+        if i1 >= n - 2 and len(piv) >= 2:
+            i1 = piv[-2]
+        p1 = float(lows.iloc[i1])
+        r1 = float(rsi.iloc[i1])
+        if any(np.isnan(x) for x in (p1, r1)):
+            return empty
+        last_low = float(lows.iloc[-1])
+        last_close = float(close.iloc[-1])
+        last_rsi = float(rsi.iloc[-1]) if pd.notna(rsi.iloc[-1]) else r1
+        days_since = int(n - 1 - i1)
+        if days_since < 3:
+            return empty  # too early to call "forming"
+        # Price trying to undercut or press the first low; RSI holding or rising
+        price_pressing = last_low <= p1 * 1.02 or last_close < p1 * 1.03
+        rsi_not_collapsing = last_rsi >= r1 - 5
+        if not (price_pressing and rsi_not_collapsing):
+            return empty
+        return {
+            "ok_for_buy": False,
+            "status": "FORMING",
+            "stage": "FORMING",
+            "swing1": round(p1, 2),
+            "swing2": None,
+            "rsi1": round(r1, 1),
+            "rsi2": round(last_rsi, 1) if last_rsi == last_rsi else None,
+            "days_since_setup": days_since,
+            "bars_between": days_since,
+            "reason": (
+                f"FORMING: 1st swing low ₹{p1:.2f} (RSI {r1:.1f}) · "
+                f"price still working lower-lows · RSI {last_rsi:.1f} — "
+                f"waiting for 2nd lower-low + higher RSI low with clean lines."
+            ),
+            "daily_note": "Pattern is trying to form — watch for 2nd lower-low + RSI higher-low.",
+        }
+    except Exception:
+        return empty
 
 
 def my_strategy_divergence_ok(df: pd.DataFrame, idx: int = -1, params: dict = None) -> bool:
@@ -13972,8 +14040,8 @@ def _row_matches_strategy(df: pd.DataFrame, sid: str) -> bool:
         if sid == "my_strategy":
             info = detect_my_strategy_divergence(d)
             stt = str(info.get("status") or "")
-            # Match only true fresh pattern for "under strategy" maps
-            return stt == "ACTIVE_FRESH"
+            # Daily board: forming + formed + fresh (not NONE)
+            return stt in ("ACTIVE_FRESH", "PATTERN_FORMED", "FORMING", "TOO_LATE", "WAIT")
         if sid == "trend_pullback":
             return price > ema20 and ema20 >= ema50 * 0.995 and 42 <= rsi <= 68
         if sid == "breakout_vol":
@@ -14065,17 +14133,25 @@ def live_strategy_signals(base: pd.DataFrame, sid: str, max_check: int = 35) -> 
             remark = ""
             if sid == "my_strategy":
                 info = detect_my_strategy_divergence(df)
-                status = str(info.get("status") or "WAIT")
-                # BUY list: only ACTIVE_FRESH (day 0–2 after 2nd low). LATE shown only as WATCH.
+                status = str(info.get("status") or "NONE")
+                stage = str(info.get("stage") or status)
+                daily = str(info.get("daily_note") or info.get("reason") or "")
+                # Daily board: show forming → formed → fresh → late
                 if status == "ACTIVE_FRESH":
-                    remark = "Fresh — pattern just formed (next / next-to-next day window)"
+                    remark = daily or "Pattern has formed — fresh entry window (day 0–2)"
+                elif status == "PATTERN_FORMED":
+                    remark = daily or "Pattern has formed — waiting confirmation"
+                elif status == "FORMING":
+                    remark = daily or "Pattern is trying to form — watch 2nd low + RSI HL"
                 elif status == "TOO_LATE":
                     days = info.get("days_since_setup")
-                    remark = (
-                        f"LATE — 2nd low was {days} day(s) ago — not a priority buy"
-                    )
+                    remark = daily or f"Pattern formed earlier ({days}d ago) — not a fresh buy"
+                elif status == "WAIT":
+                    remark = daily or "Pattern forming / waiting"
+                elif status == "RSI_FAILED":
+                    remark = daily or "Pattern failed — RSI broke"
                 else:
-                    continue  # WAIT / RSI_FAILED / out-of-context — do not list
+                    continue  # NONE — do not list
             elif not _row_matches_strategy(df, sid):
                 continue
             price = float(df["Close"].astype(float).iloc[-1])
@@ -14098,9 +14174,14 @@ def live_strategy_signals(base: pd.DataFrame, sid: str, max_check: int = 35) -> 
             }
             if sid == "my_strategy":
                 row["Status"] = status
+                try:
+                    row["Stage"] = str(info.get("stage") or status)
+                except Exception:
+                    row["Stage"] = status
                 row["Remark"] = remark
-                # Levels only emphasize fresh buys
-                if status == "TOO_LATE":
+                row["Daily update"] = remark
+                # Only ACTIVE_FRESH is a BUY; others are watch / track
+                if status != "ACTIVE_FRESH":
                     row["Side"] = "WATCH"
             rows.append(row)
         except Exception:
@@ -14297,15 +14378,21 @@ def show_strategy_lab(results: pd.DataFrame):
             """
 **What the model learns from your images**
 
-| Chart feature | Rule stored |
-|---------------|-------------|
-| Price swing lows falling | Required |
-| RSI at **same bars** rising (any RSI level) | Required — **no min/max RSI boundary** |
-| Lines on **price lows** + **RSI lows** unbroken | Required between the two swings |
-| Time between lows | Short **or** long (1D lookback up to ~6 months) |
-| Point **D** = second low completion | Entry window starts |
-| 2–3 days after big bounce | **TOO_LATE** — not a buy |
-| RSI breaks rising support line | **RSI_FAILED** — no buy |
+| Daily stage | Meaning |
+|-------------|---------|
+| **FORMING** | Pattern is **trying to form** — 1st low in; waiting 2nd lower-low + RSI higher-low |
+| **PATTERN_FORMED** | Pattern **has formed** — lines clean; waiting confirmation / day 0 |
+| **ACTIVE_FRESH** | Pattern formed + **day 0–2** — priority buy window |
+| **TOO_LATE** | Pattern formed earlier / already rallied — track only, not a fresh buy |
+| **RSI_FAILED** | RSI higher-low line broke — no buy |
+| **NONE** | No structure today |
+
+| Rule | Required |
+|------|----------|
+| Price lower lows | Yes |
+| RSI higher lows (any RSI level) | Yes — **no min/max RSI** |
+| Unbroken lines on price + RSI | Yes |
+| Time between lows | ~1 week to ~6 months |
             """
         )
         with st.form("my_strat_train_form"):

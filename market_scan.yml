@@ -32,8 +32,9 @@ on:
 permissions:
   contents: write
 
+# ONE queue for all scan jobs — prevents two pushes fighting on main
 concurrency:
-  group: market-scan-${{ github.workflow }}-${{ github.event.inputs.job_type || github.event.schedule || 'sched' }}
+  group: market-scan-main
   cancel-in-progress: false
 
 jobs:
@@ -49,6 +50,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -58,26 +60,43 @@ jobs:
           pip install --upgrade pip
           pip install pandas numpy yfinance requests
       - name: Run 9:15 strategy
-        id: run915
         continue-on-error: true
-        run: python scan_job.py --915 --limit 20 --915-list both
+        run: |
+          set +e
+          python scan_job.py --915 --limit 20 --915-list both
+          exit 0
       - name: Ensure output files exist
         run: |
           test -f strategy_915_candle_meta.json || echo '{"rows":0,"ok":false,"source":"workflow-placeholder"}' > strategy_915_candle_meta.json
           test -f strategy_915_candle_live.csv || echo "Stock,Signal,Result" > strategy_915_candle_live.csv
-          ls -la strategy_915_candle_*.csv strategy_915_candle_meta.json nse_top_* 2>/dev/null || true
+
       - name: Commit 9:15 results
         run: |
+          set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add strategy_915_candle_live.csv strategy_915_candle_past.csv strategy_915_candle_meta.json strategy_915_money_summary.json nse_top_gainers_cache.csv nse_top_losers_cache.csv nse_gainers_losers_meta.json || true
+          git remote set-url origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git add strategy_915_candle_live.csv strategy_915_candle_past.csv strategy_915_candle_meta.json strategy_915_money_summary.json nse_top_gainers_cache.csv nse_top_losers_cache.csv nse_gainers_losers_meta.json 2>/dev/null || true
           if git diff --staged --quiet; then
-            echo "No 9:15 file changes"
+            echo "No 9:15 changes"
             exit 0
           fi
           git commit -m "chore: 9:15 strategy $(date -u +%Y-%m-%dT%H:%MZ)" || true
-          git pull --rebase --autostash origin HEAD || git pull --rebase origin main || true
-          git push || git push --force-with-lease || true
+          for i in 1 2 3 4 5 6; do
+            git fetch origin main
+            if git pull --rebase origin main; then
+              if git push origin HEAD:main; then
+                echo "Push OK (attempt $i)"
+                exit 0
+              fi
+            else
+              git rebase --abort 2>/dev/null || true
+            fi
+            sleep $((i * 3))
+          done
+          echo "WARNING: 9:15 push skipped after retries"
+          exit 0
+
 
   full_scan:
     name: Full market scan
@@ -91,6 +110,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -99,21 +119,14 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install pandas numpy yfinance requests
-
       - name: Verify scan_job.py is fixed (no utcnow)
         run: |
-          echo "=== scan_job.py head ==="
-          head -25 scan_job.py
-          echo "=== must NOT contain utcnow ==="
           if grep -n "utcnow" scan_job.py; then
-            echo "ERROR: old scan_job.py still has utcnow — push the fixed file to main"
+            echo "ERROR: old scan_job.py still has utcnow"
             exit 1
           fi
           echo "OK: no utcnow"
-          grep -n "_now_utc_iso\|import datetime as _dt" scan_job.py | head -5
-
       - name: Run headless scan
-        id: scan
         continue-on-error: true
         run: |
           set +e
@@ -124,19 +137,39 @@ jobs:
         run: |
           ls -la latest_results.csv latest_results_meta.json 2>/dev/null || true
           head -3 latest_results.csv 2>/dev/null || true
+
       - name: Commit and push results
         run: |
+          set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
           date -u +%Y-%m-%dT%H:%MZ > last_scan_heartbeat.txt
-          git add latest_results.csv latest_results_meta.json realtime_sync_version.json strategy_live_signals.csv strategy_live_meta.json index_market_snap.json last_scan_heartbeat.txt || true
+          git add latest_results.csv latest_results_meta.json realtime_sync_version.json strategy_live_signals.csv strategy_live_meta.json index_market_snap.json last_scan_heartbeat.txt 2>/dev/null || true
           if git diff --staged --quiet; then
-            echo "No scan changes"
+            echo "No scan changes to commit"
             exit 0
           fi
           git commit -m "chore: market scan $(date -u +%Y-%m-%dT%H:%MZ) Mon-Fri IST" || true
-          git pull --rebase --autostash origin HEAD || git pull --rebase origin main || true
-          git push || git push --force-with-lease || true
+          # Race-safe push: pull --rebase then retry (another job may have pushed)
+          for i in 1 2 3 4 5 6; do
+            git fetch origin main
+            if git pull --rebase origin main; then
+              if git push origin HEAD:main; then
+                echo "Push OK (attempt $i)"
+                exit 0
+              fi
+            else
+              echo "Rebase conflict — abort and retry"
+              git rebase --abort 2>/dev/null || true
+              git merge --abort 2>/dev/null || true
+            fi
+            echo "Push attempt $i failed — wait and retry"
+            sleep $((i * 3))
+          done
+          echo "WARNING: could not push after retries — data generated but not on remote"
+          exit 0
+
 
   patterns_auto:
     name: Chart pattern library
@@ -150,6 +183,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -160,16 +194,34 @@ jobs:
           pip install pandas numpy yfinance requests
       - name: Scan patterns
         continue-on-error: true
-        run: python scan_job.py --patterns-only --limit 100
+        run: |
+          set +e
+          python scan_job.py --patterns-only --limit 100
+          exit 0
+
       - name: Commit pattern library
         run: |
+          set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add pattern_scan_results.json pattern_scan_meta.json || true
+          git remote set-url origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git add pattern_scan_results.json pattern_scan_meta.json 2>/dev/null || true
           if git diff --staged --quiet; then
             echo "No pattern changes"
             exit 0
           fi
           git commit -m "chore: pattern library $(date -u +%Y-%m-%dT%H:%MZ)" || true
-          git pull --rebase --autostash origin HEAD || git pull --rebase origin main || true
-          git push || git push --force-with-lease || true
+          for i in 1 2 3 4 5 6; do
+            git fetch origin main
+            if git pull --rebase origin main; then
+              if git push origin HEAD:main; then
+                echo "Push OK (attempt $i)"
+                exit 0
+              fi
+            else
+              git rebase --abort 2>/dev/null || true
+            fi
+            sleep $((i * 3))
+          done
+          echo "WARNING: pattern push skipped after retries"
+          exit 0
