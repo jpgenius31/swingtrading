@@ -14033,10 +14033,19 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
     last_rsi = float(rsi.iloc[-1]) if pd.notna(rsi.iloc[-1]) else best["r2"]
     rally_pct = (last_close - best["p2"]) / max(best["p2"], 1e-9) * 100
     base_txt = (
-        f"Price LL ₹{best['p1']:.2f}→₹{best['p2']:.2f} (−{best['depth']:.1f}%) · "
-        f"RSI HL {best['r1']:.1f}→{best['r2']:.1f} (+{best['rsi_lift']:.1f}) · "
-        f"{best['bars_between']} bars · 2nd low {best['days_since']}d ago"
+        f"Timeframe Daily 1D · from 1st low ₹{best['p1']:.2f} (RSI {best['r1']:.1f}) → "
+        f"2nd low ₹{best['p2']:.2f} (RSI {best['r2']:.1f}) · "
+        f"price line ₹{best['p1']:.2f}→₹{best['p2']:.2f} · RSI line {best['r1']:.1f}→{best['r2']:.1f} · "
+        f"{best['bars_between']} bars (~{max(1, int(round(best['bars_between']/21)))} mo) · "
+        f"2nd low {best['days_since']}d ago"
     )
+    out["timeframe"] = "Daily (1D)"
+    out["formed_from"] = (
+        f"From 1st swing ₹{best['p1']:.2f} / RSI {best['r1']:.1f} to 2nd ₹{best['p2']:.2f} / RSI {best['r2']:.1f} "
+        f"over {best['bars_between']} daily bars"
+    )
+    out["price_line"] = f"Price line: ₹{best['p1']:.2f} → ₹{best['p2']:.2f} (unbroken)"
+    out["rsi_line"] = f"RSI line: {best['r1']:.1f} → {best['r2']:.1f} (unbroken)"
 
     # RSI support failed after setup
     if best["days_since"] >= 1 and last_rsi < best["r2"] - 8:
@@ -14086,15 +14095,66 @@ def detect_my_strategy_divergence(df: pd.DataFrame, params: dict = None) -> dict
     return out
 
 
+def _price_is_going_down(close, lows, look_short: int = 10, look_mid: int = 30) -> tuple:
+    """
+    Strict user rule: pattern prediction ONLY if price is still going down.
+    Rising / already recovered stocks must NOT appear under My Strategy FORMING.
+    """
+    try:
+        c = pd.to_numeric(close, errors="coerce").dropna()
+        lo = pd.to_numeric(lows, errors="coerce").dropna()
+        if len(c) < max(look_mid, 25):
+            return False, "not enough bars"
+        last = float(c.iloc[-1])
+        prev = float(c.iloc[-2]) if len(c) >= 2 else last
+        ref_s = float(c.iloc[-min(look_short, len(c))])
+        ref_m = float(c.iloc[-min(look_mid, len(c))])
+        # 5-day slope
+        ref_5 = float(c.iloc[-min(5, len(c))])
+        recent_high = float(c.tail(look_mid).max())
+        recent_low = float(lo.tail(look_mid).min())
+        bounce = (last - recent_low) / max(recent_low, 1e-9) * 100.0
+
+        # ALL of these: net down over 5d and 10d, not near 30d high, limited bounce
+        down_5 = last < ref_5 * 0.998
+        down_10 = last < ref_s * 0.99
+        down_30 = last <= ref_m * 1.005
+        not_near_high = last <= recent_high * 0.96
+        not_extended = bounce <= 2.5  # still near the lows
+        # Prefer lower close than yesterday or at least not strong green recovery
+        not_strong_up_day = last <= prev * 1.015
+
+        ok = down_5 and down_10 and down_30 and not_near_high and not_extended and not_strong_up_day
+        if not ok:
+            bits = []
+            if not down_5:
+                bits.append("5d not down")
+            if not down_10:
+                bits.append("10d not down")
+            if not down_30:
+                bits.append("30d not down")
+            if not not_near_high:
+                bits.append("near 30d high")
+            if not not_extended:
+                bits.append(f"+{bounce:.1f}% off low")
+            if not not_strong_up_day:
+                bits.append("strong up day")
+            return False, ", ".join(bits)
+        return True, (
+            f"price still down · ₹{last:.2f} < 5d ₹{ref_5:.2f} / 10d ₹{ref_s:.2f} · "
+            f"only +{bounce:.1f}% off 30d low ₹{recent_low:.2f}"
+        )
+    except Exception as e:
+        return False, str(e)
+
+
 def _detect_forming_divergence(lows, close, rsi, piv, order, min_bars, min_swing, min_rsi_lift) -> dict:
     """
-    PRIOR prediction — before the pattern is complete.
+    PRIOR prediction — ONLY while price is still going down.
 
-    Stage A (EARLY_FORMING): 1st swing low marked; price still drifting lower / sideways;
-                             RSI holding or starting to make higher troughs → predict pattern may form.
-    Stage B (FORMING):       Price has undercut 1st low (or nearly) while RSI is above 1st-low RSI
-                             → 2nd low is developing; lines not fully locked yet.
-    Full PATTERN_FORMED / ACTIVE_FRESH only after two confirmed pivots + unbroken lines.
+    User rule: if price is rising / already bounced, do NOT show FORMING.
+    Stage A EARLY_FORMING: 1st low in, price still falling, RSI not collapsing.
+    Stage B FORMING: price undercutting 1st low, RSI holding/rising — 2nd low building.
     """
     empty = {}
     try:
@@ -14102,7 +14162,11 @@ def _detect_forming_divergence(lows, close, rsi, piv, order, min_bars, min_swing
         if n < 40 or not piv:
             return empty
 
-        # Use last solid pivot as "1st low" candidate (not the last 1–2 bars — still printing)
+        # HARD GATE: price must still be going down
+        down_ok, down_note = _price_is_going_down(close, lows)
+        if not down_ok:
+            return empty
+
         i1 = piv[-1]
         if i1 >= n - 2 and len(piv) >= 2:
             i1 = piv[-2]
@@ -14118,10 +14182,9 @@ def _detect_forming_divergence(lows, close, rsi, piv, order, min_bars, min_swing
         last_close = float(close.iloc[-1])
         last_rsi = float(rsi.iloc[-1]) if pd.notna(rsi.iloc[-1]) else r1
         days_since = int(n - 1 - i1)
-        if days_since < 2:
+        if days_since < 3:
             return empty
 
-        # Recent path after 1st low: price soft, RSI not collapsing
         seg_low = lows.iloc[i1 + 1 :]
         seg_rsi = rsi.iloc[i1 + 1 :]
         if seg_low.empty:
@@ -14130,42 +14193,48 @@ def _detect_forming_divergence(lows, close, rsi, piv, order, min_bars, min_swing
         rsi_at_min_i = int(seg_low.values.argmin())
         rsi_at_price_min = float(seg_rsi.iloc[rsi_at_min_i]) if rsi_at_min_i < len(seg_rsi) else last_rsi
 
-        price_making_lower = min_after <= p1 * 1.005  # touching / undercutting 1st low
-        price_pressing = last_low <= p1 * 1.025 or last_close <= p1 * 1.03
-        rsi_holding = last_rsi >= (r1 - 6)
-        rsi_improving = rsi_at_price_min >= (r1 - 2) or last_rsi > r1
-
-        if not (price_pressing or price_making_lower):
+        # Must still be near / under the 1st low — not rallying away
+        near_low = last_low <= p1 * 1.015 and last_close <= p1 * 1.03
+        undercutting = min_after < p1 * 0.999
+        if not (near_low or undercutting):
             return empty
+
+        rsi_holding = last_rsi >= (r1 - 5)
         if not rsi_holding:
             return empty
 
-        # Stronger prior: price already under 1st low while RSI >= 1st RSI → classic building divergence
-        building_2nd = min_after < p1 and (rsi_at_price_min >= r1 or last_rsi >= r1)
+        building_2nd = undercutting and (rsi_at_price_min >= r1 - 0.5 or last_rsi >= r1)
+
+        # Approximate calendar start of structure (trading days ~ bars)
+        tf = "Daily (1D)"
+        months_span = max(1, int(round(days_since / 21)))
+        from_where = (
+            f"From 1st swing low ₹{p1:.2f} (RSI {r1:.1f}) about {days_since} trading days ago "
+            f"(~{months_span} month{'s' if months_span != 1 else ''}) on {tf}"
+        )
+        price_line = f"Price line: ₹{p1:.2f} → ₹{min_after:.2f if building_2nd else last_low:.2f} (must stay unbroken)"
+        rsi_line = f"RSI line: {r1:.1f} → {rsi_at_price_min:.1f if building_2nd else last_rsi:.1f} (must stay unbroken)"
 
         if building_2nd:
-            status = "FORMING"
-            stage = "FORMING"
+            status, stage = "FORMING", "FORMING"
             note = (
-                "PRIOR: pattern is **building** — price already under 1st low while RSI holds/rises. "
-                "Watch for 2nd swing low + unbroken lines → then PATTERN_FORMED."
+                f"PRIOR — pattern building while price still down. {from_where}. "
+                f"{price_line}. {rsi_line}. NOT a buy until PATTERN_FORMED."
             )
             reason = (
-                f"FORMING (prior): 1st low ₹{p1:.2f} (RSI {r1:.1f}) → price low ₹{min_after:.2f} "
-                f"with RSI ~{rsi_at_price_min:.1f} / last RSI {last_rsi:.1f}. "
-                f"Not complete until 2nd pivot + clean lines."
+                f"FORMING on {tf}: {down_note}. {from_where}. "
+                f"{price_line}. {rsi_line}. Waiting confirmed 2nd pivot + clean lines."
             )
         else:
-            status = "FORMING"
-            stage = "EARLY_FORMING"
+            status, stage = "FORMING", "EARLY_FORMING"
             note = (
-                "PRIOR: pattern **may form** — 1st low set, price still soft, RSI not collapsing. "
-                "No buy yet; track daily until 2nd lower-low + RSI higher-low."
+                f"PRIOR — may form (price still down). {from_where}. "
+                f"Price line starts ₹{p1:.2f}; RSI line starts {r1:.1f}. "
+                f"Need clear 2nd lower-low + RSI higher-low."
             )
             reason = (
-                f"EARLY_FORMING (prior): 1st swing ₹{p1:.2f} (RSI {r1:.1f}), "
-                f"{days_since}d ago · last ₹{last_close:.2f} / RSI {last_rsi:.1f}. "
-                f"Prediction: bullish divergence possible if price LL + RSI HL complete."
+                f"EARLY_FORMING on {tf}: {down_note}. {from_where}. "
+                f"Anchor price ₹{p1:.2f} · anchor RSI {r1:.1f} · last ₹{last_close:.2f} / RSI {last_rsi:.1f}."
             )
 
         return {
@@ -14181,6 +14250,13 @@ def _detect_forming_divergence(lows, close, rsi, piv, order, min_bars, min_swing
             "reason": reason,
             "daily_note": note,
             "prior_prediction": True,
+            "price_down": True,
+            "timeframe": tf,
+            "formed_from": from_where,
+            "price_line": price_line,
+            "rsi_line": rsi_line,
+            "anchor_price": round(p1, 2),
+            "anchor_rsi": round(r1, 1),
         }
     except Exception:
         return empty
@@ -14250,7 +14326,7 @@ def _row_matches_strategy(df: pd.DataFrame, sid: str) -> bool:
             info = detect_my_strategy_divergence(d)
             stt = str(info.get("status") or "")
             # Daily board: forming + formed + fresh (not NONE)
-            return stt in ("ACTIVE_FRESH", "PATTERN_FORMED", "FORMING", "TOO_LATE", "WAIT")  # EARLY_FORMING uses status FORMING
+            return stt in ("ACTIVE_FRESH", "PATTERN_FORMED", "FORMING")  # only live/prior; not TOO_LATE noise
         if sid == "trend_pullback":
             return price > ema20 and ema20 >= ema50 * 0.995 and 42 <= rsi <= 68
         if sid == "breakout_vol":
@@ -14351,16 +14427,22 @@ def live_strategy_signals(base: pd.DataFrame, sid: str, max_check: int = 35) -> 
                 elif status == "PATTERN_FORMED":
                     remark = daily or "Pattern has formed — waiting confirmation"
                 elif status == "FORMING":
-                    remark = daily or "PRIOR — pattern building / may form — not a buy yet"
-                elif status == "TOO_LATE":
-                    days = info.get("days_since_setup")
-                    remark = daily or f"Pattern formed earlier ({days}d ago) — not a fresh buy"
+                    ff = str(info.get("formed_from") or "")
+                    pl = str(info.get("price_line") or "")
+                    rl = str(info.get("rsi_line") or "")
+                    remark = daily or "PRIOR — price still down, pattern may form"
+                    if ff:
+                        remark = f"{remark} | {ff}"
+                    if pl:
+                        remark = f"{remark} | {pl}"
+                    if rl:
+                        remark = f"{remark} | {rl}"
                 elif status == "WAIT":
-                    remark = daily or "Pattern forming / waiting"
-                elif status == "RSI_FAILED":
-                    remark = daily or "Pattern failed — RSI broke"
+                    remark = daily or "Pattern forming / waiting (price must still be down)"
+                elif status in ("TOO_LATE", "RSI_FAILED", "NONE"):
+                    continue  # do not list late/failed as My Strategy predictions
                 else:
-                    continue  # NONE — do not list
+                    continue
             elif not _row_matches_strategy(df, sid):
                 continue
             price = float(df["Close"].astype(float).iloc[-1])
@@ -14387,6 +14469,10 @@ def live_strategy_signals(base: pd.DataFrame, sid: str, max_check: int = 35) -> 
                     row["Stage"] = str(info.get("stage") or status)
                 except Exception:
                     row["Stage"] = status
+                row["Timeframe"] = str(info.get("timeframe") or "Daily (1D)")
+                row["Formed from"] = str(info.get("formed_from") or "")[:120]
+                row["Price line"] = str(info.get("price_line") or "")[:80]
+                row["RSI line"] = str(info.get("rsi_line") or "")[:80]
                 row["Remark"] = remark
                 row["Daily update"] = remark
                 # Only ACTIVE_FRESH is a BUY; others are watch / track
@@ -26023,11 +26109,19 @@ def show_expert_trader_box(symbol: str, call_hint: str = ""):
             detail_bits.append(f"{bars} bars apart")
         if days is not None:
             detail_bits.append(f"{days}d since setup")
+        tf = str((info or {}).get("timeframe") or "Daily (1D)")
+        formed_from = str((info or {}).get("formed_from") or "")
+        price_line = str((info or {}).get("price_line") or "")
+        rsi_line = str((info or {}).get("rsi_line") or "")
         st.markdown(
             f"""
 <div style="border:1px solid {col};border-radius:12px;padding:12px 14px;background:#0b1220;margin:6px 0 10px 0;">
-  <div style="color:{col};font-weight:800;font-size:1.05rem;">{status}</div>
+  <div style="color:{col};font-weight:800;font-size:1.05rem;">{status} · {stage}</div>
   <div style="color:#e2e8f0;margin-top:4px;">{title}</div>
+  <div style="color:#38bdf8;font-size:0.9rem;margin-top:8px;"><b>Timeframe:</b> {tf}</div>
+  <div style="color:#94a3b8;font-size:0.88rem;margin-top:4px;"><b>From:</b> {formed_from or "—"}</div>
+  <div style="color:#94a3b8;font-size:0.88rem;margin-top:2px;">{price_line or ""}</div>
+  <div style="color:#94a3b8;font-size:0.88rem;margin-top:2px;">{rsi_line or ""}</div>
   <div style="color:#94a3b8;font-size:0.88rem;margin-top:6px;">{" · ".join(detail_bits) if detail_bits else "—"}</div>
   <div style="color:#cbd5e1;font-size:0.9rem;margin-top:8px;">{daily or reason}</div>
 </div>
