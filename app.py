@@ -11750,7 +11750,12 @@ def show_915_strategy_desk():
             v = v[v["Result"].astype(str).str.upper().str.contains("STOP", na=False)]
         if f_day == "Today only" and "Prediction Date" in v.columns:
             today = india_now().strftime("%Y-%m-%d")
-            v = v[v["Prediction Date"].astype(str).str.startswith(today)]
+            vt = v[v["Prediction Date"].astype(str).str.startswith(today)]
+            if vt.empty:
+                # No closed trades dated today (scan/eval missed) — keep all closed so page is not blank
+                v["_fallback_day"] = True
+            else:
+                v = vt
         return v
 
     # ----- Trade blotter (closed only) -----
@@ -11761,12 +11766,30 @@ def show_915_strategy_desk():
     if live is not None and not getattr(live, "empty", True):
         # merge live rows only for chart picker; results still from past
         pass
+    try:
+        if f_day == "Today only" and blotter_src is not None and not blotter_src.empty:
+            today = india_now().strftime("%Y-%m-%d")
+            if "Prediction Date" in blotter_src.columns:
+                n_today = int(blotter_src["Prediction Date"].astype(str).str.startswith(today).sum())
+                if n_today == 0:
+                    st.warning(
+                        f"No 9:15 trades dated **{today}** in the book yet. "
+                        "Day filter will show **all closed** rows so the page is not blank. "
+                        "Run GitHub **strategy_915**, then **Update results** after 9:30."
+                    )
+    except Exception:
+        pass
     view = _filter_915(blotter_src) if blotter_src is not None else pd.DataFrame()
 
     if view is None or view.empty:
-        st.info(
-            "No **closed** results yet (Target / Stop only). "
-            "After 9:30 press **Update results**, or wait for auto-eval on open."
+        st.warning(
+            "No **closed** Target/Stop rows for this filter.\n\n"
+            "**Today empty?** Morning **9:15 GitHub job** may not have written files yet, "
+            "or **Update results** was not run after 9:30.\n\n"
+            "1. Actions → Market Scan → Run **strategy_915**\n"
+            "2. Here press **Refresh signals / load GitHub**\n"
+            "3. After 9:30 press **Update results**\n"
+            "4. Set Day filter to **All days** to see Friday / earlier closed book"
         )
     else:
         lines = []
@@ -14407,6 +14430,23 @@ def show_strategy_lab(results: pd.DataFrame):
         "backtest efficiency (up to ~5y), live stock signals for Angel One, and beginner lessons. "
         "Efficiency = target hit **before** stop. Not a guarantee of any fixed %."
     )
+    try:
+        meta_p = APP_DIR / "latest_results_meta.json"
+        ist_s = ""
+        if meta_p.exists():
+            import json as _json
+            ist_s = str(_json.loads(meta_p.read_text()).get("saved_at_ist") or "")
+        today = india_now().strftime("%Y-%m-%d")
+        if ist_s and today not in ist_s:
+            st.error(
+                f"Scan data is **not from today** (last: **{ist_s or 'unknown'}**). "
+                "GitHub Mon–Fri jobs may have failed to push. "
+                "**Actions → Market Scan → Run workflow → full_scan**, then **Reload scan** in the app header."
+            )
+        elif not ist_s:
+            st.warning("No local scan meta — press **Reload scan** / check GITHUB_RESULTS_RAW secret.")
+    except Exception:
+        pass
 
     try:
         reg = nifty_market_regime()
