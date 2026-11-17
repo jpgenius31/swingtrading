@@ -1,5 +1,5 @@
 {
-  "rows": 2561,
+  "rows": 2537,
   "pattern": "ALL",
   "timeframe": "ALL",
   "timeframes": {
@@ -7,7 +7,7 @@
     "30 Min": 612,
     "Weekly": 319,
     "1 Hour": 599,
-    "Daily": 458
+    "Daily": 434
   },
   "patterns_covered": 29,
   "counts": {
@@ -18,30 +18,30 @@
     "Inverse H&S": 172,
     "Head & Shoulders": 183,
     "Gartley": 36,
-    "Triple Bottom": 192,
+    "Triple Bottom": 193,
     "Triple Top": 179,
     "Cypher": 43,
-    "Deep Crab": 10,
     "Shark": 44,
-    "Three Falling Peaks": 58,
-    "Ascending Triangle": 90,
-    "Descending Triangle": 82,
-    "Falling Wedge": 41,
-    "Rising Wedge": 48,
+    "Three Falling Peaks": 61,
+    "Ascending Triangle": 89,
+    "Descending Triangle": 83,
+    "Falling Wedge": 42,
+    "Rising Wedge": 46,
     "Symmetrical Triangle": 51,
     "Trendline S/R": 212,
-    "Rectangle Top": 27,
-    "Rectangle Bottom": 27,
-    "Broadening Bottom": 38,
-    "Broadening Top": 42,
+    "Rectangle Top": 28,
+    "Rectangle Bottom": 28,
+    "Broadening Bottom": 24,
+    "Broadening Top": 28,
     "High & Tight Flag": 10,
     "Crab": 13,
     "Butterfly": 13,
+    "Deep Crab": 9,
     "Flag": 148,
     "Pennant": 148,
     "Bat": 35
   },
   "stocks": 60,
-  "saved_at_ist": "2026-11-17 22:15:27 IST",
+  "saved_at_ist": "2026-11-18 00:13:31 IST",
   "source": "scan_job.run_all_pattern_scan_multi_tf"
 }
