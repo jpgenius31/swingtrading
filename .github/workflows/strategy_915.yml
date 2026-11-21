@@ -1,0 +1,75 @@
+name: Strategy 915
+
+# STRICT: only the open-window job. One cron so GitHub is less likely to skip it.
+# 09:12 IST = 03:42 UTC (start early — GitHub often delays 5–20 min)
+# 09:16 IST = 03:46 UTC (second try still inside / near window)
+on:
+  schedule:
+    - cron: "42 3 * * 1-5"
+    - cron: "46 3 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: strategy-915-only
+  cancel-in-progress: false
+
+jobs:
+  run915:
+    name: 9:15–9:30 CE/PE signals
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install deps
+        run: |
+          pip install --upgrade pip
+          pip install pandas numpy yfinance requests
+      - name: Run 9:15 strategy
+        continue-on-error: true
+        run: |
+          set +e
+          python scan_job.py --915 --limit 20 --915-list both
+          echo "exit=$?"
+          exit 0
+      - name: Ensure files
+        run: |
+          test -f strategy_915_candle_meta.json || echo '{"rows":0,"ok":false}' > strategy_915_candle_meta.json
+          test -f strategy_915_candle_live.csv || echo "Stock,Signal,Result" > strategy_915_candle_live.csv
+          date -u +%Y-%m-%dT%H:%MZ > last_915_heartbeat.txt
+          ls -la strategy_915_candle_*.csv strategy_915_candle_meta.json 2>/dev/null || true
+      - name: Commit and push (retry)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git add strategy_915_candle_live.csv strategy_915_candle_past.csv strategy_915_candle_meta.json strategy_915_money_summary.json nse_top_gainers_cache.csv nse_top_losers_cache.csv nse_gainers_losers_meta.json last_915_heartbeat.txt 2>/dev/null || true
+          if git diff --staged --quiet; then
+            echo "No 915 file changes"
+            exit 0
+          fi
+          git commit -m "chore: 9:15 strategy $(date -u +%Y-%m-%dT%H:%MZ)" || true
+          for i in 1 2 3 4 5 6; do
+            git fetch origin main
+            if git pull --rebase origin main; then
+              if git push origin HEAD:main; then
+                echo "Push OK attempt $i"
+                exit 0
+              fi
+            else
+              git rebase --abort 2>/dev/null || true
+            fi
+            sleep $((i * 4))
+          done
+          echo "WARNING: push failed after retries"
+          exit 0
