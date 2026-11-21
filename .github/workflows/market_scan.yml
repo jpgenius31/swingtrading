@@ -1,19 +1,11 @@
-name: Market Scan
+name: Market Scan (manual only)
 
-# Times are UTC. IST = UTC+5:30
-# 09:15 IST → 03:45 UTC  ← 9:15–9:30 strategy (open)
-# 09:18 IST → 03:48 UTC  ← second pass in the 15-min window
-# 09:20 IST → 03:50 UTC  ← full market scan
-# 12:30 IST → 07:00 UTC
-# 15:00 IST → 09:30 UTC
-# Weekdays only (Mon–Fri)
+# Native GitHub cron was unreliable for 9:15 IST (often skipped or hours late).
+# Automatic runs moved to:
+#   - strategy_915.yml  (9:12 / 9:16 IST)
+#   - full_scan.yml     (9:22 / 12:30 / 15:00 / 15:35 IST)
+# Use this workflow only for manual "Run workflow" from Actions UI.
 on:
-  schedule:
-    - cron: "45 3 * * 1-5"   # 09:15 IST — 9:15 strategy
-    - cron: "48 3 * * 1-5"   # 09:18 IST — 9:15 strategy refresh
-    - cron: "50 3 * * 1-5"   # 09:20 IST — full scan
-    - cron: "0 7 * * 1-5"    # 12:30 IST
-    - cron: "30 9 * * 1-5"   # 15:00 IST
   workflow_dispatch:
     inputs:
       job_type:
@@ -24,111 +16,76 @@ on:
         options:
           - full_scan
           - strategy_915
-          - patterns_only
           - both
 
 permissions:
   contents: write
 
+concurrency:
+  group: market-scan-manual
+  cancel-in-progress: false
+
 jobs:
   strategy_915:
-    name: 9:15–9:30 open strategy
+    name: 9:15 strategy (manual)
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    # Run on 9:15 / 9:18 schedules, or manual when selected
-    if: |
-      github.event_name == 'schedule' && (github.event.schedule == '45 3 * * 1-5' || github.event.schedule == '48 3 * * 1-5')
-      || (github.event_name == 'workflow_dispatch' && (github.event.inputs.job_type == 'strategy_915' || github.event.inputs.job_type == 'both'))
+    if: ${{ github.event.inputs.job_type == 'strategy_915' || github.event.inputs.job_type == 'both' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install deps
-        run: |
-          pip install --upgrade pip
-          pip install pandas numpy yfinance requests
-      - name: Run 9:15 candle strategy
-        run: python scan_job.py --915 --limit 20 --915-list both
-      - name: Show outputs
-        run: |
-          ls -la strategy_915_candle_live.csv strategy_915_candle_past.csv strategy_915_candle_meta.json 2>/dev/null || true
-          head -5 strategy_915_candle_live.csv 2>/dev/null || true
-      - name: Commit 9:15 results
+          cache: pip
+      - run: pip install pandas numpy yfinance requests
+      - run: |
+          set +e
+          python scan_job.py --915 --limit 20 --915-list both
+          exit 0
+      - name: Commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add pattern_lib.py strategy_915_candle_live.csv strategy_915_candle_past.csv strategy_915_candle_meta.json strategy_915_money_summary.json pattern_scan_results.json pattern_scan_meta.json index_market_snap.json realtime_sync_version.json || true
-          if git diff --staged --quiet; then
-            echo "No 9:15 changes to commit"
-            exit 0
-          fi
-          git commit -m "chore: 9:15 strategy $(date -u +%Y-%m-%dT%H:%MZ)"
-          git push
+          git add strategy_915_candle_live.csv strategy_915_candle_past.csv strategy_915_candle_meta.json 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "chore: manual 915 $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            git rebase --abort 2>/dev/null || true
+            sleep $((i*3))
+          done
+          exit 0
 
   full_scan:
-    name: Full market scan
+    name: Full scan (manual)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    if: |
-      github.event_name == 'schedule' && (github.event.schedule == '50 3 * * 1-5' || github.event.schedule == '0 7 * * 1-5' || github.event.schedule == '30 9 * * 1-5')
-      || (github.event_name == 'workflow_dispatch' && (github.event.inputs.job_type == 'full_scan' || github.event.inputs.job_type == 'both' || github.event.inputs.job_type == ''))
-      || (github.event_name == 'workflow_dispatch' && github.event.inputs.job_type == null)
+    timeout-minutes: 50
+    if: ${{ github.event.inputs.job_type == 'full_scan' || github.event.inputs.job_type == 'both' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install deps
-        run: |
-          pip install --upgrade pip
-          pip install pandas numpy yfinance requests
-      - name: Check scan_job.py
-        run: test -f scan_job.py
-      - name: Run headless scan
-        run: python scan_job.py --limit 150
-      - name: Show result files
-        run: |
-          ls -la latest_results.csv latest_results_meta.json strategy_live_signals.csv index_market_snap.json 2>/dev/null || true
-          head -3 latest_results.csv || true
-      - name: Commit and push results
+          cache: pip
+      - run: pip install pandas numpy yfinance requests
+      - run: |
+          set +e
+          python scan_job.py --limit 120
+          exit 0
+      - name: Commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add latest_results.csv latest_results_meta.json realtime_sync_version.json strategy_live_signals.csv strategy_live_meta.json index_market_snap.json pattern_scan_results.json pattern_scan_meta.json pattern_lib.py || true
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-            exit 0
-          fi
-          git commit -m "chore: market scan $(date -u +%Y-%m-%dT%H:%MZ) IST-schedule"
-          git push
-
-  patterns_only_job:
-    name: Chart pattern library
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    if: |
-      github.event_name == 'workflow_dispatch' && github.event.inputs.job_type == 'patterns_only'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install deps
-        run: |
-          pip install --upgrade pip
-          pip install pandas numpy yfinance requests
-      - name: Scan all patterns
-        run: python scan_job.py --patterns-only --limit 80
-      - name: Commit pattern library
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add pattern_scan_results.json pattern_scan_meta.json pattern_lib.py || true
-          ls -la pattern_scan_results.json pattern_scan_meta.json 2>/dev/null || true
-          if git diff --staged --quiet; then
-            echo "No pattern file changes"
-            exit 0
-          fi
-          git commit -m "chore: pattern library $(date -u +%Y-%m-%dT%H:%MZ)"
-          git push
+          git add latest_results.csv latest_results_meta.json realtime_sync_version.json strategy_live_signals.csv strategy_live_meta.json index_market_snap.json 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "chore: manual full scan $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            git rebase --abort 2>/dev/null || true
+            sleep $((i*3))
+          done
+          exit 0
