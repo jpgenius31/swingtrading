@@ -147,55 +147,148 @@ def detect_structure_pattern(df: pd.DataFrame, pattern_name: str, swing_order: i
             "rules": CHART_STRUCTURE_PATTERNS.get(pn, CHART_STRUCTURE_PATTERNS.get(name, {})).get("rules", ""),
         }
 
-    # --- Double Bottom ---
-    if name == "Double Bottom" and len(lows) >= 2:
-        for j in range(len(lows) - 1, 0, -1):
-            i2, p2, _ = lows[j]
-            i1, p1, _ = lows[j - 1]
-            if i2 - i1 < 5 or i2 - i1 > 80:
-                continue
-            if _pct_diff(p1, p2) > 3.5:
-                continue
-            mid = df.iloc[i1 : i2 + 1]
-            neck = float(mid["High"].max())
-            if neck <= max(p1, p2):
-                continue
-            fit = 100 - _pct_diff(p1, p2) * 8
-            if close > neck:
-                fit = min(98, fit + 8)
-            height = neck - min(p1, p2)
-            return pack(
-                "BULLISH", fit,
-                [("A", i1, p1), ("B", int(mid["High"].values.argmax()) + i1, neck), ("C", i2, p2)],
-                i1, i2, neck, min(p1, p2) * 0.99, neck + height,
-                f"Double bottom at ~₹{min(p1,p2):.1f}. Neckline ₹{neck:.1f}. "
-                f"{'Breakout above neckline confirmed.' if close > neck else 'Wait for close above neckline.'}",
-            )
 
-    # --- Double Top ---
+    # --- Double Bottom (strict, mirror of double top) ---
+    if name == "Double Bottom" and len(lows) >= 2:
+        best = None
+        best_fit = -1.0
+        for j in range(len(lows) - 1, 0, -1):
+            for i in range(j - 1, -1, -1):
+                i1, p1, _ = lows[i]
+                i2, p2, _ = lows[j]
+                gap = i2 - i1
+                if gap < 8 or gap > 70:
+                    continue
+                trough_diff = _pct_diff(p1, p2)
+                if trough_diff > 2.0:
+                    continue
+                if p2 < p1 * 0.988:  # clear lower low
+                    continue
+                mid = df.iloc[i1 : i2 + 1]
+                if mid.empty or len(mid) < 5:
+                    continue
+                neck_rel = int(mid["High"].values.argmax())
+                neck_i = i1 + neck_rel
+                if neck_i <= i1 + 2 or neck_i >= i2 - 2:
+                    continue
+                neck = float(mid["High"].iloc[neck_rel])
+                trough_hi = max(p1, p2)
+                trough_lo = min(p1, p2)
+                if neck <= trough_hi * 1.015:
+                    continue
+                rise_pct = (neck - trough_hi) / max(trough_hi, 1e-9) * 100.0
+                if rise_pct < 2.0:
+                    continue
+                fit = 100.0 - trough_diff * 12.0
+                fit -= max(0.0, 4.0 - rise_pct) * 2.0
+                if close > neck:
+                    fit = min(98.0, fit + 10.0)
+                elif close > trough_hi:
+                    fit = min(95.0, fit + 3.0)
+                else:
+                    fit -= 8.0
+                age = max(0, last_i - i2)
+                fit -= min(15.0, age * 0.15)
+                if fit < min_fit:
+                    continue
+                if fit > best_fit:
+                    height = neck - trough_lo
+                    best_fit = fit
+                    best = pack(
+                        "BULLISH", fit,
+                        [("A", i1, float(p1)), ("B", neck_i, float(neck)), ("C", i2, float(p2))],
+                        i1, i2,
+                        float(neck),
+                        float(trough_lo) * 0.992,
+                        float(neck) + height,
+                        (
+                            f"Double bottom: A ₹{p1:.1f} ≈ C ₹{p2:.1f} (diff {trough_diff:.1f}%). "
+                            f"Neckline B ₹{neck:.1f} (+{rise_pct:.1f}% above troughs). "
+                            + (
+                                "Breakout above neckline confirmed."
+                                if close > neck
+                                else "Wait for daily close above neckline."
+                            )
+                        ),
+                    )
+        if best is not None:
+            return best
+
+
+
+    # --- Double Top (strict) ---
+    # Classic: Peak A ≈ Peak C, clear trough B between, B well below peaks.
+    # Prefer confirmed breakdown (close < neckline). Reject V-shapes and rising tops.
     if name == "Double Top" and len(highs) >= 2:
+        best = None
+        best_fit = -1.0
         for j in range(len(highs) - 1, 0, -1):
-            i2, p2, _ = highs[j]
-            i1, p1, _ = highs[j - 1]
-            if i2 - i1 < 5 or i2 - i1 > 80:
-                continue
-            if _pct_diff(p1, p2) > 3.5:
-                continue
-            mid = df.iloc[i1 : i2 + 1]
-            neck = float(mid["Low"].min())
-            if neck >= min(p1, p2):
-                continue
-            fit = 100 - _pct_diff(p1, p2) * 8
-            if close < neck:
-                fit = min(98, fit + 8)
-            height = max(p1, p2) - neck
-            return pack(
-                "BEARISH", fit,
-                [("A", i1, p1), ("B", int(mid["Low"].values.argmin()) + i1, neck), ("C", i2, p2)],
-                i1, i2, neck, max(p1, p2) * 1.01, neck - height,
-                f"Double top at ~₹{max(p1,p2):.1f}. Neckline ₹{neck:.1f}. "
-                f"{'Breakdown below neckline confirmed.' if close < neck else 'Wait for close below neckline.'}",
-            )
+            for i in range(j - 1, -1, -1):
+                i1, p1, _ = highs[i]
+                i2, p2, _ = highs[j]
+                gap = i2 - i1
+                if gap < 8 or gap > 70:
+                    continue
+                # Peaks must be similar height (≤ 2.0%)
+                peak_diff = _pct_diff(p1, p2)
+                if peak_diff > 2.0:
+                    continue
+                # Second peak should not be a clear higher high (>1.2% above first)
+                if p2 > p1 * 1.012:
+                    continue
+                mid = df.iloc[i1 : i2 + 1]
+                if mid.empty or len(mid) < 5:
+                    continue
+                neck_rel = int(mid["Low"].values.argmin())
+                neck_i = i1 + neck_rel
+                # Neck must sit between the two peaks (not on the peaks)
+                if neck_i <= i1 + 2 or neck_i >= i2 - 2:
+                    continue
+                neck = float(mid["Low"].iloc[neck_rel])
+                peak_lo = min(p1, p2)
+                peak_hi = max(p1, p2)
+                if neck >= peak_lo * 0.985:
+                    continue  # trough not deep enough
+                depth_pct = (peak_lo - neck) / max(peak_lo, 1e-9) * 100.0
+                if depth_pct < 2.0:
+                    continue  # need ≥2% pullback between tops
+                # Fit: equality of peaks + depth + confirmation
+                fit = 100.0 - peak_diff * 12.0
+                fit -= max(0.0, 4.0 - depth_pct) * 2.0
+                if close < neck:
+                    fit = min(98.0, fit + 10.0)
+                elif close < peak_lo:
+                    fit = min(95.0, fit + 3.0)
+                else:
+                    fit -= 8.0  # still above both peaks area — weaker
+                # Prefer more recent second peak
+                age = max(0, last_i - i2)
+                fit -= min(15.0, age * 0.15)
+                if fit < min_fit:
+                    continue
+                if fit > best_fit:
+                    height = peak_hi - neck
+                    best_fit = fit
+                    best = pack(
+                        "BEARISH", fit,
+                        [("A", i1, float(p1)), ("B", neck_i, float(neck)), ("C", i2, float(p2))],
+                        i1, i2,
+                        float(neck),  # entry = neckline break
+                        float(peak_hi) * 1.008,  # stop above higher peak
+                        float(neck) - height,  # measured move
+                        (
+                            f"Double top: A ₹{p1:.1f} ≈ C ₹{p2:.1f} (diff {peak_diff:.1f}%). "
+                            f"Neckline B ₹{neck:.1f} (−{depth_pct:.1f}% from peaks). "
+                            + (
+                                "Breakdown below neckline confirmed."
+                                if close < neck
+                                else "Wait for daily close below neckline."
+                            )
+                        ),
+                    )
+        if best is not None:
+            return best
+
 
     # --- Triple Bottom / Top (3 swings) ---
     if name == "Triple Bottom" and len(lows) >= 3:

@@ -3051,55 +3051,148 @@ def detect_structure_pattern(df: pd.DataFrame, pattern_name: str, swing_order: i
             "rules": CHART_STRUCTURE_PATTERNS.get(pn, CHART_STRUCTURE_PATTERNS.get(name, {})).get("rules", ""),
         }
 
-    # --- Double Bottom ---
-    if name == "Double Bottom" and len(lows) >= 2:
-        for j in range(len(lows) - 1, 0, -1):
-            i2, p2, _ = lows[j]
-            i1, p1, _ = lows[j - 1]
-            if i2 - i1 < 5 or i2 - i1 > 80:
-                continue
-            if _pct_diff(p1, p2) > 3.5:
-                continue
-            mid = df.iloc[i1 : i2 + 1]
-            neck = float(mid["High"].max())
-            if neck <= max(p1, p2):
-                continue
-            fit = 100 - _pct_diff(p1, p2) * 8
-            if close > neck:
-                fit = min(98, fit + 8)
-            height = neck - min(p1, p2)
-            return pack(
-                "BULLISH", fit,
-                [("A", i1, p1), ("B", int(mid["High"].values.argmax()) + i1, neck), ("C", i2, p2)],
-                i1, i2, neck, min(p1, p2) * 0.99, neck + height,
-                f"Double bottom at ~₹{min(p1,p2):.1f}. Neckline ₹{neck:.1f}. "
-                f"{'Breakout above neckline confirmed.' if close > neck else 'Wait for close above neckline.'}",
-            )
 
-    # --- Double Top ---
+    # --- Double Bottom (strict, mirror of double top) ---
+    if name == "Double Bottom" and len(lows) >= 2:
+        best = None
+        best_fit = -1.0
+        for j in range(len(lows) - 1, 0, -1):
+            for i in range(j - 1, -1, -1):
+                i1, p1, _ = lows[i]
+                i2, p2, _ = lows[j]
+                gap = i2 - i1
+                if gap < 8 or gap > 70:
+                    continue
+                trough_diff = _pct_diff(p1, p2)
+                if trough_diff > 2.0:
+                    continue
+                if p2 < p1 * 0.988:  # clear lower low
+                    continue
+                mid = df.iloc[i1 : i2 + 1]
+                if mid.empty or len(mid) < 5:
+                    continue
+                neck_rel = int(mid["High"].values.argmax())
+                neck_i = i1 + neck_rel
+                if neck_i <= i1 + 2 or neck_i >= i2 - 2:
+                    continue
+                neck = float(mid["High"].iloc[neck_rel])
+                trough_hi = max(p1, p2)
+                trough_lo = min(p1, p2)
+                if neck <= trough_hi * 1.015:
+                    continue
+                rise_pct = (neck - trough_hi) / max(trough_hi, 1e-9) * 100.0
+                if rise_pct < 2.0:
+                    continue
+                fit = 100.0 - trough_diff * 12.0
+                fit -= max(0.0, 4.0 - rise_pct) * 2.0
+                if close > neck:
+                    fit = min(98.0, fit + 10.0)
+                elif close > trough_hi:
+                    fit = min(95.0, fit + 3.0)
+                else:
+                    fit -= 8.0
+                age = max(0, last_i - i2)
+                fit -= min(15.0, age * 0.15)
+                if fit < min_fit:
+                    continue
+                if fit > best_fit:
+                    height = neck - trough_lo
+                    best_fit = fit
+                    best = pack(
+                        "BULLISH", fit,
+                        [("A", i1, float(p1)), ("B", neck_i, float(neck)), ("C", i2, float(p2))],
+                        i1, i2,
+                        float(neck),
+                        float(trough_lo) * 0.992,
+                        float(neck) + height,
+                        (
+                            f"Double bottom: A ₹{p1:.1f} ≈ C ₹{p2:.1f} (diff {trough_diff:.1f}%). "
+                            f"Neckline B ₹{neck:.1f} (+{rise_pct:.1f}% above troughs). "
+                            + (
+                                "Breakout above neckline confirmed."
+                                if close > neck
+                                else "Wait for daily close above neckline."
+                            )
+                        ),
+                    )
+        if best is not None:
+            return best
+
+
+
+    # --- Double Top (strict) ---
+    # Classic: Peak A ≈ Peak C, clear trough B between, B well below peaks.
+    # Prefer confirmed breakdown (close < neckline). Reject V-shapes and rising tops.
     if name == "Double Top" and len(highs) >= 2:
+        best = None
+        best_fit = -1.0
         for j in range(len(highs) - 1, 0, -1):
-            i2, p2, _ = highs[j]
-            i1, p1, _ = highs[j - 1]
-            if i2 - i1 < 5 or i2 - i1 > 80:
-                continue
-            if _pct_diff(p1, p2) > 3.5:
-                continue
-            mid = df.iloc[i1 : i2 + 1]
-            neck = float(mid["Low"].min())
-            if neck >= min(p1, p2):
-                continue
-            fit = 100 - _pct_diff(p1, p2) * 8
-            if close < neck:
-                fit = min(98, fit + 8)
-            height = max(p1, p2) - neck
-            return pack(
-                "BEARISH", fit,
-                [("A", i1, p1), ("B", int(mid["Low"].values.argmin()) + i1, neck), ("C", i2, p2)],
-                i1, i2, neck, max(p1, p2) * 1.01, neck - height,
-                f"Double top at ~₹{max(p1,p2):.1f}. Neckline ₹{neck:.1f}. "
-                f"{'Breakdown below neckline confirmed.' if close < neck else 'Wait for close below neckline.'}",
-            )
+            for i in range(j - 1, -1, -1):
+                i1, p1, _ = highs[i]
+                i2, p2, _ = highs[j]
+                gap = i2 - i1
+                if gap < 8 or gap > 70:
+                    continue
+                # Peaks must be similar height (≤ 2.0%)
+                peak_diff = _pct_diff(p1, p2)
+                if peak_diff > 2.0:
+                    continue
+                # Second peak should not be a clear higher high (>1.2% above first)
+                if p2 > p1 * 1.012:
+                    continue
+                mid = df.iloc[i1 : i2 + 1]
+                if mid.empty or len(mid) < 5:
+                    continue
+                neck_rel = int(mid["Low"].values.argmin())
+                neck_i = i1 + neck_rel
+                # Neck must sit between the two peaks (not on the peaks)
+                if neck_i <= i1 + 2 or neck_i >= i2 - 2:
+                    continue
+                neck = float(mid["Low"].iloc[neck_rel])
+                peak_lo = min(p1, p2)
+                peak_hi = max(p1, p2)
+                if neck >= peak_lo * 0.985:
+                    continue  # trough not deep enough
+                depth_pct = (peak_lo - neck) / max(peak_lo, 1e-9) * 100.0
+                if depth_pct < 2.0:
+                    continue  # need ≥2% pullback between tops
+                # Fit: equality of peaks + depth + confirmation
+                fit = 100.0 - peak_diff * 12.0
+                fit -= max(0.0, 4.0 - depth_pct) * 2.0
+                if close < neck:
+                    fit = min(98.0, fit + 10.0)
+                elif close < peak_lo:
+                    fit = min(95.0, fit + 3.0)
+                else:
+                    fit -= 8.0  # still above both peaks area — weaker
+                # Prefer more recent second peak
+                age = max(0, last_i - i2)
+                fit -= min(15.0, age * 0.15)
+                if fit < min_fit:
+                    continue
+                if fit > best_fit:
+                    height = peak_hi - neck
+                    best_fit = fit
+                    best = pack(
+                        "BEARISH", fit,
+                        [("A", i1, float(p1)), ("B", neck_i, float(neck)), ("C", i2, float(p2))],
+                        i1, i2,
+                        float(neck),  # entry = neckline break
+                        float(peak_hi) * 1.008,  # stop above higher peak
+                        float(neck) - height,  # measured move
+                        (
+                            f"Double top: A ₹{p1:.1f} ≈ C ₹{p2:.1f} (diff {peak_diff:.1f}%). "
+                            f"Neckline B ₹{neck:.1f} (−{depth_pct:.1f}% from peaks). "
+                            + (
+                                "Breakdown below neckline confirmed."
+                                if close < neck
+                                else "Wait for daily close below neckline."
+                            )
+                        ),
+                    )
+        if best is not None:
+            return best
+
 
     # --- Triple Bottom / Top (3 swings) ---
     if name == "Triple Bottom" and len(lows) >= 3:
@@ -3926,35 +4019,70 @@ def _pattern_mini_chart(df, hit: dict, height: int = 280, full: bool = False, me
     if pts:
         px = [p[1] for p in pts]
         py = [p[2] for p in pts]
-        # Structure polyline
-        fig.add_trace(go.Scatter(
-            x=px, y=py,
-            mode="lines",
-            line=dict(color=line_col, width=3, dash="solid"),
-            name="Pattern lines",
-            hoverinfo="skip",
-        ))
-        # Trendline segments as thicker dashed guides
-        for a, b in zip(pts[:-1], pts[1:]):
+        pname = str(hit.get("pattern") or "").upper()
+        is_double = "DOUBLE TOP" in pname or "DOUBLE BOTTOM" in pname
+
+        if is_double and len(pts) >= 3:
+            # Proper double top/bottom drawing:
+            # A & C = peaks (or troughs), B = neckline point
+            # Horizontal resistance/support through A–C, horizontal neckline through B
+            a_lab, a_i, a_p = pts[0]
+            b_lab, b_i, b_p = pts[1]
+            c_lab, c_i, c_p = pts[2]
+            peak_y = (a_p + c_p) / 2.0
+            # Peak / trough guide (A to C)
             fig.add_trace(go.Scatter(
-                x=[a[1], b[1]], y=[a[2], b[2]],
+                x=[a_i, c_i], y=[peak_y, peak_y],
                 mode="lines",
-                line=dict(color="#fbbf24", width=1.5, dash="dash"),
+                line=dict(color=line_col, width=2, dash="dash"),
+                name="Peaks/Troughs level",
                 hoverinfo="skip",
-                showlegend=False,
             ))
-            # Arrow annotation from a → b
-            fig.add_annotation(
-                x=b[1], y=b[2],
-                ax=a[1], ay=a[2],
-                xref="x", yref="y", axref="x", ayref="y",
-                showarrow=True,
-                arrowhead=3,
-                arrowsize=1.2,
-                arrowwidth=2,
-                arrowcolor=line_col,
-                opacity=0.9,
-            )
+            # Neckline full width of pattern
+            fig.add_trace(go.Scatter(
+                x=[a_i, c_i], y=[b_p, b_p],
+                mode="lines",
+                line=dict(color="#38bdf8", width=2, dash="dot"),
+                name="Neckline",
+                hoverinfo="skip",
+            ))
+            # Soft A-B and B-C only as thin guides (not primary V)
+            fig.add_trace(go.Scatter(
+                x=[a_i, b_i, c_i], y=[a_p, b_p, c_p],
+                mode="lines",
+                line=dict(color=line_col, width=1, dash="dot"),
+                opacity=0.45,
+                name="Structure",
+                hoverinfo="skip",
+            ))
+        else:
+            # Generic structure polyline
+            fig.add_trace(go.Scatter(
+                x=px, y=py,
+                mode="lines",
+                line=dict(color=line_col, width=3, dash="solid"),
+                name="Pattern lines",
+                hoverinfo="skip",
+            ))
+            for a, b in zip(pts[:-1], pts[1:]):
+                fig.add_trace(go.Scatter(
+                    x=[a[1], b[1]], y=[a[2], b[2]],
+                    mode="lines",
+                    line=dict(color="#fbbf24", width=1.5, dash="dash"),
+                    hoverinfo="skip",
+                    showlegend=False,
+                ))
+                fig.add_annotation(
+                    x=b[1], y=b[2],
+                    ax=a[1], ay=a[2],
+                    xref="x", yref="y", axref="x", ayref="y",
+                    showarrow=True,
+                    arrowhead=3,
+                    arrowsize=1.2,
+                    arrowwidth=2,
+                    arrowcolor=line_col,
+                    opacity=0.9,
+                )
 
         colors = ["#fbbf24", "#38bdf8", "#a78bfa", "#f472b6", "#4ade80", "#fb7185", "#2dd4bf"]
         for k, (lab, xi, yi) in enumerate(pts):
@@ -23997,6 +24125,189 @@ def learning_score_adjustment(pred, risk_level, call, patterns, learning=None, c
         return _learning_score_adjustment_legacy(pred, risk_level, call, patterns, learning)
 
 
+
+def build_repeated_mistakes_report(history: pd.DataFrame = None, learning: dict = None) -> dict:
+    """
+    Human-readable report: is the model learning, what mistakes repeat, what changed.
+    Used on Past Predictions + Home so user can SEE learning status.
+    """
+    learning = learning if isinstance(learning, dict) else load_learning()
+    out = {
+        "status": "NEED_DATA",
+        "status_label": "Not enough closed trades to learn yet",
+        "closed": 0,
+        "wins": 0,
+        "losses": 0,
+        "win_rate": None,
+        "updated_at": learning.get("updated_at") or learning.get("last_trained") or "—",
+        "repeated_stocks": [],
+        "fail_reasons": [],
+        "weak_strategies": [],
+        "lessons": list(learning.get("lessons") or learning.get("mistake_lessons") or [])[:15],
+        "priority": list(learning.get("strategy_priority") or [])[:8],
+        "notes": [],
+    }
+    try:
+        if history is None:
+            history = normalize_history_df(load_history())
+    except Exception:
+        history = None
+    if history is None or getattr(history, "empty", True) or "Result" not in getattr(history, "columns", []):
+        out["notes"].append("No past prediction history file / no Result column.")
+        return out
+
+    h = history.copy()
+    ru = h["Result"].astype(str).str.upper()
+    wins = h[ru.str.contains("TARGET", na=False)]
+    losses = h[ru.str.contains("STOP", na=False)]
+    closed_n = int(len(wins) + len(losses))
+    out["closed"] = closed_n
+    out["wins"] = int(len(wins))
+    out["losses"] = int(len(losses))
+    out["win_rate"] = round(100.0 * len(wins) / closed_n, 1) if closed_n else None
+
+    if closed_n >= 5 and (out["lessons"] or learning.get("pattern_weights") or learning.get("strategy_stats")):
+        out["status"] = "LEARNING"
+        out["status_label"] = "Model is learning from closed trades"
+    elif closed_n >= 2:
+        out["status"] = "PARTIAL"
+        out["status_label"] = "Partial learning — need more closed target/stop outcomes"
+    else:
+        out["status"] = "NEED_DATA"
+        out["status_label"] = "Not enough closed trades to learn yet"
+
+    # Repeated stop-loss stocks
+    if not losses.empty and "Stock" in losses.columns:
+        vc = losses["Stock"].astype(str).str.upper().value_counts().head(8)
+        out["repeated_stocks"] = [{"Stock": s, "Stop hits": int(c)} for s, c in vc.items() if int(c) >= 1]
+
+    # Fail reasons
+    if not losses.empty:
+        col = "Fail Reason" if "Fail Reason" in losses.columns else None
+        if col:
+            fr = losses[col].astype(str).replace("", pd.NA).dropna()
+            fr = fr[~fr.str.upper().isin(["NAN", "NONE", "NAT", ""])]
+            if not fr.empty:
+                out["fail_reasons"] = [
+                    {"Reason": str(a)[:80], "Count": int(b)}
+                    for a, b in fr.value_counts().head(8).items()
+                ]
+
+    # Weak strategies / sources from learning file or history
+    try:
+        ss = learning.get("strategy_stats") or {}
+        weak = []
+        for k, v in ss.items():
+            if not isinstance(v, dict):
+                continue
+            closed_s = int(v.get("closed") or v.get("n") or 0)
+            rate = v.get("success_pct") or v.get("win_rate") or v.get("Success %")
+            try:
+                rate_f = float(rate)
+            except Exception:
+                rate_f = None
+            if closed_s >= 2 and rate_f is not None and rate_f < 45:
+                weak.append({"Strategy": str(k)[:60], "Closed": closed_s, "Success %": rate_f})
+        weak = sorted(weak, key=lambda x: x.get("Success %", 0))[:8]
+        out["weak_strategies"] = weak
+    except Exception:
+        pass
+
+    if out["repeated_stocks"]:
+        top = out["repeated_stocks"][0]
+        out["notes"].append(
+            f"Most repeated stop: **{top['Stock']}** ({top['Stop hits']}×) — avoid size / wait better setup."
+        )
+    if out["fail_reasons"]:
+        out["notes"].append(
+            f"Most common fail reason: **{out['fail_reasons'][0]['Reason']}**."
+        )
+    if out["status"] == "LEARNING":
+        out["notes"].append(
+            "Weights / priority in `model_learning.json` update when you re-train or on auto-learn."
+        )
+    return out
+
+
+def show_learning_mistakes_board(expanded: bool = True, key_prefix: str = "learn_board"):
+    """
+    Visible board: learning ON/OFF, repeated mistakes, lessons, weak strategies.
+    """
+    try:
+        hist = normalize_history_df(load_history())
+    except Exception:
+        hist = None
+    learning = load_learning()
+    # refresh learning lightly when enough data
+    try:
+        if st.button("🔁 Update learning from past mistakes", key=f"{key_prefix}_retrain"):
+            with st.spinner("Recomputing lessons from closed trades…"):
+                try:
+                    run_self_learning_engine(min_closed=2)
+                except Exception:
+                    pass
+                learning = learn_from_history(min_closed=2)
+            st.success("Learning file updated.")
+            st.rerun()
+    except Exception:
+        pass
+
+    rep = build_repeated_mistakes_report(hist, learning)
+    color = {"LEARNING": "#22c55e", "PARTIAL": "#f59e0b", "NEED_DATA": "#94a3b8"}.get(rep["status"], "#94a3b8")
+
+    st.markdown(
+        f"""
+<div style="border:1px solid {color};border-radius:12px;padding:14px 16px;background:#0b1220;margin:8px 0 12px 0;">
+  <div style="color:{color};font-weight:800;font-size:1.15rem;">🧠 Learning status: {rep['status']}</div>
+  <div style="color:#e2e8f0;margin-top:4px;">{rep['status_label']}</div>
+  <div style="color:#94a3b8;font-size:0.9rem;margin-top:8px;">
+    Closed trades learned: <b style="color:#f8fafc">{rep['closed']}</b>
+    · Wins <b style="color:#4ade80">{rep['wins']}</b>
+    · Losses <b style="color:#f87171">{rep['losses']}</b>
+    · Win rate <b style="color:#f8fafc">{rep['win_rate'] if rep['win_rate'] is not None else '—'}%</b>
+    · File updated: {rep['updated_at']}
+  </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+    with st.expander("📋 Repeated mistakes & what the model should avoid", expanded=expanded):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**Stocks with repeated stop-loss**")
+            if rep["repeated_stocks"]:
+                st.dataframe(pd.DataFrame(rep["repeated_stocks"]), use_container_width=True, hide_index=True)
+            else:
+                st.caption("No repeated stop-loss stocks yet.")
+            st.markdown("**Most common fail reasons**")
+            if rep["fail_reasons"]:
+                st.dataframe(pd.DataFrame(rep["fail_reasons"]), use_container_width=True, hide_index=True)
+            else:
+                st.caption("No fail-reason text stored on losses yet — use Update results on trades.")
+        with c2:
+            st.markdown("**Weak strategies / sources (<45% when enough samples)**")
+            if rep["weak_strategies"]:
+                st.dataframe(pd.DataFrame(rep["weak_strategies"]), use_container_width=True, hide_index=True)
+            else:
+                st.caption("No weak strategy stats yet (need more closed strategy trades).")
+            st.markdown("**Lessons written into the model**")
+            if rep["lessons"]:
+                for L in rep["lessons"][:12]:
+                    st.markdown(f"- {L}")
+            else:
+                st.caption("No lessons yet — close more target/stop trades, then press Update learning.")
+
+        if rep["notes"]:
+            st.info(" · ".join(rep["notes"]))
+        st.caption(
+            "How it works: closed **Target / Stop** rows in Past Predictions feed `model_learning.json`. "
+            "Next scans boost stronger patterns/strategies and down-rank repeated mistakes. "
+            "Learning is **not** magic AI — it is rule/weight updates from your outcome history."
+        )
+    return rep
+
+
 def learn_from_history(min_closed: int = 3) -> dict:
     """
     v2 learner: rebuilds everything from the closed-call history every time, so pressing
@@ -26732,7 +27043,12 @@ def show_history():
 
     # Learning panel
     learning = load_learning()
-    with st.expander("🧠 Model learning from past mistakes & chart patterns", expanded=True):
+    try:
+        show_learning_mistakes_board(expanded=True, key_prefix="pp_learn")
+    except Exception as _lb_e:
+        st.caption(f"Learning board: {_lb_e}")
+
+    with st.expander("🧠 Model learning from past mistakes & chart patterns", expanded=False):
         st.caption(
             f"Learning file: `{LEARNING_FILE.name}` · "
             f"Closed samples: {learning.get('sample_closed', 0)} · "
@@ -30988,6 +31304,12 @@ if st.session_state.page == "Dashboard":
     except Exception as _mp_err:
         st.caption(f"Market Pulse note: {_mp_err}")
 
+    st.divider()
+    st.markdown("### 🧠 Is the model learning?")
+    try:
+        show_learning_mistakes_board(expanded=False, key_prefix="home_learn")
+    except Exception as _hl:
+        st.caption(f"Learning status: {_hl}")
     st.divider()
     st.markdown("### Quick actions")
 
