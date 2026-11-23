@@ -1,0 +1,77 @@
+name: Chart Patterns Scan
+
+# Auto: after full scan windows (GitHub cron may delay — use external cron too)
+# 09:40 IST = 04:10 UTC
+# 12:45 IST = 07:15 UTC
+# 15:40 IST = 10:10 UTC
+on:
+  schedule:
+    - cron: "10 4 * * 1-5"
+    - cron: "15 7 * * 1-5"
+    - cron: "10 10 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: patterns-scan-only
+  cancel-in-progress: false
+
+jobs:
+  patterns:
+    name: Scan all chart patterns
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install deps
+        run: |
+          pip install --upgrade pip
+          pip install pandas numpy yfinance requests
+      - name: Run pattern library scan
+        continue-on-error: true
+        run: |
+          set +e
+          python scan_job.py --patterns-only --limit 100
+          echo "exit=$?"
+          exit 0
+      - name: Ensure outputs
+        run: |
+          test -f pattern_scan_meta.json || echo '{"rows":0,"ok":false,"source":"workflow"}' > pattern_scan_meta.json
+          test -f pattern_scan_results.json || echo '[]' > pattern_scan_results.json
+          date -u +%Y-%m-%dT%H:%MZ > last_patterns_heartbeat.txt
+          ls -la pattern_scan_*.json last_patterns_heartbeat.txt 2>/dev/null || true
+      - name: Commit and push (retry)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git add pattern_scan_results.json pattern_scan_meta.json last_patterns_heartbeat.txt 2>/dev/null || true
+          if git diff --staged --quiet; then
+            echo "No pattern file changes"
+            exit 0
+          fi
+          git commit -m "chore: chart patterns $(date -u +%Y-%m-%dT%H:%MZ)" || true
+          for i in 1 2 3 4 5 6; do
+            git fetch origin main
+            if git pull --rebase origin main; then
+              if git push origin HEAD:main; then
+                echo "Push OK attempt $i"
+                exit 0
+              fi
+            else
+              git rebase --abort 2>/dev/null || true
+            fi
+            sleep $((i * 4))
+          done
+          echo "WARNING: pattern push failed after retries"
+          exit 0
