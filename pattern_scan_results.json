@@ -175,6 +175,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "CIPLA",
+    "pattern": "Double Top",
+    "direction": "BEARISH",
+    "fit": 95.0,
+    "points": [
+      [
+        "A",
+        123,
+        1426.0999755859375
+      ],
+      [
+        "B",
+        149,
+        1292.0
+      ],
+      [
+        "C",
+        176,
+        1435.0
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        123,
+        1426.0999755859375
+      ],
+      [
+        "B",
+        149,
+        1292.0
+      ],
+      [
+        "C",
+        176,
+        1435.0
+      ]
+    ],
+    "start_i": 123,
+    "end_i": 176,
+    "sessions": 53,
+    "sessions_ago": 3,
+    "date_range": "31-Aug-2026 \u2192 18-Nov-2026",
+    "entry": 1292.0,
+    "stop": 1446.48,
+    "target": 1149.0,
+    "explain": "Double top: A \u20b91426.1 \u2248 C \u20b91435.0 (diff 0.6%). Neckline B \u20b91292.0 (\u22129.4% from peaks). Wait for daily close below neckline.",
+    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 1399.9,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "BPCL",
     "pattern": "Double Bottom",
     "direction": "BULLISH",
@@ -670,6 +725,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "SRF",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 95.0,
+    "points": [
+      [
+        "A",
+        143,
+        2417.89990234375
+      ],
+      [
+        "B",
+        151,
+        2535.800048828125
+      ],
+      [
+        "C",
+        176,
+        2429.10009765625
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        143,
+        2417.89990234375
+      ],
+      [
+        "B",
+        151,
+        2535.800048828125
+      ],
+      [
+        "C",
+        176,
+        2429.10009765625
+      ]
+    ],
+    "start_i": 143,
+    "end_i": 176,
+    "sessions": 33,
+    "sessions_ago": 3,
+    "date_range": "29-Sep-2026 \u2192 18-Nov-2026",
+    "entry": 2535.8,
+    "stop": 2398.56,
+    "target": 2653.7,
+    "explain": "Double bottom: A \u20b92417.9 \u2248 C \u20b92429.1 (diff 0.5%). Neckline B \u20b92535.8 (+4.4% above troughs). Wait for daily close above neckline.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 2514.8,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "ADANIENT",
     "pattern": "Three Falling Peaks",
     "direction": "BEARISH",
@@ -1106,6 +1216,61 @@
     "timeframe": "30 Min",
     "interval": "30m",
     "live": 7430.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "BPCL",
+    "pattern": "Three Rising Valleys",
+    "direction": "BULLISH",
+    "fit": 89.0,
+    "points": [
+      [
+        "V1",
+        158,
+        275.3999938964844
+      ],
+      [
+        "V2",
+        164,
+        283.3999938964844
+      ],
+      [
+        "V3",
+        176,
+        300.1000061035156
+      ]
+    ],
+    "points_abs": [
+      [
+        "V1",
+        158,
+        275.3999938964844
+      ],
+      [
+        "V2",
+        164,
+        283.3999938964844
+      ],
+      [
+        "V3",
+        176,
+        300.1000061035156
+      ]
+    ],
+    "start_i": 158,
+    "end_i": 176,
+    "sessions": 18,
+    "sessions_ago": 3,
+    "date_range": "22-Oct-2026 \u2192 18-Nov-2026",
+    "entry": 322.9,
+    "stop": 272.65,
+    "target": 347.6,
+    "explain": "Three rising valleys \u20b9275.4\u2192\u20b9300.1. Break \u20b9322.9 confirms demand.",
+    "rules": "Three higher lows (rising valleys) then break of recent high \u2014 bullish structure shift.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 305.35,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -1550,6 +1715,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "SRF",
+    "pattern": "Inverse H&S",
+    "direction": "BULLISH",
+    "fit": 89.0,
+    "points": [
+      [
+        "LS",
+        143,
+        2417.89990234375
+      ],
+      [
+        "H",
+        158,
+        2178.300048828125
+      ],
+      [
+        "RS",
+        176,
+        2429.10009765625
+      ]
+    ],
+    "points_abs": [
+      [
+        "LS",
+        143,
+        2417.89990234375
+      ],
+      [
+        "H",
+        158,
+        2178.300048828125
+      ],
+      [
+        "RS",
+        176,
+        2429.10009765625
+      ]
+    ],
+    "start_i": 143,
+    "end_i": 176,
+    "sessions": 33,
+    "sessions_ago": 3,
+    "date_range": "29-Sep-2026 \u2192 18-Nov-2026",
+    "entry": 2535.8,
+    "stop": 2393.72,
+    "target": 2893.3,
+    "explain": "Inverse H&S head \u20b92178.3, neckline ~\u20b92535.8. Bullish on break above neckline.",
+    "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 2514.8,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "ONGC",
     "pattern": "Triple Bottom",
     "direction": "BULLISH",
@@ -1821,6 +2041,116 @@
     "timeframe": "1 Hour",
     "interval": "1h",
     "live": 67.4,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "CIPLA",
+    "pattern": "Three Rising Valleys",
+    "direction": "BULLISH",
+    "fit": 87.0,
+    "points": [
+      [
+        "V1",
+        149,
+        1292.0
+      ],
+      [
+        "V2",
+        158,
+        1296.4000244140625
+      ],
+      [
+        "V3",
+        176,
+        1381.300048828125
+      ]
+    ],
+    "points_abs": [
+      [
+        "V1",
+        149,
+        1292.0
+      ],
+      [
+        "V2",
+        158,
+        1296.4000244140625
+      ],
+      [
+        "V3",
+        176,
+        1381.300048828125
+      ]
+    ],
+    "start_i": 149,
+    "end_i": 176,
+    "sessions": 27,
+    "sessions_ago": 3,
+    "date_range": "08-Oct-2026 \u2192 18-Nov-2026",
+    "entry": 1435.0,
+    "stop": 1279.08,
+    "target": 1524.3,
+    "explain": "Three rising valleys \u20b91292.0\u2192\u20b91381.3. Break \u20b91435.0 confirms demand.",
+    "rules": "Three higher lows (rising valleys) then break of recent high \u2014 bullish structure shift.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 1399.9,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "HEROMOTOCO",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 87.0,
+    "points": [
+      [
+        "A",
+        125,
+        5167.0
+      ],
+      [
+        "B",
+        169,
+        5550.0
+      ],
+      [
+        "C",
+        176,
+        5233.5
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        125,
+        5167.0
+      ],
+      [
+        "B",
+        169,
+        5550.0
+      ],
+      [
+        "C",
+        176,
+        5233.5
+      ]
+    ],
+    "start_i": 125,
+    "end_i": 176,
+    "sessions": 51,
+    "sessions_ago": 3,
+    "date_range": "02-Sep-2026 \u2192 18-Nov-2026",
+    "entry": 5550.0,
+    "stop": 5125.66,
+    "target": 5933.0,
+    "explain": "Double bottom: A \u20b95167.0 \u2248 C \u20b95233.5 (diff 1.3%). Neckline B \u20b95550.0 (+6.0% above troughs). Wait for daily close above neckline.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 5535.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -5067,6 +5397,52 @@
     "extra_patterns": []
   },
   {
+    "stock": "CIPLA",
+    "pattern": "Ascending Triangle",
+    "direction": "BULLISH",
+    "fit": 80,
+    "points": [],
+    "points_abs": [],
+    "start_i": 134,
+    "end_i": 176,
+    "sessions": 42,
+    "sessions_ago": 3,
+    "date_range": "16-Sep-2026 \u2192 18-Nov-2026",
+    "entry": 1435.0,
+    "stop": 1367.49,
+    "target": 1511.7,
+    "explain": "Ascending triangle \u2014 flat top ~\u20b91435.0, rising lows. Buy break of top.",
+    "rules": "Flat resistance, rising lows; buy break of flat top.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 1399.9,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "BPCL",
+    "pattern": "Ascending Triangle",
+    "direction": "BULLISH",
+    "fit": 80,
+    "points": [],
+    "points_abs": [],
+    "start_i": 138,
+    "end_i": 176,
+    "sessions": 38,
+    "sessions_ago": 3,
+    "date_range": "22-Sep-2026 \u2192 18-Nov-2026",
+    "entry": 322.9,
+    "stop": 297.1,
+    "target": 358.15,
+    "explain": "Ascending triangle \u2014 flat top ~\u20b9322.9, rising lows. Buy break of top.",
+    "rules": "Flat resistance, rising lows; buy break of flat top.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 305.35,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "BPCL",
     "pattern": "Ascending Triangle",
     "direction": "BULLISH",
@@ -5109,6 +5485,29 @@
     "timeframe": "15 Min",
     "interval": "15m",
     "live": 305.35,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "HEROMOTOCO",
+    "pattern": "Ascending Triangle",
+    "direction": "BULLISH",
+    "fit": 80,
+    "points": [],
+    "points_abs": [],
+    "start_i": 139,
+    "end_i": 176,
+    "sessions": 37,
+    "sessions_ago": 3,
+    "date_range": "23-Sep-2026 \u2192 18-Nov-2026",
+    "entry": 5550.0,
+    "stop": 5181.16,
+    "target": 6022.0,
+    "explain": "Ascending triangle \u2014 flat top ~\u20b95550.0, rising lows. Buy break of top.",
+    "rules": "Flat resistance, rising lows; buy break of flat top.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 5535.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -6106,6 +6505,29 @@
     "extra_patterns": []
   },
   {
+    "stock": "SRF",
+    "pattern": "Descending Triangle",
+    "direction": "BEARISH",
+    "fit": 80,
+    "points": [],
+    "points_abs": [],
+    "start_i": 126,
+    "end_i": 176,
+    "sessions": 50,
+    "sessions_ago": 3,
+    "date_range": "03-Sep-2026 \u2192 18-Nov-2026",
+    "entry": 2429.1,
+    "stop": 2560.35,
+    "target": 2225.6,
+    "explain": "Descending triangle \u2014 flat bottom ~\u20b92429.1, falling highs. Sell break of bottom.",
+    "rules": "Flat support, falling highs; sell break of flat bottom.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 2514.8,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "IDFCFIRSTB",
     "pattern": "Ascending Triangle",
     "direction": "BULLISH",
@@ -6295,6 +6717,75 @@
     "timeframe": "Weekly",
     "interval": "1wk",
     "live": 2677.9,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "CIPLA",
+    "pattern": "Rising Wedge",
+    "direction": "BEARISH",
+    "fit": 78,
+    "points": [],
+    "points_abs": [],
+    "start_i": 134,
+    "end_i": 176,
+    "sessions": 42,
+    "sessions_ago": 3,
+    "date_range": "16-Sep-2026 \u2192 18-Nov-2026",
+    "entry": 1381.3,
+    "stop": 1449.35,
+    "target": 1304.6,
+    "explain": "Rising wedge (higher highs & lows, converging) \u2014 bias break lower.",
+    "rules": "Rising highs & lows, converging; usually bearish on break of lower line.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 1399.9,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "BPCL",
+    "pattern": "Rising Wedge",
+    "direction": "BEARISH",
+    "fit": 78,
+    "points": [],
+    "points_abs": [],
+    "start_i": 138,
+    "end_i": 176,
+    "sessions": 38,
+    "sessions_ago": 3,
+    "date_range": "22-Sep-2026 \u2192 18-Nov-2026",
+    "entry": 300.1,
+    "stop": 326.13,
+    "target": 264.85,
+    "explain": "Rising wedge (higher highs & lows, converging) \u2014 bias break lower.",
+    "rules": "Rising highs & lows, converging; usually bearish on break of lower line.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 305.35,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "HEROMOTOCO",
+    "pattern": "Rising Wedge",
+    "direction": "BEARISH",
+    "fit": 78,
+    "points": [],
+    "points_abs": [],
+    "start_i": 139,
+    "end_i": 176,
+    "sessions": 37,
+    "sessions_ago": 3,
+    "date_range": "23-Sep-2026 \u2192 18-Nov-2026",
+    "entry": 5233.5,
+    "stop": 5605.5,
+    "target": 4761.5,
+    "explain": "Rising wedge (higher highs & lows, converging) \u2014 bias break lower.",
+    "rules": "Rising highs & lows, converging; usually bearish on break of lower line.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 5535.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -6800,6 +7291,29 @@
     "extra_patterns": []
   },
   {
+    "stock": "SRF",
+    "pattern": "Falling Wedge",
+    "direction": "BULLISH",
+    "fit": 78,
+    "points": [],
+    "points_abs": [],
+    "start_i": 126,
+    "end_i": 176,
+    "sessions": 50,
+    "sessions_ago": 3,
+    "date_range": "03-Sep-2026 \u2192 18-Nov-2026",
+    "entry": 2535.0,
+    "stop": 2404.81,
+    "target": 2738.5,
+    "explain": "Falling wedge \u2014 bias break higher.",
+    "rules": "Falling highs & lows, converging; usually bullish on break of upper line.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 2514.8,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "JSWSTEEL",
     "pattern": "Triple Top",
     "direction": "BEARISH",
@@ -7250,6 +7764,116 @@
     "timeframe": "Daily",
     "interval": "1d",
     "live": 1880.1,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "CIPLA",
+    "pattern": "Trendline S/R",
+    "direction": "BEARISH",
+    "fit": 76,
+    "points": [
+      [
+        "T1",
+        156,
+        1339.0
+      ],
+      [
+        "T2",
+        170,
+        1421.4000244140625
+      ],
+      [
+        "T3",
+        176,
+        1435.0
+      ]
+    ],
+    "points_abs": [
+      [
+        "T1",
+        156,
+        1339.0
+      ],
+      [
+        "T2",
+        170,
+        1421.4000244140625
+      ],
+      [
+        "T3",
+        176,
+        1435.0
+      ]
+    ],
+    "start_i": 156,
+    "end_i": 176,
+    "sessions": 20,
+    "sessions_ago": 3,
+    "date_range": "19-Oct-2026 \u2192 18-Nov-2026",
+    "entry": 1420.65,
+    "stop": 1463.7,
+    "target": 1387.0,
+    "explain": "Resistance trendline 3 touches near \u20b91435.0. Rejection or break decides.",
+    "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 1399.9,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "BPCL",
+    "pattern": "Trendline S/R",
+    "direction": "BULLISH",
+    "fit": 76,
+    "points": [
+      [
+        "T1",
+        158,
+        275.3999938964844
+      ],
+      [
+        "T2",
+        164,
+        283.3999938964844
+      ],
+      [
+        "T3",
+        176,
+        300.1000061035156
+      ]
+    ],
+    "points_abs": [
+      [
+        "T1",
+        158,
+        275.3999938964844
+      ],
+      [
+        "T2",
+        164,
+        283.3999938964844
+      ],
+      [
+        "T3",
+        176,
+        300.1000061035156
+      ]
+    ],
+    "start_i": 158,
+    "end_i": 176,
+    "sessions": 18,
+    "sessions_ago": 3,
+    "date_range": "22-Oct-2026 \u2192 18-Nov-2026",
+    "entry": 303.1,
+    "stop": 294.1,
+    "target": 312.45,
+    "explain": "Support trendline 3 touches near \u20b9300.1. Bounce or break decides.",
+    "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 305.35,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -7975,6 +8599,29 @@
     "timeframe": "30 Min",
     "interval": "30m",
     "live": 399.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "BERGEPAINT",
+    "pattern": "Symmetrical Triangle",
+    "direction": "BEARISH",
+    "fit": 76,
+    "points": [],
+    "points_abs": [],
+    "start_i": 68,
+    "end_i": 101,
+    "sessions": 33,
+    "sessions_ago": 3,
+    "date_range": "16-Mar-2026 \u2192 02-Nov-2026",
+    "entry": 510.0,
+    "stop": 441.1,
+    "target": 327.42,
+    "explain": "Symmetrical triangle \u2014 wait for break of converging boundary.",
+    "rules": "Converging highs and lows; break either way; target \u2248 triangle height.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 462.25,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -8842,6 +9489,29 @@
     "extra_patterns": []
   },
   {
+    "stock": "CIPLA",
+    "pattern": "Broadening Top",
+    "direction": "BEARISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 149,
+    "end_i": 176,
+    "sessions": 27,
+    "sessions_ago": 3,
+    "date_range": "08-Oct-2026 \u2192 18-Nov-2026",
+    "entry": 1323.23,
+    "stop": 1426.44,
+    "target": 1248.0,
+    "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
+    "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 1399.9,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "DRREDDY",
     "pattern": "Broadening Top",
     "direction": "BEARISH",
@@ -8861,6 +9531,52 @@
     "timeframe": "Daily",
     "interval": "1d",
     "live": 1380.1,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "BPCL",
+    "pattern": "Broadening Top",
+    "direction": "BEARISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 156,
+    "end_i": 176,
+    "sessions": 20,
+    "sessions_ago": 3,
+    "date_range": "19-Oct-2026 \u2192 18-Nov-2026",
+    "entry": 286.3,
+    "stop": 311.61,
+    "target": 267.1,
+    "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
+    "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 305.35,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "HEROMOTOCO",
+    "pattern": "Broadening Top",
+    "direction": "BEARISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 157,
+    "end_i": 176,
+    "sessions": 19,
+    "sessions_ago": 3,
+    "date_range": "21-Oct-2026 \u2192 18-Nov-2026",
+    "entry": 5191.0,
+    "stop": 5536.9,
+    "target": 4953.67,
+    "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
+    "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 5535.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -9114,6 +9830,29 @@
     "timeframe": "Daily",
     "interval": "1d",
     "live": 1755.5,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "BERGEPAINT",
+    "pattern": "Broadening Top",
+    "direction": "BEARISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 80,
+    "end_i": 101,
+    "sessions": 21,
+    "sessions_ago": 3,
+    "date_range": "08-Jun-2026 \u2192 02-Nov-2026",
+    "entry": 466.42,
+    "stop": 554.68,
+    "target": 389.04,
+    "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
+    "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 462.25,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -9826,6 +10565,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "NESTLEIND",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 94.0,
+    "points": [
+      [
+        "A",
+        70,
+        1153.853416433654
+      ],
+      [
+        "B",
+        88,
+        1553.0
+      ],
+      [
+        "C",
+        100,
+        1147.4000244140625
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        70,
+        1153.853416433654
+      ],
+      [
+        "B",
+        88,
+        1553.0
+      ],
+      [
+        "C",
+        100,
+        1147.4000244140625
+      ]
+    ],
+    "start_i": 70,
+    "end_i": 100,
+    "sessions": 30,
+    "sessions_ago": 4,
+    "date_range": "30-Mar-2026 \u2192 26-Oct-2026",
+    "entry": 1553.0,
+    "stop": 1138.22,
+    "target": 1958.6,
+    "explain": "Double bottom: A \u20b91153.9 \u2248 C \u20b91147.4 (diff 0.6%). Neckline B \u20b91553.0 (+34.6% above troughs). Wait for daily close above neckline.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 1305.9,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "SIEMENS",
     "pattern": "Double Top",
     "direction": "BEARISH",
@@ -9932,6 +10726,61 @@
     "timeframe": "Weekly",
     "interval": "1wk",
     "live": 158.7,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "BERGEPAINT",
+    "pattern": "Double Top",
+    "direction": "BEARISH",
+    "fit": 94.0,
+    "points": [
+      [
+        "A",
+        153,
+        482.3500061035156
+      ],
+      [
+        "B",
+        162,
+        458.0
+      ],
+      [
+        "C",
+        175,
+        482.79998779296875
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        153,
+        482.3500061035156
+      ],
+      [
+        "B",
+        162,
+        458.0
+      ],
+      [
+        "C",
+        175,
+        482.79998779296875
+      ]
+    ],
+    "start_i": 153,
+    "end_i": 175,
+    "sessions": 22,
+    "sessions_ago": 4,
+    "date_range": "14-Oct-2026 \u2192 17-Nov-2026",
+    "entry": 458.0,
+    "stop": 486.66,
+    "target": 433.2,
+    "explain": "Double top: A \u20b9482.4 \u2248 C \u20b9482.8 (diff 0.1%). Neckline B \u20b9458.0 (\u22125.0% from peaks). Wait for daily close below neckline.",
+    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 462.25,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -10212,61 +11061,6 @@
   },
   {
     "stock": "BERGEPAINT",
-    "pattern": "Double Top",
-    "direction": "BEARISH",
-    "fit": 90.0,
-    "points": [
-      [
-        "A",
-        153,
-        482.3500061035156
-      ],
-      [
-        "B",
-        162,
-        458.0
-      ],
-      [
-        "C",
-        175,
-        482.79998779296875
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        153,
-        482.3500061035156
-      ],
-      [
-        "B",
-        162,
-        458.0
-      ],
-      [
-        "C",
-        175,
-        482.79998779296875
-      ]
-    ],
-    "start_i": 153,
-    "end_i": 175,
-    "sessions": 22,
-    "sessions_ago": 4,
-    "date_range": "14-Oct-2026 \u2192 17-Nov-2026",
-    "entry": 458.0,
-    "stop": 486.66,
-    "target": 433.2,
-    "explain": "Double top: A \u20b9482.4 \u2248 C \u20b9482.8 (diff 0.1%). Neckline B \u20b9458.0 (\u22125.0% from peaks). Wait for daily close below neckline.",
-    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
-    "timeframe": "Daily",
-    "interval": "1d",
-    "live": NaN,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "BERGEPAINT",
     "pattern": "Head & Shoulders",
     "direction": "BEARISH",
     "fit": 90.0,
@@ -10316,7 +11110,7 @@
     "rules": "LS, higher head, RS; neckline break down; target = head\u2212neckline.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 462.25,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -11076,7 +11870,7 @@
     "rules": "BC retraces 0.618\u20130.786 of AB; CD \u2248 1.0\u00d7AB (or 1.27/1.618). D is completion zone.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 2019.1,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -11352,61 +12146,6 @@
     "timeframe": "30 Min",
     "interval": "30m",
     "live": 4680.0,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "NESTLEIND",
-    "pattern": "Double Bottom",
-    "direction": "BULLISH",
-    "fit": 85.0,
-    "points": [
-      [
-        "A",
-        70,
-        1153.853416433654
-      ],
-      [
-        "B",
-        88,
-        1553.0
-      ],
-      [
-        "C",
-        100,
-        1147.4000244140625
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        70,
-        1153.853416433654
-      ],
-      [
-        "B",
-        88,
-        1553.0
-      ],
-      [
-        "C",
-        100,
-        1147.4000244140625
-      ]
-    ],
-    "start_i": 70,
-    "end_i": 100,
-    "sessions": 30,
-    "sessions_ago": 4,
-    "date_range": "30-Mar-2026 \u2192 26-Oct-2026",
-    "entry": 1553.0,
-    "stop": 1138.22,
-    "target": 1958.6,
-    "explain": "Double bottom: A \u20b91153.9 \u2248 C \u20b91147.4 (diff 0.6%). Neckline B \u20b91553.0 (+34.6% above troughs). Wait for daily close above neckline.",
-    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -12415,7 +13154,7 @@
     "rules": "Three lower highs (falling peaks) then break of recent low \u2014 bearish structure shift.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 983.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -13950,7 +14689,7 @@
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 5523.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -13973,7 +14712,7 @@
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 5523.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -14722,7 +15461,7 @@
     "rules": "Flat resistance, rising lows; buy break of flat top.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 462.25,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -14745,7 +15484,7 @@
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 462.25,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -14768,7 +15507,7 @@
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 462.25,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -15306,7 +16045,7 @@
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 12650.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -15329,7 +16068,7 @@
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 12650.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -15600,7 +16339,7 @@
     "rules": "Falling highs & lows, converging; usually bullish on break of upper line.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 574.95,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -16046,7 +16785,7 @@
     "rules": "Rising highs & lows, converging; usually bearish on break of lower line.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 462.25,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -16069,7 +16808,7 @@
     "rules": "Falling highs & lows, converging; usually bullish on break of upper line.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 129605.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -16349,7 +17088,7 @@
     "rules": "Three peaks at resistance; break below intervening lows.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 983.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -18410,6 +19149,29 @@
     "extra_patterns": []
   },
   {
+    "stock": "NESTLEIND",
+    "pattern": "Broadening Top",
+    "direction": "BEARISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 62,
+    "end_i": 100,
+    "sessions": 38,
+    "sessions_ago": 4,
+    "date_range": "02-Feb-2026 \u2192 26-Oct-2026",
+    "entry": 1220.94,
+    "stop": 1488.49,
+    "target": 982.57,
+    "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
+    "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 1305.9,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "TATACONSUM",
     "pattern": "Broadening Bottom",
     "direction": "BULLISH",
@@ -18429,6 +19191,75 @@
     "timeframe": "Weekly",
     "interval": "1wk",
     "live": 1133.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "HINDUNILVR",
+    "pattern": "Broadening Bottom",
+    "direction": "BULLISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 63,
+    "end_i": 100,
+    "sessions": 37,
+    "sessions_ago": 4,
+    "date_range": "09-Feb-2026 \u2192 26-Oct-2026",
+    "entry": 2337.06,
+    "stop": 1878.56,
+    "target": 2757.23,
+    "explain": "Broadening bottom \u2014 expanding range; bias upside resolution.",
+    "rules": "Expanding swings at bottoms \u2014 volatile, often resolves up.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 2019.1,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "SBILIFE",
+    "pattern": "Broadening Top",
+    "direction": "BEARISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 145,
+    "end_i": 175,
+    "sessions": 30,
+    "sessions_ago": 4,
+    "date_range": "01-Oct-2026 \u2192 17-Nov-2026",
+    "entry": 1639.0,
+    "stop": 1795.51,
+    "target": 1517.7,
+    "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
+    "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 1804.9,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "HDFCLIFE",
+    "pattern": "Broadening Bottom",
+    "direction": "BULLISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 72,
+    "end_i": 100,
+    "sessions": 28,
+    "sessions_ago": 4,
+    "date_range": "13-Apr-2026 \u2192 26-Oct-2026",
+    "entry": 606.95,
+    "stop": 505.44,
+    "target": 698.14,
+    "explain": "Broadening bottom \u2014 expanding range; bias upside resolution.",
+    "rules": "Expanding swings at bottoms \u2014 volatile, often resolves up.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 574.95,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -18663,6 +19494,29 @@
     "extra_patterns": []
   },
   {
+    "stock": "BERGEPAINT",
+    "pattern": "Broadening Top",
+    "direction": "BEARISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 143,
+    "end_i": 175,
+    "sessions": 32,
+    "sessions_ago": 4,
+    "date_range": "29-Sep-2026 \u2192 17-Nov-2026",
+    "entry": 455.93,
+    "stop": 501.55,
+    "target": 420.15,
+    "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
+    "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 462.25,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "DIXON",
     "pattern": "Broadening Bottom",
     "direction": "BULLISH",
@@ -18774,6 +19628,29 @@
     "timeframe": "Weekly",
     "interval": "1wk",
     "live": 165.76,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "AUBANK",
+    "pattern": "Broadening Bottom",
+    "direction": "BULLISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 73,
+    "end_i": 100,
+    "sessions": 27,
+    "sessions_ago": 4,
+    "date_range": "20-Apr-2026 \u2192 26-Oct-2026",
+    "entry": 1103.98,
+    "stop": 896.59,
+    "target": 1293.08,
+    "explain": "Broadening bottom \u2014 expanding range; bias upside resolution.",
+    "rules": "Expanding swings at bottoms \u2014 volatile, often resolves up.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 983.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -18961,7 +19838,7 @@
     "rules": "Three higher lows (rising valleys) then break of recent high \u2014 bullish structure shift.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 3487.4,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -19367,6 +20244,61 @@
     "timeframe": "15 Min",
     "interval": "15m",
     "live": 1880.1,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "BPCL",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 94.0,
+    "points": [
+      [
+        "A",
+        77,
+        276.6000061035156
+      ],
+      [
+        "B",
+        88,
+        329.95001220703125
+      ],
+      [
+        "C",
+        99,
+        275.3999938964844
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        77,
+        276.6000061035156
+      ],
+      [
+        "B",
+        88,
+        329.95001220703125
+      ],
+      [
+        "C",
+        99,
+        275.3999938964844
+      ]
+    ],
+    "start_i": 77,
+    "end_i": 99,
+    "sessions": 22,
+    "sessions_ago": 5,
+    "date_range": "18-May-2026 \u2192 19-Oct-2026",
+    "entry": 329.95,
+    "stop": 273.2,
+    "target": 384.5,
+    "explain": "Double bottom: A \u20b9276.6 \u2248 C \u20b9275.4 (diff 0.4%). Neckline B \u20b9330.0 (+19.3% above troughs). Wait for daily close above neckline.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 305.35,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -20856,7 +21788,7 @@
     "rules": "Three higher lows (rising valleys) then break of recent high \u2014 bullish structure shift.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1860.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -21434,6 +22366,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "SUNPHARMA",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 86.0,
+    "points": [
+      [
+        "A",
+        137,
+        1832.199951171875
+      ],
+      [
+        "B",
+        170,
+        1943.9000244140625
+      ],
+      [
+        "C",
+        174,
+        1856.800048828125
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        137,
+        1832.199951171875
+      ],
+      [
+        "B",
+        170,
+        1943.9000244140625
+      ],
+      [
+        "C",
+        174,
+        1856.800048828125
+      ]
+    ],
+    "start_i": 137,
+    "end_i": 174,
+    "sessions": 37,
+    "sessions_ago": 5,
+    "date_range": "21-Sep-2026 \u2192 16-Nov-2026",
+    "entry": 1943.9,
+    "stop": 1817.54,
+    "target": 2055.6,
+    "explain": "Double bottom: A \u20b91832.2 \u2248 C \u20b91856.8 (diff 1.3%). Neckline B \u20b91943.9 (+4.7% above troughs). Wait for daily close above neckline.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 1860.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "TECHM",
     "pattern": "Triple Top",
     "direction": "BEARISH",
@@ -21540,61 +22527,6 @@
     "timeframe": "15 Min",
     "interval": "15m",
     "live": 1380.1,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "BPCL",
-    "pattern": "Double Bottom",
-    "direction": "BULLISH",
-    "fit": 86.0,
-    "points": [
-      [
-        "A",
-        77,
-        276.6000061035156
-      ],
-      [
-        "B",
-        88,
-        329.95001220703125
-      ],
-      [
-        "C",
-        99,
-        275.3999938964844
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        77,
-        276.6000061035156
-      ],
-      [
-        "B",
-        88,
-        329.95001220703125
-      ],
-      [
-        "C",
-        99,
-        275.3999938964844
-      ]
-    ],
-    "start_i": 77,
-    "end_i": 99,
-    "sessions": 22,
-    "sessions_ago": 5,
-    "date_range": "18-May-2026 \u2192 19-Oct-2026",
-    "entry": 329.95,
-    "stop": 273.2,
-    "target": 384.5,
-    "explain": "Double bottom: A \u20b9276.6 \u2248 C \u20b9275.4 (diff 0.4%). Neckline B \u20b9330.0 (+19.3% above troughs). Wait for daily close above neckline.",
-    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -22375,61 +23307,6 @@
     "timeframe": "30 Min",
     "interval": "30m",
     "live": 1103.4,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "SUNPHARMA",
-    "pattern": "Double Bottom",
-    "direction": "BULLISH",
-    "fit": 84.0,
-    "points": [
-      [
-        "A",
-        114,
-        1868.300048828125
-      ],
-      [
-        "B",
-        123,
-        1984.800048828125
-      ],
-      [
-        "C",
-        174,
-        1856.800048828125
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        114,
-        1868.300048828125
-      ],
-      [
-        "B",
-        123,
-        1984.800048828125
-      ],
-      [
-        "C",
-        174,
-        1856.800048828125
-      ]
-    ],
-    "start_i": 114,
-    "end_i": 174,
-    "sessions": 60,
-    "sessions_ago": 5,
-    "date_range": "18-Aug-2026 \u2192 16-Nov-2026",
-    "entry": 1984.8,
-    "stop": 1841.95,
-    "target": 2112.8,
-    "explain": "Double bottom: A \u20b91868.3 \u2248 C \u20b91856.8 (diff 0.6%). Neckline B \u20b91984.8 (+6.2% above troughs). Wait for daily close above neckline.",
-    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
-    "timeframe": "Daily",
-    "interval": "1d",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -24207,7 +25084,7 @@
     "rules": "Flat support, falling highs; sell break of flat bottom.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 305.35,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -24538,7 +25415,7 @@
     "rules": "Flat resistance, rising lows; buy break of flat top.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 7430.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -24965,7 +25842,7 @@
     "rules": "Rising highs & lows, converging; usually bearish on break of lower line.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1860.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -25103,7 +25980,7 @@
     "rules": "Falling highs & lows, converging; usually bullish on break of upper line.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 305.35,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -25149,7 +26026,7 @@
     "rules": "Falling highs & lows, converging; usually bullish on break of upper line.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 1804.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -25471,7 +26348,7 @@
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 2019.1,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -25494,7 +26371,7 @@
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 2019.1,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -26324,7 +27201,7 @@
     "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 1804.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -26856,7 +27733,7 @@
     "rules": "Converging highs and lows; break either way; target \u2248 triangle height.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 7430.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -27489,7 +28366,7 @@
     "rules": "Three troughs at support; break above intervening highs.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 1804.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -27843,6 +28720,29 @@
     "extra_patterns": []
   },
   {
+    "stock": "BHARTIARTL",
+    "pattern": "Broadening Top",
+    "direction": "BEARISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 152,
+    "end_i": 174,
+    "sessions": 22,
+    "sessions_ago": 5,
+    "date_range": "13-Oct-2026 \u2192 16-Nov-2026",
+    "entry": 1885.77,
+    "stop": 2115.45,
+    "target": 1697.57,
+    "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
+    "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 2128.5,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "MARUTI",
     "pattern": "Broadening Top",
     "direction": "BEARISH",
@@ -27908,6 +28808,52 @@
     "timeframe": "30 Min",
     "interval": "30m",
     "live": 14010.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "SUNPHARMA",
+    "pattern": "Broadening Top",
+    "direction": "BEARISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 154,
+    "end_i": 174,
+    "sessions": 20,
+    "sessions_ago": 5,
+    "date_range": "15-Oct-2026 \u2192 16-Nov-2026",
+    "entry": 1765.97,
+    "stop": 1896.15,
+    "target": 1672.97,
+    "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
+    "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 1860.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "SUNPHARMA",
+    "pattern": "Broadening Top",
+    "direction": "BEARISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 73,
+    "end_i": 99,
+    "sessions": 26,
+    "sessions_ago": 5,
+    "date_range": "20-Apr-2026 \u2192 19-Oct-2026",
+    "entry": 1693.56,
+    "stop": 2020.72,
+    "target": 1406.03,
+    "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
+    "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 1860.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -28023,6 +28969,29 @@
     "timeframe": "Weekly",
     "interval": "1wk",
     "live": 264.85,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "M&M",
+    "pattern": "Broadening Top",
+    "direction": "BEARISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 149,
+    "end_i": 174,
+    "sessions": 25,
+    "sessions_ago": 5,
+    "date_range": "08-Oct-2026 \u2192 16-Nov-2026",
+    "entry": 2953.23,
+    "stop": 3167.61,
+    "target": 2800.97,
+    "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
+    "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 3487.4,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -28184,6 +29153,29 @@
     "timeframe": "Daily",
     "interval": "1d",
     "live": 1133.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "SBILIFE",
+    "pattern": "Broadening Bottom",
+    "direction": "BULLISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 78,
+    "end_i": 99,
+    "sessions": 21,
+    "sessions_ago": 5,
+    "date_range": "25-May-2026 \u2192 19-Oct-2026",
+    "entry": 1871.1,
+    "stop": 1620.59,
+    "target": 2088.53,
+    "explain": "Broadening bottom \u2014 expanding range; bias upside resolution.",
+    "rules": "Expanding swings at bottoms \u2014 volatile, often resolves up.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 1804.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -28418,6 +29410,29 @@
     "extra_patterns": []
   },
   {
+    "stock": "POLYCAB",
+    "pattern": "Broadening Top",
+    "direction": "BEARISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 70,
+    "end_i": 99,
+    "sessions": 29,
+    "sessions_ago": 5,
+    "date_range": "30-Mar-2026 \u2192 19-Oct-2026",
+    "entry": 7607.47,
+    "stop": 9533.6,
+    "target": 5868.27,
+    "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
+    "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 7430.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "NMDC",
     "pattern": "Broadening Bottom",
     "direction": "BULLISH",
@@ -28441,6 +29456,29 @@
     "extra_patterns": []
   },
   {
+    "stock": "INDIGO",
+    "pattern": "Broadening Top",
+    "direction": "BEARISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 83,
+    "end_i": 99,
+    "sessions": 16,
+    "sessions_ago": 5,
+    "date_range": "29-Jun-2026 \u2192 19-Oct-2026",
+    "entry": 4683.97,
+    "stop": 5458.36,
+    "target": 4016.6,
+    "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
+    "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 5523.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "BOSCHLTD",
     "pattern": "Broadening Top",
     "direction": "BEARISH",
@@ -28460,6 +29498,29 @@
     "timeframe": "Daily",
     "interval": "1d",
     "live": 48800.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "SRF",
+    "pattern": "Broadening Bottom",
+    "direction": "BULLISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 61,
+    "end_i": 99,
+    "sessions": 38,
+    "sessions_ago": 5,
+    "date_range": "26-Jan-2026 \u2192 19-Oct-2026",
+    "entry": 2813.03,
+    "stop": 2341.81,
+    "target": 3236.46,
+    "explain": "Broadening bottom \u2014 expanding range; bias upside resolution.",
+    "rules": "Expanding swings at bottoms \u2014 volatile, often resolves up.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 2514.8,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -28649,6 +29710,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "ULTRACEMCO",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 97.0,
+    "points": [
+      [
+        "A",
+        80,
+        10491.844413047023
+      ],
+      [
+        "B",
+        88,
+        12239.0
+      ],
+      [
+        "C",
+        98,
+        10426.0
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        80,
+        10491.844413047023
+      ],
+      [
+        "B",
+        88,
+        12239.0
+      ],
+      [
+        "C",
+        98,
+        10426.0
+      ]
+    ],
+    "start_i": 80,
+    "end_i": 98,
+    "sessions": 18,
+    "sessions_ago": 6,
+    "date_range": "08-Jun-2026 \u2192 12-Oct-2026",
+    "entry": 12239.0,
+    "stop": 10342.59,
+    "target": 14052.0,
+    "explain": "Double bottom: A \u20b910491.8 \u2248 C \u20b910426.0 (diff 0.6%). Neckline B \u20b912239.0 (+16.7% above troughs). Breakout above neckline confirmed.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 12650.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "BHEL",
     "pattern": "Double Top",
     "direction": "BEARISH",
@@ -28754,7 +29870,7 @@
     "rules": "Three higher lows (rising valleys) then break of recent high \u2014 bullish structure shift.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 12650.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -28864,7 +29980,7 @@
     "rules": "Three lower highs (falling peaks) then break of recent low \u2014 bearish structure shift.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 7430.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -33664,7 +34780,7 @@
     "rules": "B=0.786 XA; D=1.27\u20131.618 XA extension beyond X.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 12650.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -33719,7 +34835,7 @@
     "rules": "Three troughs at support; break above intervening highs.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 12650.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -34794,62 +35910,7 @@
     "rules": "B\u22480.886 XA; D\u22481.618 XA.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "ULTRACEMCO",
-    "pattern": "Double Bottom",
-    "direction": "BULLISH",
-    "fit": 84.0,
-    "points": [
-      [
-        "A",
-        80,
-        10491.844413047023
-      ],
-      [
-        "B",
-        88,
-        12239.0
-      ],
-      [
-        "C",
-        98,
-        10426.0
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        80,
-        10491.844413047023
-      ],
-      [
-        "B",
-        88,
-        12239.0
-      ],
-      [
-        "C",
-        98,
-        10426.0
-      ]
-    ],
-    "start_i": 80,
-    "end_i": 98,
-    "sessions": 18,
-    "sessions_ago": 6,
-    "date_range": "08-Jun-2026 \u2192 12-Oct-2026",
-    "entry": 12239.0,
-    "stop": 10342.59,
-    "target": 14052.0,
-    "explain": "Double bottom: A \u20b910491.8 \u2248 C \u20b910426.0 (diff 0.6%). Neckline B \u20b912239.0 (+16.7% above troughs). Wait for daily close above neckline.",
-    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
+    "live": 12650.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -37974,7 +39035,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1305.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -41032,7 +42093,7 @@
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 2128.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -41055,7 +42116,7 @@
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 2128.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -41156,7 +42217,7 @@
     "rules": "Rising highs & lows, converging; usually bearish on break of lower line.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 12650.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -41202,7 +42263,7 @@
     "rules": "Falling highs & lows, converging; usually bullish on break of upper line.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1305.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -42855,7 +43916,7 @@
     "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 12650.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -43449,7 +44510,7 @@
   {
     "stock": "HINDUNILVR",
     "pattern": "Symmetrical Triangle",
-    "direction": "BEARISH",
+    "direction": "BULLISH",
     "fit": 76,
     "points": [],
     "points_abs": [],
@@ -43460,12 +44521,12 @@
     "date_range": "08-Sep-2026 \u2192 13-Nov-2026",
     "entry": 1908.7,
     "stop": 1961.0,
-    "target": 1772.49,
+    "target": 2097.21,
     "explain": "Symmetrical triangle \u2014 wait for break of converging boundary.",
     "rules": "Converging highs and lows; break either way; target \u2248 triangle height.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 2019.1,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -46682,6 +47743,29 @@
     "extra_patterns": []
   },
   {
+    "stock": "ULTRACEMCO",
+    "pattern": "Broadening Top",
+    "direction": "BEARISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 139,
+    "end_i": 173,
+    "sessions": 34,
+    "sessions_ago": 6,
+    "date_range": "23-Sep-2026 \u2192 13-Nov-2026",
+    "entry": 11013.0,
+    "stop": 11882.66,
+    "target": 10376.33,
+    "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
+    "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 12650.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "TECHM",
     "pattern": "Broadening Top",
     "direction": "BEARISH",
@@ -46701,6 +47785,29 @@
     "timeframe": "30 Min",
     "interval": "30m",
     "live": 1777.5,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "NESTLEIND",
+    "pattern": "Broadening Bottom",
+    "direction": "BULLISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 138,
+    "end_i": 173,
+    "sessions": 35,
+    "sessions_ago": 6,
+    "date_range": "22-Sep-2026 \u2192 13-Nov-2026",
+    "entry": 1362.8,
+    "stop": 1206.94,
+    "target": 1494.03,
+    "explain": "Broadening bottom \u2014 expanding range; bias upside resolution.",
+    "rules": "Expanding swings at bottoms \u2014 volatile, often resolves up.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 1305.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -46770,6 +47877,29 @@
     "timeframe": "1 Hour",
     "interval": "1h",
     "live": 8172.5,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "HINDUNILVR",
+    "pattern": "Broadening Top",
+    "direction": "BEARISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 134,
+    "end_i": 173,
+    "sessions": 39,
+    "sessions_ago": 6,
+    "date_range": "16-Sep-2026 \u2192 13-Nov-2026",
+    "entry": 1833.35,
+    "stop": 1953.14,
+    "target": 1751.85,
+    "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
+    "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 2019.1,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -47667,7 +48797,7 @@
       [
         "A",
         36,
-        211.05867552350435
+        211.05869064306577
       ],
       [
         "B",
@@ -47684,7 +48814,7 @@
       [
         "A",
         36,
-        211.05867552350435
+        211.05869064306577
       ],
       [
         "B",
@@ -47765,6 +48895,61 @@
     "timeframe": "1 Hour",
     "interval": "1h",
     "live": 1311.9,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "HEROMOTOCO",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 94.0,
+    "points": [
+      [
+        "A",
+        70,
+        4832.911353106605
+      ],
+      [
+        "B",
+        89,
+        5937.0
+      ],
+      [
+        "C",
+        97,
+        4825.0
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        70,
+        4832.911353106605
+      ],
+      [
+        "B",
+        89,
+        5937.0
+      ],
+      [
+        "C",
+        97,
+        4825.0
+      ]
+    ],
+    "start_i": 70,
+    "end_i": 97,
+    "sessions": 27,
+    "sessions_ago": 7,
+    "date_range": "30-Mar-2026 \u2192 05-Oct-2026",
+    "entry": 5937.0,
+    "stop": 4786.4,
+    "target": 7049.0,
+    "explain": "Double bottom: A \u20b94832.9 \u2248 C \u20b94825.0 (diff 0.2%). Neckline B \u20b95937.0 (+22.8% above troughs). Wait for daily close above neckline.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 5535.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -48319,61 +49504,6 @@
     "extra_patterns": []
   },
   {
-    "stock": "HEROMOTOCO",
-    "pattern": "Double Bottom",
-    "direction": "BULLISH",
-    "fit": 89.0,
-    "points": [
-      [
-        "A",
-        70,
-        4832.911353106605
-      ],
-      [
-        "B",
-        89,
-        5937.0
-      ],
-      [
-        "C",
-        97,
-        4825.0
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        70,
-        4832.911353106605
-      ],
-      [
-        "B",
-        89,
-        5937.0
-      ],
-      [
-        "C",
-        97,
-        4825.0
-      ]
-    ],
-    "start_i": 70,
-    "end_i": 97,
-    "sessions": 27,
-    "sessions_ago": 7,
-    "date_range": "30-Mar-2026 \u2192 05-Oct-2026",
-    "entry": 5937.0,
-    "stop": 4786.4,
-    "target": 7049.0,
-    "explain": "Double bottom: A \u20b94832.9 \u2248 C \u20b94825.0 (diff 0.2%). Neckline B \u20b95937.0 (+22.8% above troughs). Wait for daily close above neckline.",
-    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
     "stock": "AUBANK",
     "pattern": "Head & Shoulders",
     "direction": "BEARISH",
@@ -48904,7 +50034,7 @@
     "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 5523.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -49125,61 +50255,6 @@
     "timeframe": "30 Min",
     "interval": "30m",
     "live": 2128.5,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "HEROMOTOCO",
-    "pattern": "Three Rising Valleys",
-    "direction": "BULLISH",
-    "fit": 86.0,
-    "points": [
-      [
-        "V1",
-        160,
-        4976.5
-      ],
-      [
-        "V2",
-        164,
-        5051.5
-      ],
-      [
-        "V3",
-        172,
-        5288.0
-      ]
-    ],
-    "points_abs": [
-      [
-        "V1",
-        160,
-        4976.5
-      ],
-      [
-        "V2",
-        164,
-        5051.5
-      ],
-      [
-        "V3",
-        172,
-        5288.0
-      ]
-    ],
-    "start_i": 160,
-    "end_i": 172,
-    "sessions": 12,
-    "sessions_ago": 7,
-    "date_range": "26-Oct-2026 \u2192 12-Nov-2026",
-    "entry": 5550.0,
-    "stop": 4926.73,
-    "target": 5861.5,
-    "explain": "Three rising valleys \u20b94976.5\u2192\u20b95288.0. Break \u20b95550.0 confirms demand.",
-    "rules": "Three higher lows (rising valleys) then break of recent high \u2014 bullish structure shift.",
-    "timeframe": "Daily",
-    "interval": "1d",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -50784,7 +51859,7 @@
     "rules": "C extends 1.13\u20131.618 XA; D=0.886\u20131.13 XC.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 12650.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -51249,6 +52324,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "CIPLA",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 81.0,
+    "points": [
+      [
+        "A",
+        61,
+        1269.7874465516832
+      ],
+      [
+        "B",
+        87,
+        1491.199951171875
+      ],
+      [
+        "C",
+        97,
+        1292.0
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        61,
+        1269.7874465516832
+      ],
+      [
+        "B",
+        87,
+        1491.199951171875
+      ],
+      [
+        "C",
+        97,
+        1292.0
+      ]
+    ],
+    "start_i": 61,
+    "end_i": 97,
+    "sessions": 36,
+    "sessions_ago": 7,
+    "date_range": "26-Jan-2026 \u2192 05-Oct-2026",
+    "entry": 1491.2,
+    "stop": 1259.63,
+    "target": 1712.61,
+    "explain": "Double bottom: A \u20b91269.8 \u2248 C \u20b91292.0 (diff 1.7%). Neckline B \u20b91491.2 (+15.4% above troughs). Wait for daily close above neckline.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 1399.9,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "DRREDDY",
     "pattern": "Three Falling Peaks",
     "direction": "BEARISH",
@@ -51354,7 +52484,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 5535.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -51721,7 +52851,7 @@
     "rules": "Flat resistance, rising lows; buy break of flat top.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 1399.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -51768,29 +52898,6 @@
     "timeframe": "30 Min",
     "interval": "30m",
     "live": 1380.1,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "HEROMOTOCO",
-    "pattern": "Ascending Triangle",
-    "direction": "BULLISH",
-    "fit": 80,
-    "points": [],
-    "points_abs": [],
-    "start_i": 139,
-    "end_i": 172,
-    "sessions": 33,
-    "sessions_ago": 7,
-    "date_range": "23-Sep-2026 \u2192 12-Nov-2026",
-    "entry": 5550.0,
-    "stop": 5235.12,
-    "target": 6173.5,
-    "explain": "Ascending triangle \u2014 flat top ~\u20b95550.0, rising lows. Buy break of top.",
-    "rules": "Flat resistance, rising lows; buy break of flat top.",
-    "timeframe": "Daily",
-    "interval": "1d",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -52374,29 +53481,6 @@
     "extra_patterns": []
   },
   {
-    "stock": "HEROMOTOCO",
-    "pattern": "Rising Wedge",
-    "direction": "BEARISH",
-    "fit": 78,
-    "points": [],
-    "points_abs": [],
-    "start_i": 139,
-    "end_i": 172,
-    "sessions": 33,
-    "sessions_ago": 7,
-    "date_range": "23-Sep-2026 \u2192 12-Nov-2026",
-    "entry": 5288.0,
-    "stop": 5605.5,
-    "target": 4664.5,
-    "explain": "Rising wedge (higher highs & lows, converging) \u2014 bias break lower.",
-    "rules": "Rising highs & lows, converging; usually bearish on break of lower line.",
-    "timeframe": "Daily",
-    "interval": "1d",
-    "live": NaN,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
     "stock": "ADANIPORTS",
     "pattern": "Rising Wedge",
     "direction": "BEARISH",
@@ -52658,7 +53742,7 @@
       [
         "LS",
         77,
-        39916.57259357971
+        39916.568584859335
       ],
       [
         "H",
@@ -52675,7 +53759,7 @@
       [
         "LS",
         77,
-        39916.57259357971
+        39916.568584859335
       ],
       [
         "H",
@@ -52694,7 +53778,7 @@
     "sessions_ago": 7,
     "date_range": "18-May-2026 \u2192 05-Oct-2026",
     "entry": 33836.04,
-    "stop": 40315.74,
+    "stop": 40315.73,
     "target": 24268.2,
     "explain": "H&S head \u20b943403.9, neckline ~\u20b933836.0. Bearish on break below neckline.",
     "rules": "LS, higher head, RS; neckline break down; target = head\u2212neckline.",
@@ -53115,7 +54199,7 @@
   {
     "stock": "CIPLA",
     "pattern": "Symmetrical Triangle",
-    "direction": "BEARISH",
+    "direction": "BULLISH",
     "fit": 76,
     "points": [],
     "points_abs": [],
@@ -53126,12 +54210,12 @@
     "date_range": "05-Jan-2026 \u2192 05-Oct-2026",
     "entry": 1491.2,
     "stop": 1292.0,
-    "target": 1021.08,
+    "target": 1762.12,
     "explain": "Symmetrical triangle \u2014 wait for break of converging boundary.",
     "rules": "Converging highs and lows; break either way; target \u2248 triangle height.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 1399.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -53210,61 +54294,6 @@
     "timeframe": "15 Min",
     "interval": "15m",
     "live": 9257.0,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "HEROMOTOCO",
-    "pattern": "Trendline S/R",
-    "direction": "BULLISH",
-    "fit": 76,
-    "points": [
-      [
-        "T1",
-        160,
-        4976.5
-      ],
-      [
-        "T2",
-        164,
-        5051.5
-      ],
-      [
-        "T3",
-        172,
-        5288.0
-      ]
-    ],
-    "points_abs": [
-      [
-        "T1",
-        160,
-        4976.5
-      ],
-      [
-        "T2",
-        164,
-        5051.5
-      ],
-      [
-        "T3",
-        172,
-        5288.0
-      ]
-    ],
-    "start_i": 160,
-    "end_i": 172,
-    "sessions": 12,
-    "sessions_ago": 7,
-    "date_range": "26-Oct-2026 \u2192 12-Nov-2026",
-    "entry": 5340.88,
-    "stop": 5182.24,
-    "target": 5443.75,
-    "explain": "Support trendline 3 touches near \u20b95288.0. Bounce or break decides.",
-    "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
-    "timeframe": "Daily",
-    "interval": "1d",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -54439,6 +55468,29 @@
     "extra_patterns": []
   },
   {
+    "stock": "M&M",
+    "pattern": "Broadening Bottom",
+    "direction": "BULLISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 63,
+    "end_i": 97,
+    "sessions": 34,
+    "sessions_ago": 7,
+    "date_range": "09-Feb-2026 \u2192 05-Oct-2026",
+    "entry": 3548.64,
+    "stop": 2770.28,
+    "target": 4270.46,
+    "explain": "Broadening bottom \u2014 expanding range; bias upside resolution.",
+    "rules": "Expanding swings at bottoms \u2014 volatile, often resolves up.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 3487.4,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "ONGC",
     "pattern": "Broadening Bottom",
     "direction": "BULLISH",
@@ -54504,6 +55556,52 @@
     "timeframe": "Daily",
     "interval": "1d",
     "live": 900.45,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "CIPLA",
+    "pattern": "Broadening Top",
+    "direction": "BEARISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 76,
+    "end_i": 97,
+    "sessions": 21,
+    "sessions_ago": 7,
+    "date_range": "11-May-2026 \u2192 05-Oct-2026",
+    "entry": 1333.07,
+    "stop": 1500.21,
+    "target": 1195.34,
+    "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
+    "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 1399.9,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "HEROMOTOCO",
+    "pattern": "Broadening Bottom",
+    "direction": "BULLISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 63,
+    "end_i": 97,
+    "sessions": 34,
+    "sessions_ago": 7,
+    "date_range": "09-Feb-2026 \u2192 05-Oct-2026",
+    "entry": 5692.21,
+    "stop": 4608.31,
+    "target": 6682.07,
+    "explain": "Broadening bottom \u2014 expanding range; bias upside resolution.",
+    "rules": "Expanding swings at bottoms \u2014 volatile, often resolves up.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 5535.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -54724,61 +55822,6 @@
     "extra_patterns": []
   },
   {
-    "stock": "CIPLA",
-    "pattern": "Double Bottom",
-    "direction": "BULLISH",
-    "fit": 70.0,
-    "points": [
-      [
-        "A",
-        61,
-        1269.7874465516832
-      ],
-      [
-        "B",
-        87,
-        1491.199951171875
-      ],
-      [
-        "C",
-        97,
-        1292.0
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        61,
-        1269.7874465516832
-      ],
-      [
-        "B",
-        87,
-        1491.199951171875
-      ],
-      [
-        "C",
-        97,
-        1292.0
-      ]
-    ],
-    "start_i": 61,
-    "end_i": 97,
-    "sessions": 36,
-    "sessions_ago": 7,
-    "date_range": "26-Jan-2026 \u2192 05-Oct-2026",
-    "entry": 1491.2,
-    "stop": 1259.63,
-    "target": 1712.61,
-    "explain": "Double bottom: A \u20b91269.8 \u2248 C \u20b91292.0 (diff 1.7%). Neckline B \u20b91491.2 (+15.4% above troughs). Wait for daily close above neckline.",
-    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
     "stock": "BAJAJ-AUTO",
     "pattern": "Triple Top",
     "direction": "BEARISH",
@@ -54830,6 +55873,61 @@
     "timeframe": "Daily",
     "interval": "1d",
     "live": 10643.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "BHARTIARTL",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 97.0,
+    "points": [
+      [
+        "A",
+        76,
+        1718.8676288934416
+      ],
+      [
+        "B",
+        88,
+        2031.0
+      ],
+      [
+        "C",
+        96,
+        1726.300048828125
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        76,
+        1718.8676288934416
+      ],
+      [
+        "B",
+        88,
+        2031.0
+      ],
+      [
+        "C",
+        96,
+        1726.300048828125
+      ]
+    ],
+    "start_i": 76,
+    "end_i": 96,
+    "sessions": 20,
+    "sessions_ago": 8,
+    "date_range": "11-May-2026 \u2192 28-Sep-2026",
+    "entry": 2031.0,
+    "stop": 1705.12,
+    "target": 2343.13,
+    "explain": "Double bottom: A \u20b91718.9 \u2248 C \u20b91726.3 (diff 0.4%). Neckline B \u20b92031.0 (+17.7% above troughs). Breakout above neckline confirmed.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 2128.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -56449,6 +57547,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "SRF",
+    "pattern": "Double Top",
+    "direction": "BEARISH",
+    "fit": 94.0,
+    "points": [
+      [
+        "A",
+        151,
+        2535.800048828125
+      ],
+      [
+        "B",
+        158,
+        2178.300048828125
+      ],
+      [
+        "C",
+        171,
+        2535.0
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        151,
+        2535.800048828125
+      ],
+      [
+        "B",
+        158,
+        2178.300048828125
+      ],
+      [
+        "C",
+        171,
+        2535.0
+      ]
+    ],
+    "start_i": 151,
+    "end_i": 171,
+    "sessions": 20,
+    "sessions_ago": 8,
+    "date_range": "12-Oct-2026 \u2192 11-Nov-2026",
+    "entry": 2178.3,
+    "stop": 2556.09,
+    "target": 1820.8,
+    "explain": "Double top: A \u20b92535.8 \u2248 C \u20b92535.0 (diff 0.0%). Neckline B \u20b92178.3 (\u221214.1% from peaks). Wait for daily close below neckline.",
+    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 2514.8,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "INDUSINDBK",
     "pattern": "Double Top",
     "direction": "BEARISH",
@@ -56614,61 +57767,6 @@
     "extra_patterns": []
   },
   {
-    "stock": "BHARTIARTL",
-    "pattern": "Double Bottom",
-    "direction": "BULLISH",
-    "fit": 90.0,
-    "points": [
-      [
-        "A",
-        70,
-        1725.1880814226272
-      ],
-      [
-        "B",
-        88,
-        2031.0
-      ],
-      [
-        "C",
-        96,
-        1726.300048828125
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        70,
-        1725.1880814226272
-      ],
-      [
-        "B",
-        88,
-        2031.0
-      ],
-      [
-        "C",
-        96,
-        1726.300048828125
-      ]
-    ],
-    "start_i": 70,
-    "end_i": 96,
-    "sessions": 26,
-    "sessions_ago": 8,
-    "date_range": "30-Mar-2026 \u2192 28-Sep-2026",
-    "entry": 2031.0,
-    "stop": 1711.39,
-    "target": 2336.81,
-    "explain": "Double bottom: A \u20b91725.2 \u2248 C \u20b91726.3 (diff 0.1%). Neckline B \u20b92031.0 (+17.7% above troughs). Wait for daily close above neckline.",
-    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
     "stock": "LT",
     "pattern": "Inverse H&S",
     "direction": "BULLISH",
@@ -56724,57 +57822,57 @@
     "extra_patterns": []
   },
   {
-    "stock": "SRF",
+    "stock": "BPCL",
     "pattern": "Double Top",
     "direction": "BEARISH",
     "fit": 90.0,
     "points": [
       [
         "A",
-        151,
-        2535.800048828125
+        113,
+        319.75
       ],
       [
         "B",
         158,
-        2178.300048828125
+        275.3999938964844
       ],
       [
         "C",
         171,
-        2535.0
+        322.8999938964844
       ]
     ],
     "points_abs": [
       [
         "A",
-        151,
-        2535.800048828125
+        113,
+        319.75
       ],
       [
         "B",
         158,
-        2178.300048828125
+        275.3999938964844
       ],
       [
         "C",
         171,
-        2535.0
+        322.8999938964844
       ]
     ],
-    "start_i": 151,
+    "start_i": 113,
     "end_i": 171,
-    "sessions": 20,
+    "sessions": 58,
     "sessions_ago": 8,
-    "date_range": "12-Oct-2026 \u2192 11-Nov-2026",
-    "entry": 2178.3,
-    "stop": 2556.09,
-    "target": 1820.8,
-    "explain": "Double top: A \u20b92535.8 \u2248 C \u20b92535.0 (diff 0.0%). Neckline B \u20b92178.3 (\u221214.1% from peaks). Wait for daily close below neckline.",
+    "date_range": "17-Aug-2026 \u2192 11-Nov-2026",
+    "entry": 275.4,
+    "stop": 325.48,
+    "target": 227.9,
+    "explain": "Double top: A \u20b9319.8 \u2248 C \u20b9322.9 (diff 1.0%). Neckline B \u20b9275.4 (\u221213.9% from peaks). Wait for daily close below neckline.",
     "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 305.35,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -57104,7 +58202,7 @@
     "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 3487.4,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -57544,7 +58642,7 @@
     "rules": "Three lower highs (falling peaks) then break of recent low \u2014 bearish structure shift.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1305.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -58868,7 +59966,7 @@
     "rules": "B\u22480.886 XA; D\u22481.618 XA.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 5523.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -59493,7 +60591,7 @@
     "rules": "C extends 1.13\u20131.618 XA; D=0.886\u20131.13 XC.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 2128.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -60283,7 +61381,7 @@
     "rules": "Three peaks at resistance; break below intervening lows.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 2514.8,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -60338,7 +61436,7 @@
     "rules": "Three lower highs (falling peaks) then break of recent low \u2014 bearish structure shift.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 2514.8,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -60471,7 +61569,7 @@
     "rules": "Three troughs at support; break above intervening highs.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 2128.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -60494,7 +61592,7 @@
     "rules": "Flat support, falling highs; sell break of flat bottom.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 2128.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -60849,29 +61947,6 @@
     "timeframe": "30 Min",
     "interval": "30m",
     "live": 912.3,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "BERGEPAINT",
-    "pattern": "Ascending Triangle",
-    "direction": "BULLISH",
-    "fit": 80,
-    "points": [],
-    "points_abs": [],
-    "start_i": 56,
-    "end_i": 96,
-    "sessions": 40,
-    "sessions_ago": 8,
-    "date_range": "22-Dec-2025 \u2192 28-Sep-2026",
-    "entry": 565.9,
-    "stop": 436.69,
-    "target": 742.62,
-    "explain": "Ascending triangle \u2014 flat top ~\u20b9565.9, rising lows. Buy break of top.",
-    "rules": "Flat resistance, rising lows; buy break of flat top.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -61326,29 +62401,6 @@
     "extra_patterns": []
   },
   {
-    "stock": "BERGEPAINT",
-    "pattern": "Rising Wedge",
-    "direction": "BEARISH",
-    "fit": 78,
-    "points": [],
-    "points_abs": [],
-    "start_i": 56,
-    "end_i": 96,
-    "sessions": 40,
-    "sessions_ago": 8,
-    "date_range": "22-Dec-2025 \u2192 28-Sep-2026",
-    "entry": 441.1,
-    "stop": 571.56,
-    "target": 264.38,
-    "explain": "Rising wedge (higher highs & lows, converging) \u2014 bias break lower.",
-    "rules": "Rising highs & lows, converging; usually bearish on break of lower line.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
     "stock": "POLYCAB",
     "pattern": "Falling Wedge",
     "direction": "BULLISH",
@@ -61562,7 +62614,7 @@
   {
     "stock": "BHARTIARTL",
     "pattern": "Symmetrical Triangle",
-    "direction": "BEARISH",
+    "direction": "BULLISH",
     "fit": 76,
     "points": [],
     "points_abs": [],
@@ -61573,12 +62625,12 @@
     "date_range": "22-Dec-2025 \u2192 28-Sep-2026",
     "entry": 2031.0,
     "stop": 1726.3,
-    "target": 1466.73,
+    "target": 2290.57,
     "explain": "Symmetrical triangle \u2014 wait for break of converging boundary.",
     "rules": "Converging highs and lows; break either way; target \u2248 triangle height.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 2128.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -63224,7 +64276,7 @@
     "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 2514.8,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -64551,6 +65603,29 @@
     "extra_patterns": []
   },
   {
+    "stock": "INDIGO",
+    "pattern": "Broadening Top",
+    "direction": "BEARISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 134,
+    "end_i": 171,
+    "sessions": 37,
+    "sessions_ago": 8,
+    "date_range": "16-Sep-2026 \u2192 11-Nov-2026",
+    "entry": 4670.3,
+    "stop": 5387.81,
+    "target": 4058.43,
+    "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
+    "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 5523.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "COFORGE",
     "pattern": "Triple Bottom",
     "direction": "BULLISH",
@@ -64841,7 +65916,7 @@
     "rules": "Three higher lows (rising valleys) then break of recent high \u2014 bullish structure shift.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 2128.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -64909,7 +65984,7 @@
       [
         "P1",
         75,
-        479.76231300083833
+        479.7623436936243
       ],
       [
         "P2",
@@ -64926,7 +66001,7 @@
       [
         "P1",
         75,
-        479.76231300083833
+        479.7623436936243
       ],
       [
         "P2",
@@ -64952,6 +66027,61 @@
     "timeframe": "Weekly",
     "interval": "1wk",
     "live": 399.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "SUNPHARMA",
+    "pattern": "Double Top",
+    "direction": "BEARISH",
+    "fit": 94.0,
+    "points": [
+      [
+        "A",
+        113,
+        1949.800048828125
+      ],
+      [
+        "B",
+        158,
+        1719.0999755859375
+      ],
+      [
+        "C",
+        170,
+        1943.9000244140625
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        113,
+        1949.800048828125
+      ],
+      [
+        "B",
+        158,
+        1719.0999755859375
+      ],
+      [
+        "C",
+        170,
+        1943.9000244140625
+      ]
+    ],
+    "start_i": 113,
+    "end_i": 170,
+    "sessions": 57,
+    "sessions_ago": 9,
+    "date_range": "17-Aug-2026 \u2192 09-Nov-2026",
+    "entry": 1719.1,
+    "stop": 1965.4,
+    "target": 1488.4,
+    "explain": "Double top: A \u20b91949.8 \u2248 C \u20b91943.9 (diff 0.3%). Neckline B \u20b91719.1 (\u221211.6% from peaks). Wait for daily close below neckline.",
+    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 1860.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -65446,7 +66576,7 @@
     "rules": "Three lower highs (falling peaks) then break of recent low \u2014 bearish structure shift.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 574.95,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -65502,61 +66632,6 @@
     "timeframe": "1 Hour",
     "interval": "1h",
     "live": 1364.3,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "CIPLA",
-    "pattern": "Double Top",
-    "direction": "BEARISH",
-    "fit": 90.0,
-    "points": [
-      [
-        "A",
-        141,
-        1421.0
-      ],
-      [
-        "B",
-        149,
-        1292.0
-      ],
-      [
-        "C",
-        170,
-        1421.4000244140625
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        141,
-        1421.0
-      ],
-      [
-        "B",
-        149,
-        1292.0
-      ],
-      [
-        "C",
-        170,
-        1421.4000244140625
-      ]
-    ],
-    "start_i": 141,
-    "end_i": 170,
-    "sessions": 29,
-    "sessions_ago": 9,
-    "date_range": "25-Sep-2026 \u2192 09-Nov-2026",
-    "entry": 1292.0,
-    "stop": 1432.77,
-    "target": 1162.6,
-    "explain": "Double top: A \u20b91421.0 \u2248 C \u20b91421.4 (diff 0.0%). Neckline B \u20b91292.0 (\u22129.1% from peaks). Wait for daily close below neckline.",
-    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
-    "timeframe": "Daily",
-    "interval": "1d",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -65887,61 +66962,6 @@
     "timeframe": "30 Min",
     "interval": "30m",
     "live": 411.25,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "SUNPHARMA",
-    "pattern": "Double Top",
-    "direction": "BEARISH",
-    "fit": 87.0,
-    "points": [
-      [
-        "A",
-        113,
-        1949.800048828125
-      ],
-      [
-        "B",
-        158,
-        1719.0999755859375
-      ],
-      [
-        "C",
-        170,
-        1943.9000244140625
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        113,
-        1949.800048828125
-      ],
-      [
-        "B",
-        158,
-        1719.0999755859375
-      ],
-      [
-        "C",
-        170,
-        1943.9000244140625
-      ]
-    ],
-    "start_i": 113,
-    "end_i": 170,
-    "sessions": 57,
-    "sessions_ago": 9,
-    "date_range": "17-Aug-2026 \u2192 09-Nov-2026",
-    "entry": 1719.1,
-    "stop": 1965.4,
-    "target": 1488.4,
-    "explain": "Double top: A \u20b91949.8 \u2248 C \u20b91943.9 (diff 0.3%). Neckline B \u20b91719.1 (\u221211.6% from peaks). Wait for daily close below neckline.",
-    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
-    "timeframe": "Daily",
-    "interval": "1d",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -66670,7 +67690,7 @@
     "rules": "Three higher lows (rising valleys) then break of recent high \u2014 bullish structure shift.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 462.25,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -66855,7 +67875,7 @@
     "rules": "B=0.382\u20130.618 XA; D\u22481.618 XA (extreme PRZ).",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 2128.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -69242,7 +70262,7 @@
     "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 2128.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -69375,7 +70395,7 @@
     "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1860.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -70223,7 +71243,7 @@
     "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 462.25,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -71232,7 +72252,7 @@
     "rules": "Three troughs at support; break above intervening highs.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 462.25,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -71923,6 +72943,61 @@
     "timeframe": "15 Min",
     "interval": "15m",
     "live": 235.53,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "INDIGO",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 94.0,
+    "points": [
+      [
+        "A",
+        54,
+        4645.0
+      ],
+      [
+        "B",
+        88,
+        5508.0
+      ],
+      [
+        "C",
+        94,
+        4701.5
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        54,
+        4645.0
+      ],
+      [
+        "B",
+        88,
+        5508.0
+      ],
+      [
+        "C",
+        94,
+        4701.5
+      ]
+    ],
+    "start_i": 54,
+    "end_i": 94,
+    "sessions": 40,
+    "sessions_ago": 10,
+    "date_range": "08-Dec-2025 \u2192 14-Sep-2026",
+    "entry": 5508.0,
+    "stop": 4607.84,
+    "target": 6371.0,
+    "explain": "Double bottom: A \u20b94645.0 \u2248 C \u20b94701.5 (diff 1.2%). Neckline B \u20b95508.0 (+17.2% above troughs). Breakout above neckline confirmed.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 5523.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -73563,7 +74638,7 @@
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 1860.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -73586,7 +74661,7 @@
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 1860.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -75835,6 +76910,61 @@
   },
   {
     "stock": "HEROMOTOCO",
+    "pattern": "Trendline S/R",
+    "direction": "BEARISH",
+    "fit": 76,
+    "points": [
+      [
+        "T1",
+        157,
+        5323.0
+      ],
+      [
+        "T2",
+        163,
+        5412.0
+      ],
+      [
+        "T3",
+        169,
+        5550.0
+      ]
+    ],
+    "points_abs": [
+      [
+        "T1",
+        157,
+        5323.0
+      ],
+      [
+        "T2",
+        163,
+        5412.0
+      ],
+      [
+        "T3",
+        169,
+        5550.0
+      ]
+    ],
+    "start_i": 157,
+    "end_i": 169,
+    "sessions": 12,
+    "sessions_ago": 10,
+    "date_range": "21-Oct-2026 \u2192 06-Nov-2026",
+    "entry": 5494.5,
+    "stop": 5661.0,
+    "target": 5436.5,
+    "explain": "Resistance trendline 3 touches near \u20b95550.0. Rejection or break decides.",
+    "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 5535.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "HEROMOTOCO",
     "pattern": "Flag",
     "direction": "BULLISH",
     "fit": 76.0,
@@ -76774,7 +77904,7 @@
     "rules": "Three peaks at resistance; break below intervening lows.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 5535.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -77077,7 +78207,7 @@
     "rules": "Three troughs at support; break above intervening highs.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 7430.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -77783,12 +78913,12 @@
       [
         "A",
         29,
-        234.9557565385659
+        234.9557253413116
       ],
       [
         "B",
         36,
-        211.05867552350435
+        211.05869064306577
       ],
       [
         "C",
@@ -77800,12 +78930,12 @@
       [
         "A",
         29,
-        234.9557565385659
+        234.9557253413116
       ],
       [
         "B",
         36,
-        211.05867552350435
+        211.05869064306577
       ],
       [
         "C",
@@ -81676,7 +82806,7 @@
     "rules": "LS, higher head, RS; neckline break down; target = head\u2212neckline.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 7430.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -86793,7 +87923,7 @@
     "rules": "Three lower highs (falling peaks) then break of recent low \u2014 bearish structure shift.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 129605.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -88159,7 +89289,7 @@
     "rules": "LS, higher head, RS; neckline break down; target = head\u2212neckline.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 1860.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -88393,7 +89523,7 @@
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 983.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -88416,7 +89546,7 @@
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 983.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -88907,7 +90037,7 @@
     "rules": "Three peaks at resistance; break below intervening lows.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 129605.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -90383,7 +91513,7 @@
     "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 129605.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -91130,7 +92260,7 @@
       [
         "P1",
         61,
-        755.9652108362703
+        755.9651334232211
       ],
       [
         "P2",
@@ -91147,7 +92277,7 @@
       [
         "P1",
         61,
-        755.9652108362703
+        755.9651334232211
       ],
       [
         "P2",
@@ -92292,7 +93422,7 @@
     "rules": "BC retraces 0.618\u20130.786 of AB; CD \u2248 1.0\u00d7AB (or 1.27/1.618). D is completion zone.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 983.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -99952,7 +101082,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1860.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -100475,7 +101605,7 @@
     "rules": "Very strong advance (\u226530\u201350% pole) then tight flag; high historical reliability when strict.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 5523.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -102253,6 +103383,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "BPCL",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 96.0,
+    "points": [
+      [
+        "A",
+        149,
+        282.95001220703125
+      ],
+      [
+        "B",
+        156,
+        298.0
+      ],
+      [
+        "C",
+        164,
+        283.3999938964844
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        149,
+        282.95001220703125
+      ],
+      [
+        "B",
+        156,
+        298.0
+      ],
+      [
+        "C",
+        164,
+        283.3999938964844
+      ]
+    ],
+    "start_i": 149,
+    "end_i": 164,
+    "sessions": 15,
+    "sessions_ago": 15,
+    "date_range": "08-Oct-2026 \u2192 30-Oct-2026",
+    "entry": 298.0,
+    "stop": 280.69,
+    "target": 313.05,
+    "explain": "Double bottom: A \u20b9283.0 \u2248 C \u20b9283.4 (diff 0.2%). Neckline B \u20b9298.0 (+5.2% above troughs). Breakout above neckline confirmed.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 305.35,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "TATAPOWER",
     "pattern": "Double Top",
     "direction": "BEARISH",
@@ -102888,6 +104073,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "BERGEPAINT",
+    "pattern": "Double Top",
+    "direction": "BEARISH",
+    "fit": 93.0,
+    "points": [
+      [
+        "A",
+        56,
+        564.885122824769
+      ],
+      [
+        "B",
+        68,
+        388.1693108458383
+      ],
+      [
+        "C",
+        89,
+        565.9000244140625
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        56,
+        564.885122824769
+      ],
+      [
+        "B",
+        68,
+        388.1693108458383
+      ],
+      [
+        "C",
+        89,
+        565.9000244140625
+      ]
+    ],
+    "start_i": 56,
+    "end_i": 89,
+    "sessions": 33,
+    "sessions_ago": 15,
+    "date_range": "22-Dec-2025 \u2192 10-Aug-2026",
+    "entry": 388.17,
+    "stop": 570.43,
+    "target": 210.44,
+    "explain": "Double top: A \u20b9564.9 \u2248 C \u20b9565.9 (diff 0.2%). Neckline B \u20b9388.2 (\u221231.3% from peaks). Wait for daily close below neckline.",
+    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 462.25,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "SUNPHARMA",
     "pattern": "Double Top",
     "direction": "BEARISH",
@@ -103103,7 +104343,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 305.35,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -103493,61 +104733,6 @@
     "extra_patterns": []
   },
   {
-    "stock": "BPCL",
-    "pattern": "Double Bottom",
-    "direction": "BULLISH",
-    "fit": 88.0,
-    "points": [
-      [
-        "A",
-        149,
-        282.95001220703125
-      ],
-      [
-        "B",
-        156,
-        298.0
-      ],
-      [
-        "C",
-        164,
-        283.3999938964844
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        149,
-        282.95001220703125
-      ],
-      [
-        "B",
-        156,
-        298.0
-      ],
-      [
-        "C",
-        164,
-        283.3999938964844
-      ]
-    ],
-    "start_i": 149,
-    "end_i": 164,
-    "sessions": 15,
-    "sessions_ago": 15,
-    "date_range": "08-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 298.0,
-    "stop": 280.69,
-    "target": 313.05,
-    "explain": "Double bottom: A \u20b9283.0 \u2248 C \u20b9283.4 (diff 0.2%). Neckline B \u20b9298.0 (+5.2% above troughs). Wait for daily close above neckline.",
-    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
-    "timeframe": "Daily",
-    "interval": "1d",
-    "live": NaN,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
     "stock": "IRCTC",
     "pattern": "Gartley",
     "direction": "BEARISH",
@@ -103749,61 +104934,6 @@
     "timeframe": "15 Min",
     "interval": "15m",
     "live": 1755.5,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "BERGEPAINT",
-    "pattern": "Double Top",
-    "direction": "BEARISH",
-    "fit": 88.0,
-    "points": [
-      [
-        "A",
-        56,
-        564.885122824769
-      ],
-      [
-        "B",
-        68,
-        388.1693108458383
-      ],
-      [
-        "C",
-        89,
-        565.9000244140625
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        56,
-        564.885122824769
-      ],
-      [
-        "B",
-        68,
-        388.1693108458383
-      ],
-      [
-        "C",
-        89,
-        565.9000244140625
-      ]
-    ],
-    "start_i": 56,
-    "end_i": 89,
-    "sessions": 33,
-    "sessions_ago": 15,
-    "date_range": "22-Dec-2025 \u2192 10-Aug-2026",
-    "entry": 388.17,
-    "stop": 570.43,
-    "target": 210.44,
-    "explain": "Double top: A \u20b9564.9 \u2248 C \u20b9565.9 (diff 0.2%). Neckline B \u20b9388.2 (\u221231.3% from peaks). Wait for daily close below neckline.",
-    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -105006,7 +106136,7 @@
     "rules": "B=0.382\u20130.618 XA; C=1.272\u20131.414 XA; D=0.786 XC.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 5535.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -105708,7 +106838,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 7430.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -105800,7 +106930,7 @@
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1305.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -105823,7 +106953,7 @@
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1305.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -106544,61 +107674,6 @@
     "extra_patterns": []
   },
   {
-    "stock": "BERGEPAINT",
-    "pattern": "Trendline S/R",
-    "direction": "BEARISH",
-    "fit": 76,
-    "points": [
-      [
-        "T1",
-        76,
-        536.3008956382885
-      ],
-      [
-        "T2",
-        82,
-        555.5059604736891
-      ],
-      [
-        "T3",
-        89,
-        565.9000244140625
-      ]
-    ],
-    "points_abs": [
-      [
-        "T1",
-        76,
-        536.3008956382885
-      ],
-      [
-        "T2",
-        82,
-        555.5059604736891
-      ],
-      [
-        "T3",
-        89,
-        565.9000244140625
-      ]
-    ],
-    "start_i": 76,
-    "end_i": 89,
-    "sessions": 13,
-    "sessions_ago": 15,
-    "date_range": "11-May-2026 \u2192 10-Aug-2026",
-    "entry": 560.24,
-    "stop": 577.22,
-    "target": 551.1,
-    "explain": "Resistance trendline 3 touches near \u20b9565.9. Rejection or break decides.",
-    "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
     "stock": "TCS",
     "pattern": "Flag",
     "direction": "BULLISH",
@@ -106796,7 +107871,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 129605.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -106820,61 +107895,6 @@
     "timeframe": "Daily",
     "interval": "1d",
     "live": 1351.0,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "BPCL",
-    "pattern": "Triple Bottom",
-    "direction": "BULLISH",
-    "fit": 74.0,
-    "points": [
-      [
-        "S1",
-        149,
-        282.95001220703125
-      ],
-      [
-        "S2",
-        158,
-        275.3999938964844
-      ],
-      [
-        "S3",
-        164,
-        283.3999938964844
-      ]
-    ],
-    "points_abs": [
-      [
-        "S1",
-        149,
-        282.95001220703125
-      ],
-      [
-        "S2",
-        158,
-        275.3999938964844
-      ],
-      [
-        "S3",
-        164,
-        283.3999938964844
-      ]
-    ],
-    "start_i": 149,
-    "end_i": 164,
-    "sessions": 15,
-    "sessions_ago": 15,
-    "date_range": "08-Oct-2026 \u2192 30-Oct-2026",
-    "entry": 298.0,
-    "stop": 272.65,
-    "target": 320.6,
-    "explain": "Triple bottom support ~\u20b9275.4. Break \u20b9298.0 confirms.",
-    "rules": "Three troughs at support; break above intervening highs.",
-    "timeframe": "Daily",
-    "interval": "1d",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -107035,61 +108055,6 @@
     "extra_patterns": []
   },
   {
-    "stock": "BERGEPAINT",
-    "pattern": "Triple Top",
-    "direction": "BEARISH",
-    "fit": 70.0,
-    "points": [
-      [
-        "P1",
-        76,
-        536.3008956382885
-      ],
-      [
-        "P2",
-        82,
-        555.5059604736891
-      ],
-      [
-        "P3",
-        89,
-        565.9000244140625
-      ]
-    ],
-    "points_abs": [
-      [
-        "P1",
-        76,
-        536.3008956382885
-      ],
-      [
-        "P2",
-        82,
-        555.5059604736891
-      ],
-      [
-        "P3",
-        89,
-        565.9000244140625
-      ]
-    ],
-    "start_i": 76,
-    "end_i": 89,
-    "sessions": 13,
-    "sessions_ago": 15,
-    "date_range": "11-May-2026 \u2192 10-Aug-2026",
-    "entry": 475.41,
-    "stop": 571.56,
-    "target": 384.92,
-    "explain": "Triple top resistance ~\u20b9565.9. Break \u20b9475.4 confirms.",
-    "rules": "Three peaks at resistance; break below intervening lows.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
     "stock": "CANBK",
     "pattern": "Triple Top",
     "direction": "BEARISH",
@@ -107215,7 +108180,7 @@
     "rules": "BC retraces 0.618\u20130.786 of AB; CD \u2248 1.0\u00d7AB (or 1.27/1.618). D is completion zone.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 5535.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -107290,7 +108255,7 @@
     "rules": "BC retraces 0.618\u20130.786 of AB; CD \u2248 1.0\u00d7AB (or 1.27/1.618). D is completion zone.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 12650.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -107413,7 +108378,7 @@
       [
         "A",
         32,
-        288.4084322133303
+        288.4084012715395
       ],
       [
         "B",
@@ -107423,14 +108388,14 @@
       [
         "C",
         88,
-        289.3727816745866
+        289.3728147203145
       ]
     ],
     "points_abs": [
       [
         "A",
         32,
-        288.4084322133303
+        288.4084012715395
       ],
       [
         "B",
@@ -107440,7 +108405,7 @@
       [
         "C",
         88,
-        289.3727816745866
+        289.3728147203145
       ]
     ],
     "start_i": 32,
@@ -107511,6 +108476,61 @@
     "timeframe": "Weekly",
     "interval": "1wk",
     "live": 1880.1,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "SBILIFE",
+    "pattern": "Double Top",
+    "direction": "BEARISH",
+    "fit": 93.0,
+    "points": [
+      [
+        "A",
+        38,
+        1909.34573621991
+      ],
+      [
+        "B",
+        80,
+        1700.4000244140625
+      ],
+      [
+        "C",
+        88,
+        1915.0
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        38,
+        1909.34573621991
+      ],
+      [
+        "B",
+        80,
+        1700.4000244140625
+      ],
+      [
+        "C",
+        88,
+        1915.0
+      ]
+    ],
+    "start_i": 38,
+    "end_i": 88,
+    "sessions": 50,
+    "sessions_ago": 16,
+    "date_range": "18-Aug-2025 \u2192 03-Aug-2026",
+    "entry": 1700.4,
+    "stop": 1930.32,
+    "target": 1485.8,
+    "explain": "Double top: A \u20b91909.3 \u2248 C \u20b91915.0 (diff 0.3%). Neckline B \u20b91700.4 (\u221210.9% from peaks). Wait for daily close below neckline.",
+    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 1804.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -108005,7 +109025,7 @@
     "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 2128.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -108028,7 +109048,7 @@
       [
         "P3",
         88,
-        289.3727816745866
+        289.3728147203145
       ]
     ],
     "points_abs": [
@@ -108045,7 +109065,7 @@
       [
         "P3",
         88,
-        289.3727816745866
+        289.3728147203145
       ]
     ],
     "start_i": 74,
@@ -108918,7 +109938,7 @@
       [
         "A",
         32,
-        144.0894923710103
+        144.08952376978098
       ],
       [
         "B",
@@ -108935,7 +109955,7 @@
       [
         "A",
         32,
-        144.0894923710103
+        144.08952376978098
       ],
       [
         "B",
@@ -108983,7 +110003,7 @@
     "rules": "Very strong advance (\u226530\u201350% pole) then tight flag; high historical reliability when strict.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 462.25,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -109550,7 +110570,7 @@
     "sessions_ago": 16,
     "date_range": "09-Mar-2026 \u2192 03-Aug-2026",
     "entry": 43403.88,
-    "stop": 38796.76,
+    "stop": 38796.77,
     "target": 53111.58,
     "explain": "Flag: pole +32.5%, flag range \u20b94607.1. Buy above \u20b943403.9.",
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
@@ -109573,7 +110593,7 @@
     "sessions_ago": 16,
     "date_range": "09-Mar-2026 \u2192 03-Aug-2026",
     "entry": 43403.88,
-    "stop": 38796.76,
+    "stop": 38796.77,
     "target": 53111.58,
     "explain": "Pennant: pole +32.5%, flag range \u20b94607.1. Buy above \u20b943403.9.",
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
@@ -109596,7 +110616,7 @@
     "sessions_ago": 16,
     "date_range": "09-Mar-2026 \u2192 03-Aug-2026",
     "entry": 43403.88,
-    "stop": 38796.76,
+    "stop": 38796.77,
     "target": 53111.58,
     "explain": "High & Tight Flag: pole +32.5%, flag range \u20b94607.1. Buy above \u20b943403.9.",
     "rules": "Very strong advance (\u226530\u201350% pole) then tight flag; high historical reliability when strict.",
@@ -109713,61 +110733,6 @@
     "timeframe": "15 Min",
     "interval": "15m",
     "live": 817.8,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "ULTRACEMCO",
-    "pattern": "Double Top",
-    "direction": "BEARISH",
-    "fit": 86.0,
-    "points": [
-      [
-        "A",
-        47,
-        12198.998833172513
-      ],
-      [
-        "B",
-        69,
-        10118.465796802171
-      ],
-      [
-        "C",
-        88,
-        12239.0
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        47,
-        12198.998833172513
-      ],
-      [
-        "B",
-        69,
-        10118.465796802171
-      ],
-      [
-        "C",
-        88,
-        12239.0
-      ]
-    ],
-    "start_i": 47,
-    "end_i": 88,
-    "sessions": 41,
-    "sessions_ago": 16,
-    "date_range": "20-Oct-2025 \u2192 03-Aug-2026",
-    "entry": 10118.47,
-    "stop": 12336.91,
-    "target": 7997.93,
-    "explain": "Double top: A \u20b912199.0 \u2248 C \u20b912239.0 (diff 0.3%). Neckline B \u20b910118.5 (\u221217.1% from peaks). Wait for daily close below neckline.",
-    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -110282,7 +111247,7 @@
     "rules": "Three lower highs (falling peaks) then break of recent low \u2014 bearish structure shift.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 129605.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -111125,7 +112090,7 @@
     "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 5535.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -111639,7 +112604,7 @@
     "rules": "Falling highs & lows, converging; usually bullish on break of upper line.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 129605.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -112038,7 +113003,7 @@
     "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 305.35,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -112258,7 +113223,7 @@
     "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 129605.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -112368,7 +113333,7 @@
     "rules": "Three peaks at resistance; break below intervening lows.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 305.35,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -112484,6 +113449,29 @@
   },
   {
     "stock": "MRF",
+    "pattern": "Broadening Top",
+    "direction": "BEARISH",
+    "fit": 72,
+    "points": [],
+    "points_abs": [],
+    "start_i": 144,
+    "end_i": 163,
+    "sessions": 19,
+    "sessions_ago": 16,
+    "date_range": "30-Sep-2026 \u2192 29-Oct-2026",
+    "entry": 118208.9,
+    "stop": 125096.67,
+    "target": 113774.0,
+    "explain": "Broadening top \u2014 expanding range, volatile; bias downside resolution.",
+    "rules": "Expanding swings (higher highs & lower lows) at tops \u2014 volatile, often resolves down.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 129605.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "MRF",
     "pattern": "Triple Top",
     "direction": "BEARISH",
     "fit": 70.0,
@@ -112533,7 +113521,7 @@
     "rules": "Three peaks at resistance; break below intervening lows.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 129605.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -112798,6 +113786,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "HDFCLIFE",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 95.0,
+    "points": [
+      [
+        "A",
+        131,
+        508.70001220703125
+      ],
+      [
+        "B",
+        138,
+        567.4000244140625
+      ],
+      [
+        "C",
+        162,
+        508.04998779296875
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        131,
+        508.70001220703125
+      ],
+      [
+        "B",
+        138,
+        567.4000244140625
+      ],
+      [
+        "C",
+        162,
+        508.04998779296875
+      ]
+    ],
+    "start_i": 131,
+    "end_i": 162,
+    "sessions": 31,
+    "sessions_ago": 17,
+    "date_range": "10-Sep-2026 \u2192 28-Oct-2026",
+    "entry": 567.4,
+    "stop": 503.99,
+    "target": 626.75,
+    "explain": "Double bottom: A \u20b9508.7 \u2248 C \u20b9508.0 (diff 0.1%). Neckline B \u20b9567.4 (+11.5% above troughs). Breakout above neckline confirmed.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 574.95,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "RECLTD",
     "pattern": "Double Top",
     "direction": "BEARISH",
@@ -112806,7 +113849,7 @@
       [
         "A",
         62,
-        372.30528998662965
+        372.3053216511771
       ],
       [
         "B",
@@ -112823,7 +113866,7 @@
       [
         "A",
         62,
-        372.30528998662965
+        372.3053216511771
       ],
       [
         "B",
@@ -113619,61 +114662,6 @@
     "timeframe": "1 Hour",
     "interval": "1h",
     "live": 305.35,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "HDFCLIFE",
-    "pattern": "Double Bottom",
-    "direction": "BULLISH",
-    "fit": 88.0,
-    "points": [
-      [
-        "A",
-        131,
-        508.70001220703125
-      ],
-      [
-        "B",
-        138,
-        567.4000244140625
-      ],
-      [
-        "C",
-        162,
-        508.04998779296875
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        131,
-        508.70001220703125
-      ],
-      [
-        "B",
-        138,
-        567.4000244140625
-      ],
-      [
-        "C",
-        162,
-        508.04998779296875
-      ]
-    ],
-    "start_i": 131,
-    "end_i": 162,
-    "sessions": 31,
-    "sessions_ago": 17,
-    "date_range": "10-Sep-2026 \u2192 28-Oct-2026",
-    "entry": 567.4,
-    "stop": 503.99,
-    "target": 626.75,
-    "explain": "Double bottom: A \u20b9508.7 \u2248 C \u20b9508.0 (diff 0.1%). Neckline B \u20b9567.4 (+11.5% above troughs). Wait for daily close above neckline.",
-    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
-    "timeframe": "Daily",
-    "interval": "1d",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -114916,7 +115904,7 @@
     "rules": "Three troughs at support; break above intervening highs.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 574.95,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -115427,7 +116415,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 462.25,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -115693,7 +116681,7 @@
     "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 1399.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -115803,7 +116791,7 @@
     "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 574.95,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -117239,61 +118227,6 @@
     "extra_patterns": []
   },
   {
-    "stock": "INDIGO",
-    "pattern": "Double Bottom",
-    "direction": "BULLISH",
-    "fit": 89.0,
-    "points": [
-      [
-        "A",
-        23,
-        4883.247961107504
-      ],
-      [
-        "B",
-        38,
-        6232.5
-      ],
-      [
-        "C",
-        86,
-        4886.0
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        23,
-        4883.247961107504
-      ],
-      [
-        "B",
-        38,
-        6232.5
-      ],
-      [
-        "C",
-        86,
-        4886.0
-      ]
-    ],
-    "start_i": 23,
-    "end_i": 86,
-    "sessions": 63,
-    "sessions_ago": 18,
-    "date_range": "05-May-2025 \u2192 20-Jul-2026",
-    "entry": 6232.5,
-    "stop": 4844.18,
-    "target": 7581.75,
-    "explain": "Double bottom: A \u20b94883.2 \u2248 C \u20b94886.0 (diff 0.1%). Neckline B \u20b96232.5 (+27.6% above troughs). Wait for daily close above neckline.",
-    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
     "stock": "TATASTEEL",
     "pattern": "Bat",
     "direction": "BEARISH",
@@ -117439,7 +118372,7 @@
     "rules": "B<0.618 XA (often 0.382\u20130.50); D=0.886 XA.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 1399.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -117959,7 +118892,7 @@
     "rules": "B=0.382\u20130.618 XA; C=1.272\u20131.414 XA; D=0.786 XC.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 1399.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -118034,7 +118967,7 @@
     "rules": "B=0.382\u20130.618 XA; C=1.272\u20131.414 XA; D=0.786 XC.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 305.35,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -121113,7 +122046,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 5535.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -121490,6 +122423,61 @@
     "timeframe": "Daily",
     "interval": "1d",
     "live": 1132.65,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "BHARTIARTL",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 95.0,
+    "points": [
+      [
+        "A",
+        97,
+        1878.0
+      ],
+      [
+        "B",
+        105,
+        2031.0
+      ],
+      [
+        "C",
+        159,
+        1860.699951171875
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        97,
+        1878.0
+      ],
+      [
+        "B",
+        105,
+        2031.0
+      ],
+      [
+        "C",
+        159,
+        1860.699951171875
+      ]
+    ],
+    "start_i": 97,
+    "end_i": 159,
+    "sessions": 62,
+    "sessions_ago": 20,
+    "date_range": "24-Jul-2026 \u2192 23-Oct-2026",
+    "entry": 2031.0,
+    "stop": 1845.81,
+    "target": 2201.3,
+    "explain": "Double bottom: A \u20b91878.0 \u2248 C \u20b91860.7 (diff 0.9%). Neckline B \u20b92031.0 (+8.1% above troughs). Breakout above neckline confirmed.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 2128.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -122799,61 +123787,6 @@
     "extra_patterns": []
   },
   {
-    "stock": "BHARTIARTL",
-    "pattern": "Double Bottom",
-    "direction": "BULLISH",
-    "fit": 88.0,
-    "points": [
-      [
-        "A",
-        89,
-        1861.5717235105217
-      ],
-      [
-        "B",
-        105,
-        2031.0
-      ],
-      [
-        "C",
-        159,
-        1860.699951171875
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        89,
-        1861.5717235105217
-      ],
-      [
-        "B",
-        105,
-        2031.0
-      ],
-      [
-        "C",
-        159,
-        1860.699951171875
-      ]
-    ],
-    "start_i": 89,
-    "end_i": 159,
-    "sessions": 70,
-    "sessions_ago": 20,
-    "date_range": "14-Jul-2026 \u2192 23-Oct-2026",
-    "entry": 2031.0,
-    "stop": 1845.81,
-    "target": 2201.3,
-    "explain": "Double bottom: A \u20b91861.6 \u2248 C \u20b91860.7 (diff 0.0%). Neckline B \u20b92031.0 (+9.1% above troughs). Wait for daily close above neckline.",
-    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
-    "timeframe": "Daily",
-    "interval": "1d",
-    "live": NaN,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
     "stock": "LT",
     "pattern": "Double Bottom",
     "direction": "BULLISH",
@@ -123037,7 +123970,7 @@
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 7430.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -123060,7 +123993,7 @@
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 7430.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -123083,7 +124016,62 @@
     "rules": "Very strong advance (\u226530\u201350% pole) then tight flag; high historical reliability when strict.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 7430.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "AUBANK",
+    "pattern": "Double Top",
+    "direction": "BEARISH",
+    "fit": 88.0,
+    "points": [
+      [
+        "A",
+        73,
+        1078.502626931121
+      ],
+      [
+        "B",
+        79,
+        940.4866986796167
+      ],
+      [
+        "C",
+        84,
+        1089.3421084076813
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        73,
+        1078.502626931121
+      ],
+      [
+        "B",
+        79,
+        940.4866986796167
+      ],
+      [
+        "C",
+        84,
+        1089.3421084076813
+      ]
+    ],
+    "start_i": 73,
+    "end_i": 84,
+    "sessions": 11,
+    "sessions_ago": 20,
+    "date_range": "20-Apr-2026 \u2192 06-Jul-2026",
+    "entry": 940.49,
+    "stop": 1098.06,
+    "target": 791.63,
+    "explain": "Double top: A \u20b91078.5 \u2248 C \u20b91089.3 (diff 1.0%). Neckline B \u20b9940.5 (\u221212.8% from peaks). Wait for daily close below neckline.",
+    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 983.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -123862,6 +124850,61 @@
     "timeframe": "1 Hour",
     "interval": "1h",
     "live": 30100.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "MRF",
+    "pattern": "Double Top",
+    "direction": "BEARISH",
+    "fit": 85.0,
+    "points": [
+      [
+        "A",
+        72,
+        140546.387042048
+      ],
+      [
+        "B",
+        78,
+        121784.57768696321
+      ],
+      [
+        "C",
+        84,
+        138744.56387390738
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        72,
+        140546.387042048
+      ],
+      [
+        "B",
+        78,
+        121784.57768696321
+      ],
+      [
+        "C",
+        84,
+        138744.56387390738
+      ]
+    ],
+    "start_i": 72,
+    "end_i": 84,
+    "sessions": 12,
+    "sessions_ago": 20,
+    "date_range": "13-Apr-2026 \u2192 06-Jul-2026",
+    "entry": 121784.58,
+    "stop": 141670.76,
+    "target": 103022.77,
+    "explain": "Double top: A \u20b9140546.4 \u2248 C \u20b9138744.6 (diff 1.3%). Neckline B \u20b9121784.6 (\u221212.2% from peaks). Wait for daily close below neckline.",
+    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 129605.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -124936,61 +125979,6 @@
     "extra_patterns": []
   },
   {
-    "stock": "AUBANK",
-    "pattern": "Double Top",
-    "direction": "BEARISH",
-    "fit": 77.0,
-    "points": [
-      [
-        "A",
-        73,
-        1078.502626931121
-      ],
-      [
-        "B",
-        79,
-        940.4866986796167
-      ],
-      [
-        "C",
-        84,
-        1089.3421084076813
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        73,
-        1078.502626931121
-      ],
-      [
-        "B",
-        79,
-        940.4866986796167
-      ],
-      [
-        "C",
-        84,
-        1089.3421084076813
-      ]
-    ],
-    "start_i": 73,
-    "end_i": 84,
-    "sessions": 11,
-    "sessions_ago": 20,
-    "date_range": "20-Apr-2026 \u2192 06-Jul-2026",
-    "entry": 940.49,
-    "stop": 1098.06,
-    "target": 791.63,
-    "explain": "Double top: A \u20b91078.5 \u2248 C \u20b91089.3 (diff 1.0%). Neckline B \u20b9940.5 (\u221212.8% from peaks). Wait for daily close below neckline.",
-    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
     "stock": "HDFCBANK",
     "pattern": "Trendline S/R",
     "direction": "BULLISH",
@@ -125353,7 +126341,7 @@
     "rules": "Three troughs at support; break above intervening highs.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1804.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -125408,7 +126396,7 @@
     "rules": "3+ touches on a support or resistance trendline; trade bounce or break with confirmation.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1804.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -125647,61 +126635,6 @@
     "extra_patterns": []
   },
   {
-    "stock": "MRF",
-    "pattern": "Double Top",
-    "direction": "BEARISH",
-    "fit": 74.0,
-    "points": [
-      [
-        "A",
-        72,
-        140546.387042048
-      ],
-      [
-        "B",
-        78,
-        121784.57768696321
-      ],
-      [
-        "C",
-        84,
-        138744.56387390738
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        72,
-        140546.387042048
-      ],
-      [
-        "B",
-        78,
-        121784.57768696321
-      ],
-      [
-        "C",
-        84,
-        138744.56387390738
-      ]
-    ],
-    "start_i": 72,
-    "end_i": 84,
-    "sessions": 12,
-    "sessions_ago": 20,
-    "date_range": "13-Apr-2026 \u2192 06-Jul-2026",
-    "entry": 121784.58,
-    "stop": 141670.76,
-    "target": 103022.77,
-    "explain": "Double top: A \u20b9140546.4 \u2248 C \u20b9138744.6 (diff 1.3%). Neckline B \u20b9121784.6 (\u221212.2% from peaks). Wait for daily close below neckline.",
-    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
     "stock": "KOTAKBANK",
     "pattern": "Broadening Top",
     "direction": "BEARISH",
@@ -125863,12 +126796,12 @@
       [
         "X",
         70,
-        2290.016807598228
+        2290.0165738679734
       ],
       [
         "A",
         73,
-        2551.4040090033286
+        2551.403742749576
       ],
       [
         "B",
@@ -125890,12 +126823,12 @@
       [
         "X",
         70,
-        2290.016807598228
+        2290.0165738679734
       ],
       [
         "A",
         73,
-        2551.4040090033286
+        2551.403742749576
       ],
       [
         "B",
@@ -126420,7 +127353,7 @@
     "rules": "Three lower highs (falling peaks) then break of recent low \u2014 bearish structure shift.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 2019.1,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -126790,7 +127723,7 @@
     "rules": "BC retraces 0.618\u20130.786 of AB; CD \u2248 1.0\u00d7AB (or 1.27/1.618). D is completion zone.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 5523.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -127320,7 +128253,7 @@
       [
         "LS",
         62,
-        372.30528998662965
+        372.3053216511771
       ],
       [
         "H",
@@ -127337,7 +128270,7 @@
       [
         "LS",
         62,
-        372.30528998662965
+        372.3053216511771
       ],
       [
         "H",
@@ -127472,7 +128405,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1399.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -127941,61 +128874,6 @@
     "timeframe": "30 Min",
     "interval": "30m",
     "live": 158.7,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "CIPLA",
-    "pattern": "Triple Bottom",
-    "direction": "BULLISH",
-    "fit": 68.0,
-    "points": [
-      [
-        "S1",
-        134,
-        1344.300048828125
-      ],
-      [
-        "S2",
-        149,
-        1292.0
-      ],
-      [
-        "S3",
-        158,
-        1296.4000244140625
-      ]
-    ],
-    "points_abs": [
-      [
-        "S1",
-        134,
-        1344.300048828125
-      ],
-      [
-        "S2",
-        149,
-        1292.0
-      ],
-      [
-        "S3",
-        158,
-        1296.4000244140625
-      ]
-    ],
-    "start_i": 134,
-    "end_i": 158,
-    "sessions": 24,
-    "sessions_ago": 21,
-    "date_range": "16-Sep-2026 \u2192 22-Oct-2026",
-    "entry": 1421.0,
-    "stop": 1279.08,
-    "target": 1550.0,
-    "explain": "Triple bottom support ~\u20b91292.0. Break \u20b91421.0 confirms.",
-    "rules": "Three troughs at support; break above intervening highs.",
-    "timeframe": "Daily",
-    "interval": "1d",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -128879,7 +129757,7 @@
     "rules": "B=0.618 XA; D=0.786 XA; AB=CD symmetry. PRZ at D.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 574.95,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -129320,7 +130198,7 @@
       [
         "LS",
         61,
-        4661.743456050503
+        4661.743981491966
       ],
       [
         "H",
@@ -129337,7 +130215,7 @@
       [
         "LS",
         61,
-        4661.743456050503
+        4661.743981491966
       ],
       [
         "H",
@@ -129587,7 +130465,7 @@
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 305.35,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -129610,7 +130488,7 @@
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 305.35,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -129863,7 +130741,7 @@
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1860.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -129886,7 +130764,7 @@
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1860.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -130010,7 +130888,7 @@
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1399.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -130033,7 +130911,7 @@
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1399.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -130101,7 +130979,7 @@
       [
         "LS",
         65,
-        306.6899304395265
+        306.68989858843105
       ],
       [
         "H",
@@ -130118,7 +130996,7 @@
       [
         "LS",
         65,
-        306.6899304395265
+        306.68989858843105
       ],
       [
         "H",
@@ -130368,6 +131246,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "BPCL",
+    "pattern": "Double Top",
+    "direction": "BEARISH",
+    "fit": 92.0,
+    "points": [
+      [
+        "A",
+        73,
+        320.1000061035156
+      ],
+      [
+        "B",
+        77,
+        276.6000061035156
+      ],
+      [
+        "C",
+        81,
+        321.6000061035156
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        73,
+        320.1000061035156
+      ],
+      [
+        "B",
+        77,
+        276.6000061035156
+      ],
+      [
+        "C",
+        81,
+        321.6000061035156
+      ]
+    ],
+    "start_i": 73,
+    "end_i": 81,
+    "sessions": 8,
+    "sessions_ago": 23,
+    "date_range": "20-Apr-2026 \u2192 15-Jun-2026",
+    "entry": 276.6,
+    "stop": 324.17,
+    "target": 231.6,
+    "explain": "Double top: A \u20b9320.1 \u2248 C \u20b9321.6 (diff 0.5%). Neckline B \u20b9276.6 (\u221213.6% from peaks). Wait for daily close below neckline.",
+    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 305.35,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "IOC",
     "pattern": "Double Bottom",
     "direction": "BULLISH",
@@ -130597,7 +131530,7 @@
     "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 2128.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -130941,7 +131874,7 @@
     "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 12650.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -131409,7 +132342,7 @@
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 1305.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -131432,62 +132365,7 @@
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "BPCL",
-    "pattern": "Double Top",
-    "direction": "BEARISH",
-    "fit": 83.0,
-    "points": [
-      [
-        "A",
-        73,
-        320.1000061035156
-      ],
-      [
-        "B",
-        77,
-        276.6000061035156
-      ],
-      [
-        "C",
-        81,
-        321.6000061035156
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        73,
-        320.1000061035156
-      ],
-      [
-        "B",
-        77,
-        276.6000061035156
-      ],
-      [
-        "C",
-        81,
-        321.6000061035156
-      ]
-    ],
-    "start_i": 73,
-    "end_i": 81,
-    "sessions": 8,
-    "sessions_ago": 23,
-    "date_range": "20-Apr-2026 \u2192 15-Jun-2026",
-    "entry": 276.6,
-    "stop": 324.17,
-    "target": 231.6,
-    "explain": "Double top: A \u20b9320.1 \u2248 C \u20b9321.6 (diff 0.5%). Neckline B \u20b9276.6 (\u221213.6% from peaks). Wait for daily close below neckline.",
-    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
+    "live": 1305.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -132706,7 +133584,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 1399.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -132817,6 +133695,61 @@
     "timeframe": "30 Min",
     "interval": "30m",
     "live": 4830.7,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
+    "stock": "M&M",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 94.0,
+    "points": [
+      [
+        "A",
+        68,
+        2865.9037276492413
+      ],
+      [
+        "B",
+        75,
+        3363.6762406682406
+      ],
+      [
+        "C",
+        80,
+        2870.257773121091
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        68,
+        2865.9037276492413
+      ],
+      [
+        "B",
+        75,
+        3363.6762406682406
+      ],
+      [
+        "C",
+        80,
+        2870.257773121091
+      ]
+    ],
+    "start_i": 68,
+    "end_i": 80,
+    "sessions": 12,
+    "sessions_ago": 24,
+    "date_range": "16-Mar-2026 \u2192 08-Jun-2026",
+    "entry": 3363.68,
+    "stop": 2842.98,
+    "target": 3861.45,
+    "explain": "Double bottom: A \u20b92865.9 \u2248 C \u20b92870.3 (diff 0.2%). Neckline B \u20b93363.7 (+17.2% above troughs). Breakout above neckline confirmed.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 3487.4,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -134347,61 +135280,6 @@
   },
   {
     "stock": "M&M",
-    "pattern": "Double Bottom",
-    "direction": "BULLISH",
-    "fit": 87.0,
-    "points": [
-      [
-        "A",
-        68,
-        2865.9037276492413
-      ],
-      [
-        "B",
-        75,
-        3363.6762406682406
-      ],
-      [
-        "C",
-        80,
-        2870.257773121091
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        68,
-        2865.9037276492413
-      ],
-      [
-        "B",
-        75,
-        3363.6762406682406
-      ],
-      [
-        "C",
-        80,
-        2870.257773121091
-      ]
-    ],
-    "start_i": 68,
-    "end_i": 80,
-    "sessions": 12,
-    "sessions_ago": 24,
-    "date_range": "16-Mar-2026 \u2192 08-Jun-2026",
-    "entry": 3363.68,
-    "stop": 2842.98,
-    "target": 3861.45,
-    "explain": "Double bottom: A \u20b92865.9 \u2248 C \u20b92870.3 (diff 0.2%). Neckline B \u20b93363.7 (+17.2% above troughs). Wait for daily close above neckline.",
-    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "M&M",
     "pattern": "Head & Shoulders",
     "direction": "BEARISH",
     "fit": 87.0,
@@ -134726,7 +135604,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 2128.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -135784,7 +136662,7 @@
       [
         "A",
         61,
-        4661.743456050503
+        4661.743981491966
       ],
       [
         "B",
@@ -135811,7 +136689,7 @@
       [
         "A",
         61,
-        4661.743456050503
+        4661.743981491966
       ],
       [
         "B",
@@ -136497,7 +137375,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 12650.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -136598,7 +137476,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 462.25,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -137248,6 +138126,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "AUBANK",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 91.0,
+    "points": [
+      [
+        "A",
+        61,
+        941.835372319447
+      ],
+      [
+        "B",
+        73,
+        1078.502626931121
+      ],
+      [
+        "C",
+        79,
+        940.4866986796167
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        61,
+        941.835372319447
+      ],
+      [
+        "B",
+        73,
+        1078.502626931121
+      ],
+      [
+        "C",
+        79,
+        940.4866986796167
+      ]
+    ],
+    "start_i": 61,
+    "end_i": 79,
+    "sessions": 18,
+    "sessions_ago": 25,
+    "date_range": "26-Jan-2026 \u2192 01-Jun-2026",
+    "entry": 1078.5,
+    "stop": 932.96,
+    "target": 1216.52,
+    "explain": "Double bottom: A \u20b9941.8 \u2248 C \u20b9940.5 (diff 0.1%). Neckline B \u20b91078.5 (+14.5% above troughs). Wait for daily close above neckline.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 983.5,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "LT",
     "pattern": "Inverse H&S",
     "direction": "BULLISH",
@@ -137518,7 +138451,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 983.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -137861,7 +138794,7 @@
       [
         "X",
         62,
-        1653.5210481183506
+        1653.5211880808638
       ],
       [
         "A",
@@ -137888,7 +138821,7 @@
       [
         "X",
         62,
-        1653.5210481183506
+        1653.5211880808638
       ],
       [
         "A",
@@ -138621,7 +139554,7 @@
       [
         "LS",
         55,
-        314.9575922615604
+        314.9575624862288
       ],
       [
         "H",
@@ -138631,14 +139564,14 @@
       [
         "RS",
         79,
-        312.20745626353556
+        312.2074847489754
       ]
     ],
     "points_abs": [
       [
         "LS",
         55,
-        314.9575922615604
+        314.9575624862288
       ],
       [
         "H",
@@ -138648,7 +139581,7 @@
       [
         "RS",
         79,
-        312.20745626353556
+        312.2074847489754
       ]
     ],
     "start_i": 55,
@@ -138664,61 +139597,6 @@
     "timeframe": "Weekly",
     "interval": "1wk",
     "live": 292.95,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "AUBANK",
-    "pattern": "Double Bottom",
-    "direction": "BULLISH",
-    "fit": 87.0,
-    "points": [
-      [
-        "A",
-        61,
-        941.835372319447
-      ],
-      [
-        "B",
-        73,
-        1078.502626931121
-      ],
-      [
-        "C",
-        79,
-        940.4866986796167
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        61,
-        941.835372319447
-      ],
-      [
-        "B",
-        73,
-        1078.502626931121
-      ],
-      [
-        "C",
-        79,
-        940.4866986796167
-      ]
-    ],
-    "start_i": 61,
-    "end_i": 79,
-    "sessions": 18,
-    "sessions_ago": 25,
-    "date_range": "26-Jan-2026 \u2192 01-Jun-2026",
-    "entry": 1078.5,
-    "stop": 932.96,
-    "target": 1216.52,
-    "explain": "Double bottom: A \u20b9941.8 \u2248 C \u20b9940.5 (diff 0.1%). Neckline B \u20b91078.5 (+14.5% above troughs). Wait for daily close above neckline.",
-    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -139061,7 +139939,7 @@
       [
         "X",
         62,
-        1653.5210481183506
+        1653.5211880808638
       ],
       [
         "A",
@@ -139088,7 +139966,7 @@
       [
         "X",
         62,
-        1653.5210481183506
+        1653.5211880808638
       ],
       [
         "A",
@@ -140194,7 +141072,7 @@
     "rules": "C extends 1.13\u20131.618 XA; D=0.886\u20131.13 XC.",
     "timeframe": "Weekly",
     "interval": "1wk",
-    "live": NaN,
+    "live": 983.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -141448,6 +142326,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "SBILIFE",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 93.0,
+    "points": [
+      [
+        "A",
+        133,
+        1652.9000244140625
+      ],
+      [
+        "B",
+        140,
+        1791.4000244140625
+      ],
+      [
+        "C",
+        153,
+        1634.5
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        133,
+        1652.9000244140625
+      ],
+      [
+        "B",
+        140,
+        1791.4000244140625
+      ],
+      [
+        "C",
+        153,
+        1634.5
+      ]
+    ],
+    "start_i": 133,
+    "end_i": 153,
+    "sessions": 20,
+    "sessions_ago": 26,
+    "date_range": "15-Sep-2026 \u2192 14-Oct-2026",
+    "entry": 1791.4,
+    "stop": 1621.42,
+    "target": 1948.3,
+    "explain": "Double bottom: A \u20b91652.9 \u2248 C \u20b91634.5 (diff 1.1%). Neckline B \u20b91791.4 (+8.4% above troughs). Breakout above neckline confirmed.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 1804.9,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "TITAN",
     "pattern": "Double Top",
     "direction": "BEARISH",
@@ -142628,61 +143561,6 @@
     "extra_patterns": []
   },
   {
-    "stock": "SBILIFE",
-    "pattern": "Double Top",
-    "direction": "BEARISH",
-    "fit": 87.0,
-    "points": [
-      [
-        "A",
-        38,
-        1909.34573621991
-      ],
-      [
-        "B",
-        70,
-        1728.0999755859375
-      ],
-      [
-        "C",
-        78,
-        1906.9000244140625
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        38,
-        1909.34573621991
-      ],
-      [
-        "B",
-        70,
-        1728.0999755859375
-      ],
-      [
-        "C",
-        78,
-        1906.9000244140625
-      ]
-    ],
-    "start_i": 38,
-    "end_i": 78,
-    "sessions": 40,
-    "sessions_ago": 26,
-    "date_range": "18-Aug-2025 \u2192 25-May-2026",
-    "entry": 1728.1,
-    "stop": 1924.62,
-    "target": 1546.85,
-    "explain": "Double top: A \u20b91909.3 \u2248 C \u20b91906.9 (diff 0.1%). Neckline B \u20b91728.1 (\u22129.4% from peaks). Wait for daily close below neckline.",
-    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
     "stock": "CANBK",
     "pattern": "Head & Shoulders",
     "direction": "BEARISH",
@@ -143203,6 +144081,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "MRF",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 85.0,
+    "points": [
+      [
+        "A",
+        69,
+        123237.00950643931
+      ],
+      [
+        "B",
+        72,
+        140546.387042048
+      ],
+      [
+        "C",
+        78,
+        121784.57768696321
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        69,
+        123237.00950643931
+      ],
+      [
+        "B",
+        72,
+        140546.387042048
+      ],
+      [
+        "C",
+        78,
+        121784.57768696321
+      ]
+    ],
+    "start_i": 69,
+    "end_i": 78,
+    "sessions": 9,
+    "sessions_ago": 26,
+    "date_range": "23-Mar-2026 \u2192 25-May-2026",
+    "entry": 140546.39,
+    "stop": 120810.3,
+    "target": 159308.2,
+    "explain": "Double bottom: A \u20b9123237.0 \u2248 C \u20b9121784.6 (diff 1.2%). Neckline B \u20b9140546.4 (+14.0% above troughs). Wait for daily close above neckline.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Weekly",
+    "interval": "1wk",
+    "live": 129605.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "CUMMINSIND",
     "pattern": "ABCD",
     "direction": "BEARISH",
@@ -143652,61 +144585,6 @@
     "timeframe": "30 Min",
     "interval": "30m",
     "live": 4052.8,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "MRF",
-    "pattern": "Double Bottom",
-    "direction": "BULLISH",
-    "fit": 74.0,
-    "points": [
-      [
-        "A",
-        69,
-        123237.00950643931
-      ],
-      [
-        "B",
-        72,
-        140546.387042048
-      ],
-      [
-        "C",
-        78,
-        121784.57768696321
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        69,
-        123237.00950643931
-      ],
-      [
-        "B",
-        72,
-        140546.387042048
-      ],
-      [
-        "C",
-        78,
-        121784.57768696321
-      ]
-    ],
-    "start_i": 69,
-    "end_i": 78,
-    "sessions": 9,
-    "sessions_ago": 26,
-    "date_range": "23-Mar-2026 \u2192 25-May-2026",
-    "entry": 140546.39,
-    "stop": 120810.3,
-    "target": 159308.2,
-    "explain": "Double bottom: A \u20b9123237.0 \u2248 C \u20b9121784.6 (diff 1.2%). Neckline B \u20b9140546.4 (+14.0% above troughs). Wait for daily close above neckline.",
-    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
-    "timeframe": "Weekly",
-    "interval": "1wk",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -145086,7 +145964,7 @@
     "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 574.95,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -145811,7 +146689,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 2128.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -145866,7 +146744,7 @@
     "rules": "LS, higher head, RS; neckline break down; target = head\u2212neckline.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 574.95,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -146431,6 +147309,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "POLYCAB",
+    "pattern": "Double Top",
+    "direction": "BEARISH",
+    "fit": 94.0,
+    "points": [
+      [
+        "A",
+        141,
+        8463.0
+      ],
+      [
+        "B",
+        145,
+        7883.0
+      ],
+      [
+        "C",
+        151,
+        8469.0
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        141,
+        8463.0
+      ],
+      [
+        "B",
+        145,
+        7883.0
+      ],
+      [
+        "C",
+        151,
+        8469.0
+      ]
+    ],
+    "start_i": 141,
+    "end_i": 151,
+    "sessions": 10,
+    "sessions_ago": 28,
+    "date_range": "25-Sep-2026 \u2192 12-Oct-2026",
+    "entry": 7883.0,
+    "stop": 8536.75,
+    "target": 7297.0,
+    "explain": "Double top: A \u20b98463.0 \u2248 C \u20b98469.0 (diff 0.1%). Neckline B \u20b97883.0 (\u22126.9% from peaks). Breakdown below neckline confirmed.",
+    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 7430.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "BAJAJFINSV",
     "pattern": "Double Top",
     "direction": "BEARISH",
@@ -146726,57 +147659,57 @@
     "extra_patterns": []
   },
   {
-    "stock": "POLYCAB",
-    "pattern": "Double Top",
-    "direction": "BEARISH",
+    "stock": "AUBANK",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
     "fit": 87.0,
     "points": [
       [
         "A",
-        141,
-        8463.0
+        96,
+        959.0686186192086
       ],
       [
         "B",
-        145,
-        7883.0
+        119,
+        1144.0999755859375
       ],
       [
         "C",
         151,
-        8469.0
+        968.9000244140625
       ]
     ],
     "points_abs": [
       [
         "A",
-        141,
-        8463.0
+        96,
+        959.0686186192086
       ],
       [
         "B",
-        145,
-        7883.0
+        119,
+        1144.0999755859375
       ],
       [
         "C",
         151,
-        8469.0
+        968.9000244140625
       ]
     ],
-    "start_i": 141,
+    "start_i": 96,
     "end_i": 151,
-    "sessions": 10,
+    "sessions": 55,
     "sessions_ago": 28,
-    "date_range": "25-Sep-2026 \u2192 12-Oct-2026",
-    "entry": 7883.0,
-    "stop": 8536.75,
-    "target": 7297.0,
-    "explain": "Double top: A \u20b98463.0 \u2248 C \u20b98469.0 (diff 0.1%). Neckline B \u20b97883.0 (\u22126.9% from peaks). Wait for daily close below neckline.",
-    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
+    "date_range": "23-Jul-2026 \u2192 12-Oct-2026",
+    "entry": 1144.1,
+    "stop": 951.4,
+    "target": 1329.13,
+    "explain": "Double bottom: A \u20b9959.1 \u2248 C \u20b9968.9 (diff 1.0%). Neckline B \u20b91144.1 (+18.1% above troughs). Wait for daily close above neckline.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 983.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -147016,7 +147949,7 @@
     "rules": "B=0.382\u20130.618 XA; C=1.272\u20131.414 XA; D=0.786 XC.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 2514.8,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -151298,7 +152231,7 @@
     "rules": "LS, higher head, RS; neckline break down; target = head\u2212neckline.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 2128.5,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -151818,7 +152751,7 @@
     "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 5523.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -153340,7 +154273,7 @@
     "rules": "LS, higher head, RS; neckline break down; target = head\u2212neckline.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1804.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -155460,6 +156393,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "MRF",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 90.0,
+    "points": [
+      [
+        "A",
+        78,
+        123386.74668826834
+      ],
+      [
+        "B",
+        84,
+        138744.57150311035
+      ],
+      [
+        "C",
+        145,
+        122742.12428799307
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        78,
+        123386.74668826834
+      ],
+      [
+        "B",
+        84,
+        138744.57150311035
+      ],
+      [
+        "C",
+        145,
+        122742.12428799307
+      ]
+    ],
+    "start_i": 78,
+    "end_i": 145,
+    "sessions": 67,
+    "sessions_ago": 34,
+    "date_range": "29-Jun-2026 \u2192 01-Oct-2026",
+    "entry": 138744.57,
+    "stop": 121760.19,
+    "target": 154747.02,
+    "explain": "Double bottom: A \u20b9123386.7 \u2248 C \u20b9122742.1 (diff 0.5%). Neckline B \u20b9138744.6 (+12.4% above troughs). Wait for daily close above neckline.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 129605.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "TECHM",
     "pattern": "Double Bottom",
     "direction": "BULLISH",
@@ -157352,7 +158340,7 @@
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 129605.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -157375,7 +158363,7 @@
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 129605.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -159214,6 +160202,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "INDIGO",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 92.0,
+    "points": [
+      [
+        "A",
+        97,
+        4886.0
+      ],
+      [
+        "B",
+        105,
+        5508.0
+      ],
+      [
+        "C",
+        142,
+        4845.0
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        97,
+        4886.0
+      ],
+      [
+        "B",
+        105,
+        5508.0
+      ],
+      [
+        "C",
+        142,
+        4845.0
+      ]
+    ],
+    "start_i": 97,
+    "end_i": 142,
+    "sessions": 45,
+    "sessions_ago": 37,
+    "date_range": "24-Jul-2026 \u2192 28-Sep-2026",
+    "entry": 5508.0,
+    "stop": 4806.24,
+    "target": 6171.0,
+    "explain": "Double bottom: A \u20b94886.0 \u2248 C \u20b94845.0 (diff 0.8%). Neckline B \u20b95508.0 (+12.7% above troughs). Breakout above neckline confirmed.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 5523.0,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "POWERGRID",
     "pattern": "Inverse H&S",
     "direction": "BULLISH",
@@ -160144,7 +161187,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 5523.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -160642,7 +161685,7 @@
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 462.25,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -160665,7 +161708,7 @@
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 462.25,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -163259,7 +164302,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1804.9,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -163314,62 +164357,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "SBILIFE",
-    "pattern": "Double Top",
-    "direction": "BEARISH",
-    "fit": 79.0,
-    "points": [
-      [
-        "A",
-        118,
-        1801.699951171875
-      ],
-      [
-        "B",
-        133,
-        1652.9000244140625
-      ],
-      [
-        "C",
-        140,
-        1791.4000244140625
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        118,
-        1801.699951171875
-      ],
-      [
-        "B",
-        133,
-        1652.9000244140625
-      ],
-      [
-        "C",
-        140,
-        1791.4000244140625
-      ]
-    ],
-    "start_i": 118,
-    "end_i": 140,
-    "sessions": 22,
-    "sessions_ago": 39,
-    "date_range": "24-Aug-2026 \u2192 24-Sep-2026",
-    "entry": 1652.9,
-    "stop": 1816.11,
-    "target": 1504.1,
-    "explain": "Double top: A \u20b91801.7 \u2248 C \u20b91791.4 (diff 0.6%). Neckline B \u20b91652.9 (\u22127.7% from peaks). Wait for daily close below neckline.",
-    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
-    "timeframe": "Daily",
-    "interval": "1d",
-    "live": NaN,
+    "live": 574.95,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -163392,7 +164380,7 @@
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 3487.4,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -163415,7 +164403,7 @@
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 3487.4,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -165076,7 +166064,7 @@
     "rules": "LS, higher head, RS; neckline break down; target = head\u2212neckline.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 305.35,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -165782,61 +166770,6 @@
     "timeframe": "Daily",
     "interval": "1d",
     "live": 3208.0,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "BPCL",
-    "pattern": "Double Top",
-    "direction": "BEARISH",
-    "fit": 80.0,
-    "points": [
-      [
-        "A",
-        113,
-        319.75
-      ],
-      [
-        "B",
-        132,
-        296.0
-      ],
-      [
-        "C",
-        138,
-        318.20001220703125
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        113,
-        319.75
-      ],
-      [
-        "B",
-        132,
-        296.0
-      ],
-      [
-        "C",
-        138,
-        318.20001220703125
-      ]
-    ],
-    "start_i": 113,
-    "end_i": 138,
-    "sessions": 25,
-    "sessions_ago": 41,
-    "date_range": "17-Aug-2026 \u2192 22-Sep-2026",
-    "entry": 296.0,
-    "stop": 322.31,
-    "target": 272.25,
-    "explain": "Double top: A \u20b9319.8 \u2248 C \u20b9318.2 (diff 0.5%). Neckline B \u20b9296.0 (\u22127.0% from peaks). Wait for daily close below neckline.",
-    "rules": "Two peaks ~same high; neckline = trough between; confirm close below neckline; target = height down.",
-    "timeframe": "Daily",
-    "interval": "1d",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -166737,7 +167670,7 @@
     "rules": "LS, higher head, RS; neckline break down; target = head\u2212neckline.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 1860.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -166815,7 +167748,7 @@
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 7430.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -166838,7 +167771,7 @@
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 7430.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -166916,7 +167849,7 @@
     "rules": "Sharp pole + tight counter-trend channel; break in pole direction; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 5535.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -166939,7 +167872,7 @@
     "rules": "Sharp pole + small converging triangle; break with pole; target \u2248 pole length.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 5535.0,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -168425,7 +169358,7 @@
     "rules": "LS, higher head, RS; neckline break down; target = head\u2212neckline.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 2514.8,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -168481,61 +169414,6 @@
     "timeframe": "Daily",
     "interval": "1d",
     "live": 1777.5,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "MRF",
-    "pattern": "Double Bottom",
-    "direction": "BULLISH",
-    "fit": 81.0,
-    "points": [
-      [
-        "A",
-        78,
-        123386.74668826834
-      ],
-      [
-        "B",
-        84,
-        138744.58716642624
-      ],
-      [
-        "C",
-        136,
-        123812.0981629093
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        78,
-        123386.74668826834
-      ],
-      [
-        "B",
-        84,
-        138744.58716642624
-      ],
-      [
-        "C",
-        136,
-        123812.0981629093
-      ]
-    ],
-    "start_i": 78,
-    "end_i": 136,
-    "sessions": 58,
-    "sessions_ago": 43,
-    "date_range": "29-Jun-2026 \u2192 18-Sep-2026",
-    "entry": 138744.59,
-    "stop": 122399.65,
-    "target": 154102.43,
-    "explain": "Double bottom: A \u20b9123386.7 \u2248 C \u20b9123812.1 (diff 0.3%). Neckline B \u20b9138744.6 (+12.1% above troughs). Wait for daily close above neckline.",
-    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
-    "timeframe": "Daily",
-    "interval": "1d",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -168691,7 +169569,7 @@
     "rules": "LS, deeper head, RS; neckline break up; target = neckline\u2212head up.",
     "timeframe": "Daily",
     "interval": "1d",
-    "live": NaN,
+    "live": 2019.1,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -170281,6 +171159,61 @@
     "extra_patterns": []
   },
   {
+    "stock": "CIPLA",
+    "pattern": "Double Bottom",
+    "direction": "BULLISH",
+    "fit": 88.0,
+    "points": [
+      [
+        "A",
+        71,
+        1341.0999755859375
+      ],
+      [
+        "B",
+        100,
+        1491.199951171875
+      ],
+      [
+        "C",
+        134,
+        1344.300048828125
+      ]
+    ],
+    "points_abs": [
+      [
+        "A",
+        71,
+        1341.0999755859375
+      ],
+      [
+        "B",
+        100,
+        1491.199951171875
+      ],
+      [
+        "C",
+        134,
+        1344.300048828125
+      ]
+    ],
+    "start_i": 71,
+    "end_i": 134,
+    "sessions": 63,
+    "sessions_ago": 45,
+    "date_range": "17-Jun-2026 \u2192 16-Sep-2026",
+    "entry": 1491.2,
+    "stop": 1330.37,
+    "target": 1641.3,
+    "explain": "Double bottom: A \u20b91341.1 \u2248 C \u20b91344.3 (diff 0.2%). Neckline B \u20b91491.2 (+10.9% above troughs). Wait for daily close above neckline.",
+    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
+    "timeframe": "Daily",
+    "interval": "1d",
+    "live": 1399.9,
+    "gap_pct": 0,
+    "extra_patterns": []
+  },
+  {
     "stock": "BEL",
     "pattern": "Double Bottom",
     "direction": "BULLISH",
@@ -170387,61 +171320,6 @@
     "timeframe": "30 Min",
     "interval": "30m",
     "live": 3208.0,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "AUBANK",
-    "pattern": "Double Bottom",
-    "direction": "BULLISH",
-    "fit": 85.0,
-    "points": [
-      [
-        "A",
-        78,
-        1014.5646880706197
-      ],
-      [
-        "B",
-        119,
-        1144.0999755859375
-      ],
-      [
-        "C",
-        134,
-        1015.0999755859375
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        78,
-        1014.5646880706197
-      ],
-      [
-        "B",
-        119,
-        1144.0999755859375
-      ],
-      [
-        "C",
-        134,
-        1015.0999755859375
-      ]
-    ],
-    "start_i": 78,
-    "end_i": 134,
-    "sessions": 56,
-    "sessions_ago": 45,
-    "date_range": "29-Jun-2026 \u2192 16-Sep-2026",
-    "entry": 1144.1,
-    "stop": 1006.45,
-    "target": 1273.64,
-    "explain": "Double bottom: A \u20b91014.6 \u2248 C \u20b91015.1 (diff 0.1%). Neckline B \u20b91144.1 (+12.7% above troughs). Wait for daily close above neckline.",
-    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
-    "timeframe": "Daily",
-    "interval": "1d",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
@@ -170757,61 +171635,6 @@
     "timeframe": "15 Min",
     "interval": "15m",
     "live": 1103.4,
-    "gap_pct": 0,
-    "extra_patterns": []
-  },
-  {
-    "stock": "CIPLA",
-    "pattern": "Double Bottom",
-    "direction": "BULLISH",
-    "fit": 82.0,
-    "points": [
-      [
-        "A",
-        71,
-        1341.0999755859375
-      ],
-      [
-        "B",
-        100,
-        1491.199951171875
-      ],
-      [
-        "C",
-        134,
-        1344.300048828125
-      ]
-    ],
-    "points_abs": [
-      [
-        "A",
-        71,
-        1341.0999755859375
-      ],
-      [
-        "B",
-        100,
-        1491.199951171875
-      ],
-      [
-        "C",
-        134,
-        1344.300048828125
-      ]
-    ],
-    "start_i": 71,
-    "end_i": 134,
-    "sessions": 63,
-    "sessions_ago": 45,
-    "date_range": "17-Jun-2026 \u2192 16-Sep-2026",
-    "entry": 1491.2,
-    "stop": 1330.37,
-    "target": 1641.3,
-    "explain": "Double bottom: A \u20b91341.1 \u2248 C \u20b91344.3 (diff 0.2%). Neckline B \u20b91491.2 (+10.9% above troughs). Wait for daily close above neckline.",
-    "rules": "Two troughs ~same low; neckline = peak between; confirm close above; target = height up.",
-    "timeframe": "Daily",
-    "interval": "1d",
-    "live": NaN,
     "gap_pct": 0,
     "extra_patterns": []
   },
