@@ -26,8 +26,8 @@ import pandas as pd
 
 try:
     import yfinance as yf
-except ImportError as e:
-    raise SystemExit("Install yfinance: pip install yfinance pandas numpy") from e
+except ImportError:
+    yf = None  # Yahoo chart REST is primary; yfinance optional on runner
 
 import logging
 import contextlib
@@ -193,26 +193,98 @@ def analyse_one(symbol: str, df: pd.DataFrame) -> dict | None:
         "Priority": "HIGH" if call == "BUY" and score >= 80 else "MEDIUM" if call == "BUY" else "LOW",
         "Sector": "Other",
         "Scan Source": "github_actions_scan_job",
-        "Scan Time": _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%d %H:%M UTC"),
+        "Scan Time": _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%d %H:%M:%S"),
     }
 
 
-def fetch_history(symbol: str) -> pd.DataFrame:
-    """Download daily OHLC. Never raises — skip bad/delisted Yahoo symbols (e.g. temporary 404)."""
-    base = str(symbol or "").upper().replace(".NS", "").replace(".BO", "").strip()
-    if not base:
-        return pd.DataFrame()
-    candidates = [f"{base}.NS", base]
-    # Rare Yahoo alias issues
-    aliases = {"TATAMOTORS": ["TATAMOTORS.NS", "TATAMOTORS.BO"], "M&M": ["M&M.NS", "MM.NS"]}
-    if base in aliases:
-        candidates = aliases[base] + candidates
+def _yahoo_chart_history(symbol: str, range_: str = "1y", interval: str = "1d") -> pd.DataFrame:
+    """
+    Direct Yahoo Finance chart API — works on many cloud IPs where yfinance is blocked
+    or returns empty. No yfinance dependency for the happy path.
+    """
+    import json
+    import urllib.request
+    sym = yf_sym(symbol)
+    hosts = (
+        "https://query1.finance.yahoo.com",
+        "https://query2.finance.yahoo.com",
+    )
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json,text/plain,*/*",
+    }
+    last_err = None
+    for host in hosts:
+        url = f"{host}/v8/finance/chart/{sym}?interval={interval}&range={range_}&includePrePost=false"
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=18) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+            j = json.loads(raw)
+            res = (j.get("chart") or {}).get("result")
+            if not res:
+                continue
+            res0 = res[0]
+            ts = res0.get("timestamp") or []
+            quote = ((res0.get("indicators") or {}).get("quote") or [{}])[0]
+            if not ts or not quote:
+                continue
+            rows = {
+                "Open": quote.get("open") or [],
+                "High": quote.get("high") or [],
+                "Low": quote.get("low") or [],
+                "Close": quote.get("close") or [],
+                "Volume": quote.get("volume") or [],
+            }
+            # align lengths
+            n = len(ts)
+            for k in list(rows.keys()):
+                v = list(rows[k]) if rows[k] is not None else []
+                if len(v) < n:
+                    v = v + [None] * (n - len(v))
+                rows[k] = v[:n]
+            idx = pd.to_datetime(ts, unit="s", utc=True).tz_convert(None)
+            df = pd.DataFrame(rows, index=idx)
+            df = df.apply(pd.to_numeric, errors="coerce").dropna(subset=["Close"])
+            if len(df) >= 30:
+                return df
+        except Exception as e:
+            last_err = e
+            time.sleep(0.15)
+            continue
+    if last_err and False:
+        print(f"yahoo chart {symbol}: {last_err}")
+    return pd.DataFrame()
 
-    for sym in candidates:
-        for period in ("1y", "6mo", "2y"):
+
+def fetch_history(symbol: str) -> pd.DataFrame:
+    """
+    History with fallbacks (GitHub Actions friendly):
+      1) Yahoo chart REST (primary — survives many cloud blocks)
+      2) yfinance download / Ticker.history
+    """
+    # 1) Yahoo chart API
+    for rng in ("1y", "6mo", "3mo"):
+        try:
+            df = _yahoo_chart_history(symbol, range_=rng, interval="1d")
+            if df is not None and not df.empty and len(df) >= 40:
+                return df
+        except Exception:
+            pass
+        time.sleep(0.05)
+
+    # 2) yfinance fallback (optional)
+    if yf is None:
+        return pd.DataFrame()
+    sym = yf_sym(symbol)
+    for period in ("1y", "6mo", "3mo"):
+        for attempt in range(2):
             try:
                 buf = io.StringIO()
-                with contextlib.redirect_stderr(buf):
+                with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
                     df = yf.download(
                         sym,
                         period=period,
@@ -222,7 +294,7 @@ def fetch_history(symbol: str) -> pd.DataFrame:
                         auto_adjust=True,
                     )
                 if df is None or getattr(df, "empty", True):
-                    with contextlib.redirect_stderr(buf):
+                    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
                         df = yf.Ticker(sym).history(period=period, auto_adjust=True)
                 if df is None or getattr(df, "empty", True):
                     continue
@@ -233,7 +305,7 @@ def fetch_history(symbol: str) -> pd.DataFrame:
             except Exception:
                 time.sleep(0.2)
                 continue
-        time.sleep(0.15)
+        time.sleep(0.1)
     return pd.DataFrame()
 
 
@@ -447,6 +519,37 @@ def near_atm_option_premium(symbol: str, side: str, spot: float = None) -> dict:
     return out
 
 
+
+def _yahoo_day_movers(limit: int = 20) -> tuple[list, list]:
+    """
+    When NSE top-gainer API is 403 on GitHub, rank NIFTY50+EXTRA by 1d % via Yahoo chart.
+    Returns (gainers, losers) symbol lists without .NS.
+    """
+    universe = list(dict.fromkeys(NIFTY50 + EXTRA))
+    scored = []
+    for sym in universe:
+        try:
+            df = _yahoo_chart_history(sym, range_="5d", interval="1d")
+            if df is None or len(df) < 2:
+                continue
+            c0 = float(df["Close"].iloc[-2])
+            c1 = float(df["Close"].iloc[-1])
+            if c0 <= 0:
+                continue
+            pct = (c1 - c0) / c0 * 100.0
+            scored.append((sym, pct))
+        except Exception:
+            continue
+        time.sleep(0.08)
+    if not scored:
+        return [], []
+    scored.sort(key=lambda x: x[1], reverse=True)
+    gainers = [s for s, p in scored if p > 0][:limit]
+    losers = [s for s, p in sorted(scored, key=lambda x: x[1]) if p < 0][:limit]
+    print(f"Yahoo day movers · gainers={len(gainers)} losers={len(losers)}")
+    return gainers, losers
+
+
 def run_915_open_strategy(limit: int = 20, list_mode: str = "both") -> pd.DataFrame:
     """
     9:15 open job: top gainers/losers + 1m big candle CE/PE.
@@ -578,6 +681,26 @@ def run_915_open_strategy(limit: int = 20, list_mode: str = "both") -> pd.DataFr
     else:
         universe = [(s, "GAINER") for s in syms_g] + [(s, "LOSER") for s in syms_l]
 
+    # If NSE top gainer/loser empty or blocked, rank by Yahoo 1d %
+    if not syms_g or not syms_l:
+        try:
+            yg, yl = _yahoo_day_movers(limit=limit)
+            if not syms_g and yg:
+                syms_g = yg
+                print("915: filled gainers from Yahoo day % (NSE blocked/empty)")
+            if not syms_l and yl:
+                syms_l = yl
+                print("915: filled losers from Yahoo day % (NSE blocked/empty)")
+        except Exception as _ym:
+            print(f"yahoo movers: {_ym}")
+
+    if list_mode == "both":
+        universe = [(s, "GAINER") for s in syms_g] + [(s, "LOSER") for s in syms_l]
+    elif list_mode == "loser":
+        universe = [(s, "LOSER") for s in syms_l]
+    else:
+        universe = [(s, "GAINER") for s in syms_g]
+
     out_rows = []
     seen = set()
     for sym, tag in universe:
@@ -585,10 +708,20 @@ def run_915_open_strategy(limit: int = 20, list_mode: str = "both") -> pd.DataFr
             continue
         seen.add(sym)
         try:
-            # 1-minute bars — critical for 9:15 candle
-            h = yf.Ticker(yf_sym(sym)).history(period="1d", interval="1m")
+            # 1-minute bars — critical for 9:15 candle (Yahoo chart first, yfinance backup)
+            h = _yahoo_chart_history(sym, range_="1d", interval="1m")
             if h is None or len(h) < 1:
-                h = yf.Ticker(yf_sym(sym)).history(period="5d", interval="1m")
+                h = _yahoo_chart_history(sym, range_="5d", interval="1m")
+            if (h is None or len(h) < 1):
+                try:
+                    h = yf.Ticker(yf_sym(sym)).history(period="1d", interval="1m")
+                except Exception:
+                    h = None
+            if h is None or len(h) < 1:
+                try:
+                    h = yf.Ticker(yf_sym(sym)).history(period="5d", interval="1m")
+                except Exception:
+                    h = None
             if h is None or len(h) < 1:
                 continue
             # FIRST 1-min bar of session only (not a later green recovery bar)
@@ -1156,19 +1289,39 @@ def main():
         traceback.print_exc()
         df = pd.DataFrame()
 
+    # Always prove the job ran (GitHub commit needs a file change)
+    try:
+        (ROOT / "last_scan_heartbeat.txt").write_text(
+            _now_utc_iso() + " | limit=" + str(args.limit) + "\n",
+            encoding="utf-8",
+        )
+    except Exception as _hb:
+        print(f"heartbeat: {_hb}")
+
     if df is None or getattr(df, "empty", True):
         print("WARNING: no rows this run — providers blocked or network issue")
+        # Keep previous CSV if present; only refresh meta so app shows TODAY's attempt
         try:
+            prev_rows = 0
+            if OUT_CSV.exists():
+                try:
+                    prev_rows = len(pd.read_csv(OUT_CSV))
+                except Exception:
+                    prev_rows = 0
             OUT_META.write_text(json.dumps({
-                "rows": 0,
+                "rows": int(prev_rows),
                 "ok": False,
+                "empty_run": True,
+                "kept_previous_csv": bool(prev_rows),
                 "saved_at": _now_utc_iso(),
                 "saved_at_ist": _now_ist_str(),
-                "source": "scan_job.py (empty run)",
+                "source": "scan_job.py (empty run — meta refreshed)",
                 "limit": args.limit,
+                "note": "Yahoo/NSE returned no rows; previous latest_results.csv kept if any",
             }, indent=2), encoding="utf-8")
-        except Exception:
-            pass
+            print(f"Wrote empty-run meta (kept previous rows={prev_rows})")
+        except Exception as e:
+            print(f"empty meta write: {e}")
         raise SystemExit(0)
 
     try:
@@ -1186,7 +1339,7 @@ def main():
         "ok": True,
         "saved_at": _now_utc_iso(),
         "saved_at_ist": _now_ist_str(),
-        "source": "scan_job.py",
+        "source": "scan_job.py (yahoo-chart primary)",
         "limit": args.limit,
     }
     try:
@@ -1194,6 +1347,13 @@ def main():
     except Exception as e:
         print(f"meta write: {e}")
 
+    try:
+        (ROOT / "last_scan_heartbeat.txt").write_text(
+            _now_utc_iso() + f" | rows={len(df)} | limit={args.limit}\n",
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
     print(f"OK wrote {len(df)} rows → {OUT_CSV}")
     try:
         _write_strategy_and_index(df)
