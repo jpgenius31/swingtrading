@@ -11887,6 +11887,71 @@ def show_915_strategy_desk():
         return v
 
     # ----- Trade blotter (closed only) -----
+
+    # ----- TODAY live signals (separate from historical closed book) -----
+    st.markdown("### 📅 Today’s 9:15 signals (live book)")
+    st.caption(
+        "This table is **only today’s** rows from `strategy_915_candle_live.csv` / latest scan. "
+        "Closed history is below. If empty, the 9:15 job found no big candle on top gainer/loser — check meta timestamp."
+    )
+    try:
+        today_s = india_now().strftime("%Y-%m-%d")
+        live_today = None
+        if live is not None and not getattr(live, "empty", True):
+            live_today = live.copy()
+            if "Prediction Date" in live_today.columns:
+                live_today = live_today[
+                    live_today["Prediction Date"].astype(str).str.startswith(today_s)
+                ]
+        # filters mirror closed book
+        t1, t2, t3 = st.columns(3)
+        with t1:
+            t_list = st.selectbox(
+                "Today list",
+                ["All", "Top Gainer", "Top Loser"],
+                key="desk915_today_list",
+            )
+        with t2:
+            t_sig = st.selectbox("Today signal", ["All", "CE", "PE"], key="desk915_today_sig")
+        with t3:
+            t_res = st.selectbox(
+                "Today result",
+                ["All", "PENDING", "🎯 TARGET", "🔴 STOP"],
+                key="desk915_today_res",
+            )
+        show_t = live_today.copy() if live_today is not None else pd.DataFrame()
+        if show_t is not None and not show_t.empty:
+            if t_list != "All" and "List" in show_t.columns:
+                key = "GAINER" if "GAINER" in t_list.upper() else "LOSER"
+                show_t = show_t[show_t["List"].astype(str).str.upper().str.contains(key, na=False)]
+            if t_sig != "All":
+                if "Signal" in show_t.columns:
+                    show_t = show_t[show_t["Signal"].astype(str).str.upper().str.contains(t_sig, na=False)]
+            if t_res == "PENDING" and "Result" in show_t.columns:
+                show_t = show_t[show_t["Result"].astype(str).str.upper().str.contains("PEND", na=False)]
+            elif "TARGET" in t_res and "Result" in show_t.columns:
+                show_t = show_t[show_t["Result"].astype(str).str.upper().str.contains("TARGET", na=False)]
+            elif "STOP" in t_res and "Result" in show_t.columns:
+                show_t = show_t[show_t["Result"].astype(str).str.upper().str.contains("STOP", na=False)]
+            cols_show = [
+                c for c in [
+                    "Stock", "List", "Signal", "Option", "Entry (candle)", "Stop", "Target",
+                    "Result", "PnL %", "Prediction Date", "Reason",
+                ]
+                if c in show_t.columns
+            ]
+            st.dataframe(show_t[cols_show] if cols_show else show_t, use_container_width=True, hide_index=True)
+            st.success(f"Today **{today_s}**: **{len(show_t)}** live signal(s) after filters.")
+        else:
+            st.warning(
+                f"No live rows dated **{today_s}**. "
+                "GitHub Strategy 915 may have run green but found **0 big candles**, "
+                "or files were not pushed. Check `strategy_915_candle_meta.json` → `saved_at_ist` must be today. "
+                "Closed trades table below is **history only**."
+            )
+    except Exception as _te:
+        st.caption(f"Today table: {_te}")
+
     st.markdown("### 📋 Closed trades · stock · CE/PE · entry · result")
     blotter_src = None
     if past is not None and not past.empty:

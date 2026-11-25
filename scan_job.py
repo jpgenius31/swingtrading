@@ -600,10 +600,15 @@ def run_915_open_strategy(limit: int = 20, list_mode: str = "both") -> pd.DataFr
                     try:
                         hh, mm = ts.hour, ts.minute
                         # assume already IST or naive market time
-                        if hh == 9 and 15 <= mm <= 20:
+                        # IST open window 9:15–9:35 (allow late GitHub/cron runs)
+                        if hh == 9 and 15 <= mm <= 35:
                             row = h.iloc[i]
                             break
-                        if hh == 3 and 45 <= mm <= 50:  # UTC≈IST-5:30 open window
+                        # UTC approx for IST open
+                        if hh == 3 and 45 <= mm <= 65:
+                            row = h.iloc[i]
+                            break
+                        if hh == 4 and mm <= 5:
                             row = h.iloc[i]
                             break
                     except Exception:
@@ -664,6 +669,22 @@ def run_915_open_strategy(limit: int = 20, list_mode: str = "both") -> pd.DataFr
         df.to_csv(live_path, index=False)
     except Exception as e:
         print(f"write live: {e}")
+    # ALWAYS refresh meta with today's timestamp (even 0 rows) so app knows job ran
+    try:
+        meta_path.write_text(
+            json.dumps({
+                "rows": int(len(df)),
+                "saved_at_ist": now.strftime("%Y-%m-%d %H:%M:%S IST"),
+                "source": "scan_job.py --915",
+                "list_mode": list_mode,
+                "note": "0 rows = no big 1m candle in window on top gainer/loser; meta still fresh",
+            }, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as e:
+        print(f"write meta: {e}")
+    print(f"OK 9:15 candle · {len(df)} signals → {live_path.name}")
+
     if not df.empty:
         # append to past (dedupe same day stock+signal)
         try:
@@ -686,16 +707,6 @@ def run_915_open_strategy(limit: int = 20, list_mode: str = "both") -> pd.DataFr
             past.to_csv(past_path, index=False)
         except Exception as e:
             print(f"past append: {e}")
-        meta_path.write_text(
-            json.dumps({
-                "rows": len(df),
-                "saved_at_ist": now.strftime("%Y-%m-%d %H:%M:%S IST"),
-                "source": "scan_job.py --915",
-                "list_mode": list_mode,
-            }, indent=2),
-            encoding="utf-8",
-        )
-        print(f"OK 9:15 candle · {len(df)} signals → {live_path.name}")
         # Money tracker summary for app (how many making money) — without opening dashboard
         try:
             summary = {
