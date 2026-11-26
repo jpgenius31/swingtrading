@@ -331,9 +331,9 @@ def run(limit: int = 120, full: bool = False) -> pd.DataFrame:
                 print(f"  skip {sym}: {type(e).__name__}")
         if (i + 1) % 10 == 0:
             print(f"… {i+1}/{len(universe)} · usable {len(rows)} · skipped {skipped}")
-            time.sleep(0.35)
+            time.sleep(1.2)
         else:
-            time.sleep(0.12)
+            time.sleep(0.35)
     print(f"Scan done · {len(rows)} rows · skipped {skipped}/{len(universe)}")
     return pd.DataFrame(rows)
 
